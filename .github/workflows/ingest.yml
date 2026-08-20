@@ -1,0 +1,34 @@
+name: ingest
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub Free includes 2,000 Actions minutes/month for
+    # private repos and bills each job rounded up to the minute; a 10-minute
+    # cron (~4,320 runs/month) would blow through that, and even 30 minutes
+    # (~1,440 runs) only fits if this job stays under a minute. Tighten to
+    # */10 when the repo goes public — public-repo minutes are free.
+    #
+    # Scheduled workflows run late under load. Acceptable: the site displays
+    # "last heard", and the operator's local run is authoritative.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet ./tool
+
+      # Throwaway database: this run only feeds the Supabase cache. The
+      # authoritative record is the operator's local SQLite file.
+      - run: python -m picolog.run --flights tool/flights.toml --db "$RUNNER_TEMP/ingest.db" --window-hours 1
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

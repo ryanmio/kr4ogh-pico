@@ -1,0 +1,20 @@
+# Active-flight list read by the ingest runner (local and scheduled).
+#
+# Channels 206 and 348 are publicly registered on the Traquito Channel Map.
+# Per repo hard guards, nothing here pre-announces a launch: launch_utc,
+# launch_lat, and launch_lon are only filled in after the fact, and flights
+# stay inactive until they are actually in the air.
+
+[[flights]]
+flight_id = "F1A"
+callsign = "KR4OGH"
+band = "20m"
+channel = 206
+active = false
+
+[[flights]]
+flight_id = "F1B"
+callsign = "KR4OGH"
+band = "20m"
+channel = 348
+active = false
