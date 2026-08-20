@@ -140,6 +140,26 @@ def decode_grid_power(grid: str, power_dbm: int) -> GridPowerTelemetry:
     )
 
 
+def maidenhead_to_latlon(grid: str) -> tuple[float, float]:
+    """Center of a 4- or 6-character Maidenhead locator box, in degrees.
+
+    wspr.live's own lat/lon columns use the same convention ("the center of
+    the reported locator box", https://wspr.live/).
+    """
+    g = grid.strip().upper()
+    if len(g) not in (4, 6):
+        raise ValueError(f"locator must be 4 or 6 chars: {grid!r}")
+    lon = (ord(g[0]) - ord("A")) * 20.0 - 180.0 + int(g[2]) * 2.0
+    lat = (ord(g[1]) - ord("A")) * 10.0 - 90.0 + int(g[3]) * 1.0
+    if len(g) == 6:
+        lon += (ord(g[4]) - ord("A")) * 5.0 / 60.0 + 2.5 / 60.0
+        lat += (ord(g[5]) - ord("A")) * 2.5 / 60.0 + 1.25 / 60.0
+    else:
+        lon += 1.0
+        lat += 0.5
+    return round(lat, 5), round(lon, 5)
+
+
 def _decode_voltage(index: int) -> float:
     # The spec field is 2.0-3.95 V with rollover; Traquito clamps to the
     # 3.0-4.95 V window, which the rollover arithmetic maps to indexes 20-39
