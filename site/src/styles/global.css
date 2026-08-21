@@ -1,0 +1,422 @@
+/* KR4OGH pico balloon site. Dark, quiet, telemetry-first. System fonts only:
+   archived pages must render forever with no runtime dependencies beyond map
+   tiles. */
+
+:root {
+  --bg: #0b1020;
+  --bg-raised: #111831;
+  --bg-panel: #141c38;
+  --border: #232d52;
+  --text: #dbe3f4;
+  --text-dim: #8d9ac0;
+  --text-faint: #5c6a94;
+  --accent: #7dd3fc;
+  --accent-deep: #38bdf8;
+  --live: #fbbf24;
+  --pass: #34d399;
+  --fail: #f87171;
+  --wounded: #fb923c;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+
+.container { width: min(1060px, 100% - 2.5rem); margin-inline: auto; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.mono { font-family: var(--mono); }
+.num { text-align: right; }
+
+/* ---------- header / footer ---------- */
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.05), transparent);
+}
+
+.site-header .container {
+  display: flex; align-items: baseline; gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.site-title {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+.site-title:hover { text-decoration: none; color: var(--accent); }
+.site-title .tld { color: var(--accent); }
+
+.site-nav { display: flex; gap: 1.1rem; margin-left: auto; }
+.site-nav a { color: var(--text-dim); font-size: 0.92rem; }
+.site-nav a:hover { color: var(--text); text-decoration: none; }
+.site-nav a[aria-current="page"] { color: var(--accent); }
+
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 1.4rem 0 1.8rem;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+.site-footer .container { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; }
+.site-footer a { color: var(--text-dim); }
+
+main { padding: 2.2rem 0 3.5rem; }
+
+/* ---------- hero ---------- */
+
+.hero { padding: 1.5rem 0 2.4rem; }
+.hero h1 {
+  font-size: clamp(1.7rem, 4vw, 2.5rem);
+  line-height: 1.15;
+  margin: 0 0 0.7rem;
+  letter-spacing: -0.01em;
+}
+.hero h1 .callsign { font-family: var(--mono); color: var(--accent); }
+.hero p {
+  max-width: 46rem;
+  color: var(--text-dim);
+  margin: 0.4rem 0;
+}
+
+/* ---------- sections ---------- */
+
+.section { margin: 2.6rem 0; }
+.section-head {
+  display: flex; align-items: baseline; gap: 0.8rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem; margin-bottom: 1.1rem;
+}
+.section-head h2 { font-size: 1.15rem; margin: 0; letter-spacing: 0.01em; }
+.section-head .section-note { color: var(--text-faint); font-size: 0.85rem; }
+
+/* ---------- flight cards ---------- */
+
+.flight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.flight-card {
+  display: block;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  color: var(--text);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.flight-card:hover {
+  text-decoration: none;
+  border-color: var(--accent-deep);
+  transform: translateY(-1px);
+}
+.flight-card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.7rem;
+}
+.flight-card h3 { margin: 0; font-size: 1rem; }
+.flight-card-meta {
+  color: var(--text-faint); font-size: 0.78rem; margin: 0.45rem 0 0.55rem;
+}
+.flight-card-summary {
+  color: var(--text-dim); font-size: 0.9rem; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.55rem;
+  border-radius: 99px;
+  border: 1px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge-live {
+  color: var(--live); border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+}
+.badge-live::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: var(--live);
+  animation: pulse 1.8s ease-out infinite;
+}
+.badge-pass { color: var(--pass); border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.07); }
+.badge-fail { color: var(--fail); border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.07); }
+.badge-wounded { color: var(--wounded); border-color: rgba(251, 146, 60, 0.4); background: rgba(251, 146, 60, 0.07); }
+.badge-closed, .badge-sample {
+  color: var(--text-dim); border-color: var(--border); background: var(--bg-panel);
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55); }
+  100% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
+}
+
+/* ---------- notices ---------- */
+
+.notice {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-faint);
+  border-radius: 8px;
+  padding: 0.8rem 1.1rem;
+  color: var(--text-dim);
+  font-size: 0.92rem;
+}
+.notice.notice-accent { border-left-color: var(--accent-deep); }
+.empty-note { color: var(--text-dim); font-size: 0.95rem; }
+.loading { color: var(--text-faint); font-size: 0.9rem; }
+
+/* ---------- flight page ---------- */
+
+.flight-title-row {
+  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+.flight-title-row h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 1.9rem); }
+.flight-subtitle {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  margin: 0 0 1.6rem;
+}
+
+.prose { max-width: 46rem; color: var(--text-dim); }
+.prose p { margin: 0.8rem 0; }
+.prose strong { color: var(--text); }
+.prose code {
+  font-family: var(--mono); font-size: 0.88em;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0.08em 0.35em;
+}
+
+/* ---------- stat strip ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.7rem;
+}
+.stat {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+}
+.stat-label {
+  font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.stat-value {
+  font-family: var(--mono); font-size: 1.06rem; font-weight: 600;
+  color: var(--text); margin-top: 0.15rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stat-sub {
+  font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint);
+  margin-top: 0.1rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- flight view layout ---------- */
+
+.fv-stats { margin: 1.4rem 0; }
+
+.fv-map {
+  height: 440px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--bg-raised);
+  margin: 1.4rem 0;
+}
+
+.fv-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  margin: 1.4rem 0;
+}
+
+/* ---------- map ---------- */
+
+.leaflet-container { background: #0a0f1d; font: inherit; }
+.leaflet-container a { color: var(--accent); }
+.leaflet-tooltip {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--mono); font-size: 0.72rem;
+  box-shadow: none;
+}
+.leaflet-tooltip-top::before { border-top-color: var(--border); }
+.leaflet-bar a {
+  background: var(--bg-panel); color: var(--text);
+  border-bottom-color: var(--border);
+}
+.leaflet-bar a:hover { background: var(--bg-raised); color: var(--accent); }
+.leaflet-control-attribution {
+  background: rgba(11, 16, 32, 0.75) !important;
+  color: var(--text-faint);
+  font-size: 0.62rem;
+}
+
+.map-legend {
+  display: flex; align-items: center; gap: 0.45rem;
+  background: rgba(17, 24, 49, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+.map-legend-bar {
+  width: 70px; height: 7px; border-radius: 4px;
+  background: linear-gradient(90deg, #3b82f6, #22d3ee, #fde047);
+}
+
+.last-pos-icon { background: none; border: none; }
+.last-pos-pulse {
+  display: block; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--live);
+  border: 2px solid #0b1020;
+  animation: pulse 1.8s ease-out infinite;
+}
+
+/* ---------- charts ---------- */
+
+.chart {
+  position: relative;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem 0.5rem;
+}
+.chart-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 0.3rem;
+}
+.chart-title {
+  font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.chart-unit { font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint); }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-tick { fill: var(--text-faint); font-family: var(--mono); font-size: 9.5px; }
+.chart-line { fill: none; stroke-width: 1.6; stroke-linejoin: round; }
+.chart-dot { opacity: 0.75; }
+.chart-tooltip {
+  position: absolute; top: 2.2rem; transform: translateX(-50%);
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 5px; padding: 0.15rem 0.5rem;
+  font-family: var(--mono); font-size: 0.7rem; color: var(--text);
+  pointer-events: none; white-space: nowrap; z-index: 5;
+}
+
+/* ---------- telemetry table ---------- */
+
+.telemetry-table {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 1.4rem 0;
+}
+.telemetry-table summary {
+  cursor: pointer;
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  user-select: none;
+}
+.telemetry-table summary:hover { color: var(--text); }
+.table-scroll {
+  max-height: 420px; overflow: auto;
+  border-top: 1px solid var(--border);
+}
+.telemetry-table table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.telemetry-table th {
+  position: sticky; top: 0;
+  background: var(--bg-panel);
+  color: var(--text-faint);
+  font-weight: 600; text-align: left;
+  padding: 0.45rem 0.7rem;
+  white-space: nowrap;
+}
+.telemetry-table th:nth-child(n + 3) { text-align: right; }
+.telemetry-table td {
+  padding: 0.3rem 0.7rem;
+  border-top: 1px solid rgba(35, 45, 82, 0.5);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.telemetry-table tbody tr:hover td { background: rgba(125, 211, 252, 0.04); color: var(--text); }
+
+/* ---------- about page ---------- */
+
+.about h2 { font-size: 1.15rem; margin-top: 2.2rem; }
+.about table {
+  border-collapse: collapse; font-size: 0.88rem; width: 100%;
+  margin: 1rem 0;
+}
+.about th, .about td {
+  border: 1px solid var(--border); padding: 0.5rem 0.8rem;
+  text-align: left; vertical-align: top;
+}
+.about th { background: var(--bg-raised); color: var(--text); }
+.about td { color: var(--text-dim); }
+
+/* ---------- controls ---------- */
+
+.toolbar {
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  margin: 1rem 0;
+}
+.button {
+  font: inherit; font-size: 0.85rem;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+.button:hover { border-color: var(--accent-deep); color: var(--accent); text-decoration: none; }
+.toolbar .updated { color: var(--text-faint); font-size: 0.8rem; font-family: var(--mono); }
+
+@media (max-width: 640px) {
+  .site-header .container { flex-wrap: wrap; gap: 0.5rem 1rem; }
+  .site-nav { margin-left: 0; }
+  .fv-map { height: 340px; }
+}
