@@ -6,7 +6,7 @@ import { defineConfig } from "astro/config";
 // (https://<owner>.github.io/kr4ogh-pico with base /kr4ogh-pico/) without
 // hardcoding a host here. Local dev defaults to root.
 export default defineConfig({
-  site: process.env.SITE_URL ?? "http://localhost:4321",
-  base: process.env.SITE_BASE ?? "/",
+  site: process.env.SITE_URL || "http://localhost:4321",
+  base: process.env.SITE_BASE || "/",
   integrations: [mdx()],
 });
