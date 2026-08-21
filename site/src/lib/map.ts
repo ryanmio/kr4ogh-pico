@@ -79,9 +79,14 @@ export function renderMap(
 
   L.polyline(latlngs, { color: "#64748b", weight: 1.5, opacity: 0.8 }).addTo(map);
 
+  // The polyline above carries the full track; interactive per-point markers
+  // are thinned on long flights so a two-month, several-thousand-point track
+  // stays responsive. The most recent point is always kept.
   const altLo = Math.min(...track.map((p) => p.altitude_m));
   const altHi = Math.max(...track.map((p) => p.altitude_m));
+  const step = Math.max(1, Math.ceil(track.length / 900));
   track.forEach((p, i) => {
+    if (i % step !== 0 && i !== track.length - 1) return;
     L.circleMarker(latlngs[i]!, {
       radius: 3.5,
       stroke: false,

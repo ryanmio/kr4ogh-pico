@@ -103,7 +103,9 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   if (d) segments.push(d);
   const paths = segments.map((seg) =>
     `<path class="chart-line" stroke="${spec.color}" d="${seg}"/>`).join("");
-  const dots = values.map((p) =>
+  // Per-point dots read well on a day's data and turn to mud (and thousands
+  // of SVG nodes) on a two-month flight; the line carries dense series.
+  const dots = values.length > 400 ? "" : values.map((p) =>
     `<circle class="chart-dot" fill="${spec.color}"` +
     ` cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="1.6"/>`).join("");
 

@@ -68,10 +68,13 @@ export function statsHtml(track: TrackPoint[], live: boolean): string {
   return `<div class="stats">${cards.join("")}</div>`;
 }
 
-/** Full telemetry table, newest first. */
-export function tableHtml(track: TrackPoint[]): string {
+/** Telemetry table, newest first. Long flights are capped so a two-month
+ * archive page stays a reasonable download; the full track is always in the
+ * flight's JSON. */
+export function tableHtml(track: TrackPoint[], maxRows = 500): string {
   if (track.length === 0) return "";
-  const rows = [...track].reverse().map((p) => `<tr>
+  const capped = track.length > maxRows;
+  const rows = [...track].reverse().slice(0, maxRows).map((p) => `<tr>
     <td class="mono">${esc(fmtUtc(p.utc))}</td>
     <td class="mono">${esc(p.grid6)}</td>
     <td class="mono num">${p.lat.toFixed(4)}</td>
@@ -82,8 +85,12 @@ export function tableHtml(track: TrackPoint[]): string {
     <td class="mono num">${p.temperature_c}</td>
     <td class="mono num">${p.rx_station_count}</td>
   </tr>`);
+  const label = capped
+    ? `Telemetry table · latest ${fmtInt(maxRows)} of ${fmtInt(track.length)}` +
+      " records (full track in the JSON download)"
+    : `Telemetry table · ${fmtInt(track.length)} records`;
   return `<details class="telemetry-table">
-    <summary>Telemetry table · ${fmtInt(track.length)} records</summary>
+    <summary>${label}</summary>
     <div class="table-scroll"><table>
       <thead><tr>
         <th>UTC</th><th>Grid</th><th>Lat</th><th>Lon</th>
