@@ -1,0 +1,35 @@
+---
+flight_id: VERIFY-VE3VRO-343
+title: "Verification day: VE3VRO on channel 343"
+outcome: Sample
+summary: >-
+  One frozen UTC day of a real third-party flight, used to validate this
+  program's decoder before KR4OGH's first launch. Not a KR4OGH flight and
+  not a scored one.
+period: "2026-08-18"
+---
+
+This is not a KR4OGH flight. It is one full UTC day — **2026-08-18** — of
+**VE3VRO**'s pico balloon on 20&nbsp;m channel&nbsp;343, mid-Pacific at the
+time, ingested through this repository's own stack (wspr.live pull → SQLite →
+fingerprint match → decode) while validating the decoder before our first
+launch.
+
+Every one of the 67 decoded records on this page was verified row-by-row
+against the Traquito Flight Search Dashboard (67 of 67 identical on every
+compared field) and spot-checked against the Traquito decode page (5 of 5
+identical). The full comparison, including the rows that deliberately don't
+appear here and why, is written up in
+[`docs/decode-status.md`](https://github.com/ryanmio/kr4ogh-pico/blob/main/docs/decode-status.md),
+and the raw spots behind it are frozen in the repository as test vectors.
+
+It is archived here for two reasons: it exercises the site's static
+flight-archive rendering end to end before a real flight needs it, and it is
+a fair preview of what a day of Basic Telemetry actually looks like — 10-watt
+microwatt-budget transmissions heard across an ocean, nightly silence
+included.
+
+Because this is a one-day sample of someone else's flight, there is no launch
+point, no outcome classification, and no distance-flown claim. When F1A and
+F1B close, their archives will replace this page as the interesting part of
+this site.
