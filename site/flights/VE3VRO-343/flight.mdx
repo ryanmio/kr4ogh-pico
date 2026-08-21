@@ -1,0 +1,35 @@
+---
+flight_id: VE3VRO-343
+title: "Around the world 2.9 times: VE3VRO on channel 343"
+outcome: Sample
+summary: >-
+  Sixty days and nearly three laps of the northern hemisphere by a real
+  third-party flight, ingested end to end through this program's own stack.
+  Not a KR4OGH flight and not a scored one — our decoder's proving ground.
+period: "2026-06-22 → still airborne"
+---
+
+This is not a KR4OGH flight — it is **VE3VRO**'s pico balloon on 20&nbsp;m
+channel&nbsp;343, and as of this snapshot (2026-08-21) it was still up there.
+Launched from grid EN94 in Ontario in late June, it has since crossed the
+Atlantic, Asia, and the Pacific **almost three times around** — 3,075 decoded
+telemetry records spanning 115,000&nbsp;km of track, every one of them pulled
+from wspr.live and decoded by this repository's own stack.
+
+It is archived here as a sample for two reasons. First, this flight is the
+decoder's proving ground: one full day of it (2026-08-18) was verified
+row-by-row against the Traquito Flight Search Dashboard — 67 of 67 records
+identical on every field — and frozen as this repo's test vectors. The full
+ingest reproduces those 67 records exactly. The comparison is written up in
+[`docs/decode-status.md`](https://github.com/ryanmio/kr4ogh-pico/blob/main/docs/decode-status.md).
+Second, it is an honest preview of what this site does with a long flight:
+altitude steps as the balloon rides different air masses, the solar-only
+nightly silences, receiver coverage thinning over the oceans, and a track
+that wraps the map edge to edge.
+
+A few honest caveats, because this is someone else's flight observed from
+public data: there is no launch point or launch time on record here (the
+track simply starts at the first decoded slot), the earliest records catch
+the climb-out from near ground level, and no Pass/Fail scoring applies —
+those definitions exist for KR4OGH flights with known launches. When F1A and
+F1B fly, their archives will sit beside this one with the full story.
