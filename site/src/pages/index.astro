@@ -1,0 +1,126 @@
+---
+import Base from "../layouts/Base.astro";
+import { archivedFlightIds, archivedFlights } from "../lib/archive";
+import { withBase } from "../lib/base";
+import { fmtInt } from "../lib/format";
+import { flightCardHtml, outcomeBadgeClass } from "../lib/render";
+
+const archives = await archivedFlights();
+const archiveCards = archives.map(({ entry, archive }) =>
+  flightCardHtml({
+    href: withBase(`/flights/${archive.flight_id}/`),
+    title: entry.data.title,
+    badge: entry.data.outcome,
+    badgeClass: outcomeBadgeClass(entry.data.outcome),
+    meta: `${archive.band} · ch ${archive.channel} · ` +
+      `${fmtInt(archive.track.length)} records · ${entry.data.period}`,
+    summary: entry.data.summary,
+  }),
+);
+---
+
+<Base title="KR4OGH pico balloon flights">
+  <section class="hero">
+    <h1>
+      Party balloons, circumnavigation ambitions.<br />
+      <span class="callsign">KR4OGH</span> pico balloon telemetry.
+    </h1>
+    <p>
+      Solar-powered trackers weighing a few grams ride free-floating balloons
+      through the stratosphere, whispering position and health over
+      <a href="https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)">WSPR</a>
+      on 20&nbsp;m at milliwatt power. Volunteer stations worldwide hear them;
+      this site decodes and maps every report.
+    </p>
+    <p>
+      Live flights stream from a cache while airborne. Finished flights are
+      archived to git and render here forever, database or no database.
+    </p>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>In the air</h2>
+      <span class="section-note">
+        from the live cache · nightly silence from a solar-only payload is normal
+      </span>
+    </div>
+    <div
+      id="live-flights"
+      data-archived={JSON.stringify(archivedFlightIds())}
+    >
+      <p class="loading">Checking the live cache…</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Flight archive</h2>
+      <span class="section-note">static from git · no database behind these</span>
+    </div>
+    {archives.length > 0
+      ? <div class="flight-grid" set:html={archiveCards.join("")} />
+      : <p class="empty-note">No archived flights yet.</p>}
+  </section>
+</Base>
+
+<script>
+  import { withBase } from "../lib/base";
+  import { fmtInt, fmtRelative } from "../lib/format";
+  import { flightCardHtml } from "../lib/render";
+  import { cacheConfigured, fetchFlights, fetchLatest } from "../lib/supabase";
+
+  const el = document.getElementById("live-flights")!;
+  const archivedIds = new Set<string>(JSON.parse(el.dataset.archived!));
+
+  function note(html: string, accent = false) {
+    el.innerHTML = `<div class="notice${accent ? " notice-accent" : ""}">${html}</div>`;
+  }
+
+  async function loadLive() {
+    if (!cacheConfigured()) {
+      note(
+        "The live cache is not configured for this deployment. " +
+          "Archived flights below are unaffected.",
+      );
+      return;
+    }
+    let flights;
+    try {
+      flights = await fetchFlights();
+    } catch {
+      note(
+        "The live cache is unreachable — most likely paused between " +
+          "flights. Archived flights below are unaffected.",
+      );
+      return;
+    }
+    // Anything already exported to git renders from the archive instead.
+    const live = flights.filter((f) => !archivedIds.has(f.flight_id));
+    if (live.length === 0) {
+      note("No flights in the air right now.", true);
+      return;
+    }
+    const cards = await Promise.all(
+      live.map(async (f) => {
+        const latest = await fetchLatest(f.flight_id).catch(() => null);
+        const summary = latest
+          ? `Last heard ${fmtRelative(latest.utc)} from ${latest.grid6} at ` +
+            `${fmtInt(latest.altitude_m)} m, ${latest.voltage_v.toFixed(2)} V.`
+          : "In the flight list, no decoded telemetry yet.";
+        return flightCardHtml({
+          href: withBase(`/live/?flight=${encodeURIComponent(f.flight_id)}`),
+          title: `${f.flight_id} · ${f.callsign}`,
+          badge: f.status === "live" ? "live" : "closed",
+          badgeClass: f.status === "live" ? "badge-live" : "badge-closed",
+          meta: `${f.band} · ch ${f.channel}` +
+            (f.launch_utc ? ` · launched ${f.launch_utc.slice(0, 10)}` : ""),
+          summary,
+        });
+      }),
+    );
+    el.innerHTML = `<div class="flight-grid">${cards.join("")}</div>`;
+  }
+
+  loadLive();
+</script>

@@ -1,0 +1,14 @@
+# Flight list served by dev/mock_supabase.py for local site preview.
+#
+# F1A-PREVIEW replays the verification day's telemetry (stored in
+# tool/demo.db under VERIFY-VE3VRO-343) as a pretend live flight, so the live
+# UI path can be exercised without a Supabase project or a balloon in the
+# air. Preview data only; never served by the real site.
+
+[[flights]]
+flight_id = "F1A-PREVIEW"
+callsign = "KR4OGH"
+band = "20m"
+channel = 206
+status = "live"
+source_flight_id = "VERIFY-VE3VRO-343"

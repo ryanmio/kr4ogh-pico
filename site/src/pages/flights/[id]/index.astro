@@ -1,0 +1,66 @@
+---
+import { render } from "astro:content";
+import Base from "../../../layouts/Base.astro";
+import { archivedFlights } from "../../../lib/archive";
+import { withBase } from "../../../lib/base";
+import { outcomeBadgeClass, statsHtml, tableHtml } from "../../../lib/render";
+
+export async function getStaticPaths() {
+  return (await archivedFlights()).map((flight) => ({
+    params: { id: flight.archive.flight_id },
+    props: { flight },
+  }));
+}
+
+const { flight } = Astro.props;
+const { entry, archive } = flight;
+const { Content } = await render(entry);
+const trackUrl = withBase(`/flights/${archive.flight_id}/track.json`);
+
+// Stats and table are rendered at build time: an archived flight is static
+// data in git, and its page carries the numbers even before any script runs.
+const stats = statsHtml(archive.track, false);
+const table = tableHtml(archive.track);
+---
+
+<Base
+  title={`${entry.data.title} — KR4OGH`}
+  description={entry.data.summary}
+>
+  <div class="flight-title-row">
+    <h1>{entry.data.title}</h1>
+    <span class:list={["badge", outcomeBadgeClass(entry.data.outcome)]}>
+      {entry.data.outcome}
+    </span>
+  </div>
+  <p class="flight-subtitle">
+    {archive.flight_id} · {archive.callsign} · {archive.band} · channel {archive.channel}
+    · {entry.data.period}
+    {archive.close_reason && ` · ${archive.close_reason}`}
+  </p>
+
+  <div class="prose">
+    <Content />
+  </div>
+
+  <div class="fv-stats" set:html={stats} />
+  <div id="mapcharts" data-track-url={trackUrl}></div>
+  <Fragment set:html={table} />
+
+  <p class="toolbar">
+    <a class="button" href={trackUrl} download={`${archive.flight_id}.json`}
+      >Download track.json</a
+    >
+    <span class="updated">frozen in git · renders with no database</span>
+  </p>
+</Base>
+
+<script>
+  import { renderMapAndCharts } from "../../../lib/flightview";
+  import type { FlightArchive } from "../../../lib/types";
+
+  const el = document.getElementById("mapcharts")!;
+  const archive: FlightArchive =
+    await (await fetch(el.dataset.trackUrl!)).json();
+  renderMapAndCharts(el, archive, archive.track);
+</script>
