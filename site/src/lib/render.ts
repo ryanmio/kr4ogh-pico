@@ -24,9 +24,7 @@ function statCard(label: string, value: string, sub: string): string {
 export function statsHtml(track: TrackPoint[], live: boolean): string {
   const s = trackStats(track);
   if (!s) {
-    return `<p class="empty-note">No decoded telemetry yet. Nightly silence
-      from a solar-only payload is expected — WSPR reports resume with
-      sunlight.</p>`;
+    return '<p class="empty-note">No decoded telemetry yet.</p>';
   }
   const days =
     (Date.parse(s.lastUtc) - Date.parse(s.firstUtc)) / 86_400_000;
