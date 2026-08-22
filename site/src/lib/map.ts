@@ -46,19 +46,41 @@ function unwrapLons(track: TrackPoint[]): number[] {
   return lons;
 }
 
+// Fraction of the track's span added as breathing room around it, matched
+// between the height calculation and the fitBounds call below.
+const FIT_PAD = 0.06;
+
+/** Size the map box to the track it has to show. A float that has wrapped the
+ * globe several times is fitted on longitude, so its height is pinned to the
+ * world's own height at that zoom: any taller and the extra is empty space off
+ * the top and bottom of the map. A flight still near its launch point is the
+ * other way round and gets a tall box. */
+function fitHeightToTrack(el: HTMLElement, latlngs: L.LatLng[]): void {
+  const lons = latlngs.map((p) => p.lng);
+  const worldsWide =
+    ((Math.max(...lons) - Math.min(...lons)) * (1 + 2 * FIT_PAD)) / 360;
+  const worldHeightPx = (el.clientWidth || 900) / Math.max(worldsWide, 1e-6);
+  el.style.height =
+    `${Math.round(Math.max(300, Math.min(window.innerHeight * 0.72, worldHeightPx)))}px`;
+}
+
 export function renderMap(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
 ): void {
+  const lons = unwrapLons(track);
+  const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
+  if (latlngs.length > 0) fitHeightToTrack(el, latlngs);
+
   const map = L.map(el, {
     preferCanvas: true,
     worldCopyJump: false,
     zoomControl: true,
     attributionControl: true,
+    // Fractional zoom, so a fitted track fills the box exactly instead of
+    // snapping to the next zoom out and leaving slack around the world.
+    zoomSnap: 0,
   });
   L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 12 }).addTo(map);
-
-  const lons = unwrapLons(track);
-  const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
 
   if (meta.launch_lat != null && meta.launch_lon != null) {
     L.circleMarker([meta.launch_lat, meta.launch_lon], {
@@ -110,6 +132,10 @@ export function renderMap(
     interactive: false,
   }).addTo(map);
 
+  const fitted = L.latLngBounds(latlngs).pad(FIT_PAD);
+  map.fitBounds(fitted);
+  coverBoxWithWorld(map, el, fitted);
+
   const legend = new L.Control({ position: "bottomright" });
   legend.onAdd = () => {
     const div = L.DomUtil.create("div", "map-legend");
@@ -120,6 +146,20 @@ export function renderMap(
     return div;
   };
   legend.addTo(map);
+}
 
-  map.fitBounds(L.latLngBounds(latlngs).pad(0.15));
+/** Keep tiles covering the whole box. A globe-spanning track is fitted on
+ * longitude, so the world can end up no taller than the box, and fitBounds
+ * then centres on the track's latitude, which pushes the world down and
+ * leaves a bare strip along the top. Pin the box to the world's height and
+ * centre on the equator: at that zoom it is the only position where the map
+ * reaches both edges. */
+function coverBoxWithWorld(
+  map: L.Map, el: HTMLElement, fitted: L.LatLngBounds,
+): void {
+  const worldPx = map.getPixelWorldBounds().getSize().y;
+  if (worldPx > el.clientHeight + 1) return;
+  el.style.height = `${Math.round(Math.max(worldPx, 260))}px`;
+  map.invalidateSize({ animate: false });
+  map.setView([0, fitted.getCenter().lng], map.getZoom(), { animate: false });
 }
