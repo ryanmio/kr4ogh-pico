@@ -60,8 +60,10 @@ function fitHeightToTrack(el: HTMLElement, latlngs: L.LatLng[]): void {
   const worldsWide =
     ((Math.max(...lons) - Math.min(...lons)) * (1 + 2 * FIT_PAD)) / 360;
   const worldHeightPx = (el.clientWidth || 900) / Math.max(worldsWide, 1e-6);
+  // Ceiling keeps the stat strip under the map within reach of the first screen.
+  const ceiling = window.innerHeight * 0.62;
   el.style.height =
-    `${Math.round(Math.max(300, Math.min(window.innerHeight * 0.72, worldHeightPx)))}px`;
+    `${Math.round(Math.max(300, Math.min(ceiling, worldHeightPx)))}px`;
 }
 
 export function renderMap(
@@ -79,6 +81,7 @@ export function renderMap(
     // Fractional zoom, so a fitted track fills the box exactly instead of
     // snapping to the next zoom out and leaving slack around the world.
     zoomSnap: 0,
+    maxBoundsViscosity: 1,
   });
   L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 12 }).addTo(map);
 
@@ -135,6 +138,16 @@ export function renderMap(
   const fitted = L.latLngBounds(latlngs).pad(FIT_PAD);
   map.fitBounds(fitted);
   coverBoxWithWorld(map, el, fitted);
+
+  // Keep the world covering the box at every zoom and pan: no zooming out
+  // past the point where the world is shorter than the box, and no panning
+  // off the top or bottom of it. Otherwise both leave bare strips. Longitude
+  // is left loose, with room for the wrapped copies a multi-lap track needs.
+  map.setMinZoom(Math.log2(el.clientHeight / 256));
+  map.setMaxBounds(L.latLngBounds(
+    L.latLng(-85, Math.min(...lons) - 360),
+    L.latLng(85, Math.max(...lons) + 360),
+  ));
 
   const legend = new L.Control({ position: "bottomright" });
   legend.onAdd = () => {
