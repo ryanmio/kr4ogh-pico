@@ -34,33 +34,32 @@ const table = tableHtml(archive.track);
     </span>
   </div>
   <p class="flight-subtitle">
-    {archive.flight_id} · {archive.callsign} · {archive.band} · channel {archive.channel}
-    · {entry.data.period}
-    {archive.close_reason && ` · ${archive.close_reason}`}
+    {archive.callsign} · {archive.band} · channel {archive.channel} · {entry.data.period}
   </p>
 
-  <div class="prose">
+  <div id="map" data-track-url={trackUrl}></div>
+  <div class="fv-stats" set:html={stats} />
+  <div id="charts"></div>
+  <Fragment set:html={table} />
+
+  <div class="flight-notes prose">
     <Content />
   </div>
-
-  <div class="fv-stats" set:html={stats} />
-  <div id="mapcharts" data-track-url={trackUrl}></div>
-  <Fragment set:html={table} />
 
   <p class="toolbar">
     <a class="button" href={trackUrl} download={`${archive.flight_id}.json`}
       >Download track.json</a
     >
-    <span class="updated">frozen in git · renders with no database</span>
   </p>
 </Base>
 
 <script>
-  import { renderMapAndCharts } from "../../../lib/flightview";
+  import { renderChartsInto, renderMapInto } from "../../../lib/flightview";
   import type { FlightArchive } from "../../../lib/types";
 
-  const el = document.getElementById("mapcharts")!;
+  const mapEl = document.getElementById("map")!;
   const archive: FlightArchive =
-    await (await fetch(el.dataset.trackUrl!)).json();
-  renderMapAndCharts(el, archive, archive.track);
+    await (await fetch(mapEl.dataset.trackUrl!)).json();
+  renderMapInto(mapEl, archive, archive.track);
+  renderChartsInto(document.getElementById("charts")!, archive.track);
 </script>
