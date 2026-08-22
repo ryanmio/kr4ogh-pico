@@ -7,37 +7,37 @@ import Base from "../layouts/Base.astro";
   description="How the KR4OGH pico balloon program works: WSPR telemetry, Traquito trackers, and a three-store data architecture."
 >
   <div class="about prose">
-    <h1>About the program</h1>
+    <h1>About</h1>
     <p>
-      A pico balloon is a mylar party balloon carrying a solar-powered radio
-      tracker weighing a few grams. Filled with just enough lift, it settles
-      into a float in the stratosphere and rides the winds — sometimes for
-      weeks, sometimes around the planet. There is no recovery and no control;
-      once it leaves the ground, the only thing that comes back is radio.
+      A pico balloon is a foil party balloon carrying a solar-powered radio
+      tracker that weighs a few grams. Filled with just enough lift, it floats
+      in the stratosphere and goes wherever the wind does. There is no
+      recovery and no control, so radio is the only thing that comes back.
     </p>
     <p>
-      KR4OGH flies bone-stock
-      <a href="https://traquito.github.io/">Traquito</a> trackers transmitting
-      <a href="https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)">WSPR</a>
-      on the 20&nbsp;m band at milliwatt power. Volunteer receiving stations
-      around the world decode those transmissions and report them to
+      KR4OGH flies stock <a href="https://traquito.github.io/">Traquito</a>
+      trackers on the 20&nbsp;m band using
+      <a href="https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)">WSPR</a>,
+      a mode built for very weak signals. Volunteer receiving stations decode
+      the transmissions and report them to
       <a href="https://wspr.live/">wspr.live</a>. Position, altitude, speed,
-      solar-bus voltage, and processor die temperature are packed into pairs of
-      WSPR messages using
-      <a href="https://qrp-labs.com/u4b/u4bdecoding.html">U4B-style channelised telemetry</a>,
-      which this project decodes with
-      <a href="https://github.com/ryanmio/kr4ogh-pico">its own open-source stack</a>.
+      voltage and processor temperature are packed into pairs of WSPR messages
+      using
+      <a href="https://qrp-labs.com/u4b/u4bdecoding.html">U4B channelised telemetry</a>;
+      the <a href="https://github.com/ryanmio/kr4ogh-pico">code behind this site</a>
+      decodes them.
     </p>
 
     <h2>Flight one</h2>
     <p>
-      Two trackers, <strong>F1A</strong> (channel 206) and <strong>F1B</strong>
-      (channel 348), launch the same morning as one experiment: same callsign,
-      same dial frequency, different time slots. Launches are never announced
-      in advance; flights appear here once they are in the air and reporting.
+      Two trackers, <strong>F1A</strong> on channel 206 and
+      <strong>F1B</strong> on channel 348, go up the same morning as one
+      experiment: same callsign and frequency, different time slots. Launches
+      are not announced in advance, so flights show up here once they are
+      airborne and reporting.
     </p>
 
-    <h2>How a flight is scored</h2>
+    <h2>Scoring</h2>
     <table>
       <tbody>
         <tr>
@@ -62,42 +62,39 @@ import Base from "../layouts/Base.astro";
       </tbody>
     </table>
     <p>
-      Nightly silence is <em>not</em> a failure: the payload is solar-only and
-      simply sleeps through the dark.
+      A gap overnight is not a failure. The tracker has no battery and stops
+      transmitting when the sun goes down.
     </p>
 
     <h2>Where the data lives</h2>
-    <p>This site is the visible end of a deliberate three-store split:</p>
+    <p>Three stores, with different jobs:</p>
     <table>
       <tbody>
         <tr>
-          <th>SQLite — the record</th>
-          <td>The authoritative flight record: raw spots (append-only), query
-            coverage, decoded telemetry. Lives on the operator's machine,
-            needs no network and no credentials.</td>
+          <th>SQLite</th>
+          <td>The flight record: raw spots, query coverage, decoded
+            telemetry. Local, and works with no network or credentials.</td>
         </tr>
         <tr>
-          <th>Supabase — a cache</th>
-          <td>A queryable hot copy of decoded telemetry that this site reads
-            while a flight is in the air. Write-only from the tool, read-only
-            for you, and allowed to pause or vanish with zero effect on the
-            record.</td>
+          <th>Supabase</th>
+          <td>A cache of decoded telemetry that this site reads while a flight
+            is up. The tool only writes to it, and it can pause or break
+            without affecting the record.</td>
         </tr>
         <tr>
-          <th>git — the archive</th>
-          <td>When a flight closes, its full decoded track and an outcome
-            write-up are committed to the repository. Archived pages here are
-            built from those files and will render forever without any
-            database.</td>
+          <th>git</th>
+          <td>The archive. When a flight ends, its track and write-up are
+            committed to the repo, and its page here is built from those files
+            with no database involved.</td>
         </tr>
       </tbody>
     </table>
     <p>
-      Everything — decoder, channel table, ingest tool, this site, and the
-      archived tracks themselves — is in the open at
-      <a href="https://github.com/ryanmio/kr4ogh-pico">github.com/ryanmio/kr4ogh-pico</a>.
-      The telemetry wire format and decode validation are written up in the
-      repository's <code>docs/</code>.
+      The decoder, channel table, ingest tool, this site and the archived
+      tracks are all at
+      <a href="https://github.com/ryanmio/kr4ogh-pico">github.com/ryanmio/kr4ogh-pico</a>,
+      with the wire format and decode validation written up under
+      <code>docs/</code>.
     </p>
   </div>
 </Base>
