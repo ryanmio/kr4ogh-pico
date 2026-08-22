@@ -205,7 +205,7 @@ main { padding: 2.2rem 0 3.5rem; }
   color: var(--text-faint);
   font-family: var(--mono);
   font-size: 0.85rem;
-  margin: 0 0 1.6rem;
+  margin: 0 0 0.4rem;
 }
 
 .prose { max-width: 46rem; color: var(--text-dim); }
@@ -248,27 +248,44 @@ main { padding: 2.2rem 0 3.5rem; }
 
 /* ---------- flight view layout ---------- */
 
-.fv-stats { margin: 1.4rem 0; }
+.fv-stats { margin: 1rem 0; }
 
+/* The map is the point of a flight page: it breaks out past the text column
+   on wide screens, and its height is set from the track's own shape once the
+   data is in (see fitHeightToTrack). This is the pre-script fallback. */
 .fv-map {
-  height: 440px;
+  height: clamp(340px, 52vh, 600px);
   border-radius: 10px;
   border: 1px solid var(--border);
   overflow: hidden;
   background: var(--bg-raised);
-  margin: 1.4rem 0;
+  margin: 1.2rem 0;
+}
+
+@media (min-width: 1240px) {
+  .fv-map { margin-inline: -72px; }
 }
 
 .fv-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
-  margin: 1.4rem 0;
+  margin: 1.2rem 0;
+}
+
+/* Narrative sits below the data, at reading width and visually secondary. */
+.flight-notes {
+  border-top: 1px solid var(--border);
+  padding-top: 1.2rem;
+  margin-top: 2rem;
+  font-size: 0.92rem;
 }
 
 /* ---------- map ---------- */
 
-.leaflet-container { background: #0a0f1d; font: inherit; }
+/* Matches the CARTO dark basemap's ocean fill, so any area beyond the top or
+   bottom of the world blends into the map instead of showing as a void. */
+.leaflet-container { background: #1e1e1e; font: inherit; }
 .leaflet-container a { color: var(--accent); }
 .leaflet-tooltip {
   background: var(--bg-panel); border: 1px solid var(--border);
@@ -418,5 +435,4 @@ main { padding: 2.2rem 0 3.5rem; }
 @media (max-width: 640px) {
   .site-header .container { flex-wrap: wrap; gap: 0.5rem 1rem; }
   .site-nav { margin-left: 0; }
-  .fv-map { height: 340px; }
 }
