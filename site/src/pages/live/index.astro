@@ -37,16 +37,13 @@ import Base from "../../layouts/Base.astro";
       <p class="flight-subtitle">${esc(meta.band)} · channel ${meta.channel}
         ${meta.launch_utc ? ` · launched ${esc(meta.launch_utc.slice(0, 10))} UTC` : ""}
         ${meta.close_reason ? ` · ${esc(meta.close_reason)}` : ""}</p>
+      <div id="fv"></div>
       <div class="toolbar">
         <button class="button" id="refresh">Refresh</button>
         <button class="button" id="download">Download JSON</button>
-        <span class="updated">updated ${updated.toISOString().slice(11, 19)} UTC
-          · auto-refreshes every 5 min</span>
-      </div>
-      <div class="notice notice-accent">Reports arrive only while the balloon
-        has sun and a station hears it — nightly silence is normal, and data
-        lags reception by the ingest schedule.</div>
-      <div id="fv"></div>`;
+        <span class="updated">updated ${updated.toISOString().slice(11, 19)} UTC,
+          every 5 min. Gaps are normal: the tracker runs on solar.</span>
+      </div>`;
   }
 
   let track: TrackPoint[] = [];
@@ -54,7 +51,7 @@ import Base from "../../layouts/Base.astro";
 
   async function load() {
     if (!cacheConfigured()) {
-      note("The live cache is not configured for this deployment.");
+      note("No live cache configured for this build.");
       return;
     }
     if (!flightId) {
@@ -66,16 +63,15 @@ import Base from "../../layouts/Base.astro";
       const flights = await fetchFlights();
       meta = flights.find((f) => f.flight_id === flightId);
       if (!meta) {
-        note(`No flight called <code>${esc(flightId)}</code> in the live
-          cache. It may have closed and moved to the
+        note(`No flight called <code>${esc(flightId)}</code> in the live cache.
+          It may have closed and moved to the
           <a href="${withBase("/")}">archive</a>.`);
         return;
       }
       track = await fetchTrack(flightId);
     } catch {
-      note(`The live cache is unreachable — most likely paused between
-        flights. Archived flights on the
-        <a href="${withBase("/")}">flights page</a> are unaffected.`);
+      note(`Live cache unreachable, probably paused between flights. The
+        <a href="${withBase("/")}">archive</a> still works.`);
       return;
     }
 

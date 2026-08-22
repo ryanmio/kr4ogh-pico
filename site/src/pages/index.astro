@@ -21,42 +21,32 @@ const archiveCards = archives.map(({ entry, archive }) =>
 
 <Base title="KR4OGH pico balloon flights">
   <section class="hero">
-    <h1>
-      Party balloons, circumnavigation ambitions.<br />
-      <span class="callsign">KR4OGH</span> pico balloon telemetry.
-    </h1>
+    <h1><span class="callsign">KR4OGH</span> pico balloon flights</h1>
     <p>
-      Solar-powered trackers weighing a few grams ride free-floating balloons
-      through the stratosphere, whispering position and health over
+      Solar-powered trackers on 20&nbsp;m, reporting position, altitude and
+      battery voltage over
       <a href="https://en.wikipedia.org/wiki/WSPR_(amateur_radio_software)">WSPR</a>
-      on 20&nbsp;m at milliwatt power. Volunteer stations worldwide hear them;
-      this site decodes and maps every report.
-    </p>
-    <p>
-      Live flights stream from a cache while airborne. Finished flights are
-      archived to git and render here forever, database or no database.
+      at a few tens of milliwatts. Volunteer receiving stations hear them and
+      report the spots; this site decodes and maps them. See
+      <a href={withBase("/about/")}>about</a> for how it works.
     </p>
   </section>
 
   <section class="section">
     <div class="section-head">
       <h2>In the air</h2>
-      <span class="section-note">
-        from the live cache · nightly silence from a solar-only payload is normal
-      </span>
     </div>
     <div
       id="live-flights"
       data-archived={JSON.stringify(archivedFlightIds())}
     >
-      <p class="loading">Checking the live cache…</p>
+      <p class="loading">Loading…</p>
     </div>
   </section>
 
   <section class="section">
     <div class="section-head">
-      <h2>Flight archive</h2>
-      <span class="section-note">static from git · no database behind these</span>
+      <h2>Archive</h2>
     </div>
     {archives.length > 0
       ? <div class="flight-grid" set:html={archiveCards.join("")} />
@@ -79,26 +69,21 @@ const archiveCards = archives.map(({ entry, archive }) =>
 
   async function loadLive() {
     if (!cacheConfigured()) {
-      note(
-        "The live cache is not configured for this deployment. " +
-          "Archived flights below are unaffected.",
-      );
+      note("No live cache configured for this build. The archive still works.");
       return;
     }
     let flights;
     try {
       flights = await fetchFlights();
     } catch {
-      note(
-        "The live cache is unreachable — most likely paused between " +
-          "flights. Archived flights below are unaffected.",
-      );
+      note("Live cache unreachable, probably paused between flights. " +
+        "The archive still works.");
       return;
     }
     // Anything already exported to git renders from the archive instead.
     const live = flights.filter((f) => !archivedIds.has(f.flight_id));
     if (live.length === 0) {
-      note("No flights in the air right now.", true);
+      note("Nothing in the air right now.", true);
       return;
     }
     const cards = await Promise.all(
@@ -107,7 +92,7 @@ const archiveCards = archives.map(({ entry, archive }) =>
         const summary = latest
           ? `Last heard ${fmtRelative(latest.utc)} from ${latest.grid6} at ` +
             `${fmtInt(latest.altitude_m)} m, ${latest.voltage_v.toFixed(2)} V.`
-          : "In the flight list, no decoded telemetry yet.";
+          : "No decoded telemetry yet.";
         return flightCardHtml({
           href: withBase(`/live/?flight=${encodeURIComponent(f.flight_id)}`),
           title: `${f.flight_id} · ${f.callsign}`,
