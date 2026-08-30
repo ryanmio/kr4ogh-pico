@@ -2,7 +2,10 @@
  * flight looks the same whether its numbers came from the committed track or
  * from a live wspr.live query. */
 
-import { fmtInt, fmtRelative, fmtUtc, trackStats } from "./format";
+import {
+  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtRelative, fmtUtc, haversineKm,
+  trackStats,
+} from "./format";
 import * as u from "./units";
 import type { Units } from "./units";
 import type { TrackPoint } from "./types";
@@ -23,11 +26,14 @@ function statCard(label: string, value: string, sub: string): string {
 
 /** The stat strip under the map.
  *
- * Labels are written for someone who has never heard of WSPR: "distance
- * covered", not "track"; "battery", not "volts". Position is deliberately
- * absent -- the map above says where it is far better than a grid square
- * does. `live` switches "last heard" to relative time, which only makes
- * sense while a flight is still flying.
+ * Eight cards, so the grid divides evenly at every breakpoint instead of
+ * leaving an orphan on its own row. Labels are written for someone who has
+ * never heard of WSPR: "distance covered", not "track"; "battery", not
+ * "volts". Position is deliberately absent -- the map above says where it is
+ * far better than a grid square does.
+ *
+ * `live` switches "last heard" to relative time, which only makes sense
+ * while a flight is still flying.
  */
 export function statsHtml(
   track: TrackPoint[], live: boolean, units: Units = "metric",
@@ -36,12 +42,22 @@ export function statsHtml(
   if (!s) {
     return '<p class="empty-note">No decoded telemetry yet.</p>';
   }
-  const days = (Date.parse(s.lastUtc) - Date.parse(s.firstUtc)) / 86_400_000;
   const volts = track.map((p) => p.voltage_v);
   const temps = track.map((p) => p.temperature_c);
   const alt = (m: number) => u.altitude(m, units).text;
   const spd = (kt: number) => u.speed(kt, units).text;
   const tmp = (c: number) => u.temperature(c, units).text;
+
+  // Heading over the last leg. One fix is not a direction, so it stays blank
+  // rather than inventing one.
+  const prev = track.length >= 2 ? track[track.length - 2]! : null;
+  const heading = prev
+    ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
+    : null;
+
+  const aloftMs = Date.parse(s.lastUtc) - Date.parse(s.firstUtc);
+  const fromLaunchKm = haversineKm(
+    track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
   const cards = [
     statCard(
@@ -49,20 +65,30 @@ export function statsHtml(
       live ? fmtRelative(s.lastUtc) : fmtUtc(s.lastUtc),
       live ? `${s.lastUtc.slice(11, 16)} UTC` : `first ${fmtUtc(s.firstUtc)}`,
     ),
-    statCard("Altitude", alt(s.last.altitude_m), `highest ${alt(s.maxAltitudeM)}`),
     statCard(
-      "Distance covered",
-      u.distance(s.distanceKm, units).text,
-      `${fmtInt(s.points)} reports · ${days.toFixed(1)} days`,
+      "Time in the air",
+      fmtDuration(aloftMs),
+      `since ${s.firstUtc.slice(11, 16)} UTC`,
     ),
+    statCard("Altitude", alt(s.last.altitude_m), `highest ${alt(s.maxAltitudeM)}`),
     statCard("Ground speed", spd(s.last.speed_kt), `fastest ${spd(s.maxSpeedKt)}`),
+    statCard(
+      "Heading",
+      heading === null ? "--" : compassPoint(heading),
+      heading === null ? "needs two fixes" : `${Math.round(heading)}\u00b0 from north`,
+    ),
+    statCard(
+      "Distance flown",
+      u.distance(s.distanceKm, units).text,
+      `${u.distance(fromLaunchKm, units).text} from launch`,
+    ),
     statCard(
       "Battery",
       `${s.last.voltage_v.toFixed(2)} V`,
       `${Math.min(...volts).toFixed(2)}-${Math.max(...volts).toFixed(2)} V`,
     ),
     statCard(
-      "Tracker temperature",
+      "Tracker temp",
       tmp(s.last.temperature_c),
       `${u.temperature(Math.min(...temps), units).value} to ${tmp(Math.max(...temps))}`,
     ),

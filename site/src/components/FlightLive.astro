@@ -45,10 +45,6 @@ const last = track.at(-1);
   <div class="fv-map-slot"></div>
   <div class="fv-stats" set:html={stats} />
 
-  <p class="flight-updated">
-    <span id="updated">{last ? `Newest position ${last.utc} UTC` : "No positions yet"}</span>
-    <button class="linklike" id="refresh" type="button">Check now</button>
-  </p>
 
   <div class="fv-charts-slot"></div>
   <div class="fv-table-slot" set:html={table} />
@@ -60,6 +56,11 @@ const last = track.at(-1);
     normally a few minutes old. It runs on solar power, so it goes quiet
     overnight.
     <button class="linklike" id="download" type="button">Download the data</button>
+  </p>
+
+  <p class="flight-updated">
+    <span id="updated">{last ? `Newest position ${last.utc} UTC` : "No positions yet"}</span>
+    <button class="linklike" id="refresh" type="button">Check now</button>
   </p>
 </section>
 

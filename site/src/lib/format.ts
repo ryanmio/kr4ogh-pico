@@ -41,6 +41,37 @@ export function fmtInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/** "6 h 20 m", "2 d 4 h". Coarse on purpose: nobody reading a balloon page
+ * needs seconds, and two units is as much as a stat card can carry. */
+export function fmtDuration(ms: number): string {
+  const min = Math.max(0, Math.round(ms / 60_000));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ${min % 60} min`;
+  return `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+
+/** Initial great-circle bearing from one point to the next, in degrees from
+ * true north. */
+export function bearingDeg(
+  lat1: number, lon1: number, lat2: number, lon2: number,
+): number {
+  const rad = Math.PI / 180;
+  const dLon = (lon2 - lon1) * rad;
+  const y = Math.sin(dLon) * Math.cos(lat2 * rad);
+  const x = Math.cos(lat1 * rad) * Math.sin(lat2 * rad) -
+    Math.sin(lat1 * rad) * Math.cos(lat2 * rad) * Math.cos(dLon);
+  return (Math.atan2(y, x) / rad + 360) % 360;
+}
+
+/** A compass point, because "ESE" means something to everyone and "112°"
+ * does not. */
+export function compassPoint(deg: number): string {
+  const points = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  return points[Math.round(deg / 22.5) % 16]!;
+}
+
 const EARTH_RADIUS_KM = 6371;
 
 export function haversineKm(
