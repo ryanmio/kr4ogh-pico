@@ -476,13 +476,15 @@ main { padding: 2.2rem 0 3.5rem; }
 
 /* Metric / imperial. A segmented pair rather than a dropdown: two options,
    both worth showing, and one tap to swap. */
-.unit-toggle {
+.unit-toggle,
+.range-toggle {
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: 99px;
   overflow: hidden;
 }
-.unit-toggle button {
+.unit-toggle button,
+.range-toggle button {
   font: inherit;
   font-size: 0.78rem;
   padding: 0.3rem 0.85rem;
@@ -491,11 +493,23 @@ main { padding: 2.2rem 0 3.5rem; }
   border: 0;
   cursor: pointer;
 }
-.unit-toggle button:hover { color: var(--text); }
-.unit-toggle button[aria-pressed="true"] {
+.unit-toggle button:hover,
+.range-toggle button:hover { color: var(--text); }
+.unit-toggle button[aria-pressed="true"],
+.range-toggle button[aria-pressed="true"] {
   background: var(--bg-raised);
   color: var(--accent);
 }
+
+/* The chart range control sits with the charts, not with the page heading:
+   it changes only what the charts show. */
+.charts-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.6rem;
+}
+.charts-head[hidden] { display: none; }
+.charts-head + .fv-charts { margin-top: 0.7rem; }
 
 .flight-updated {
   display: flex;

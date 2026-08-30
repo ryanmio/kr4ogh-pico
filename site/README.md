@@ -43,6 +43,15 @@ Numbers are shown in metric or imperial, the reader's choice, remembered per
 browser. The stored track is always metric and always knots; conversion
 happens only at display, so there is one representation of the data.
 
+The charts carry a range control — whole flight / ascent / last 24 h —
+because a float ruins its own charts: the ascent ends up a couple of percent
+of the width and the float a flat line across the rest. Slicing the track
+fixes both axes at once, since each chart scales to the values it is handed.
+It applies to the charts only: the map always shows the whole flight with the
+current position on it, and the stats always describe now. The control hides
+itself while a flight is still shorter than six hours, when every range would
+show the same thing.
+
 Archived flights are separate and unchanged: `flights/<flight_id>/`
 (`flight.mdx` + `track.json`), read at build time, fully static forever.
 
