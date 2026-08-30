@@ -5,16 +5,22 @@
 # launch_lat, and launch_lon are only filled in after the fact, and flights
 # stay inactive until they are actually in the air.
 
+# Launched 2026-08-29, heard 18:40-20:20 UTC, then silent. Left inactive: it
+# is not pulled and never reaches the Supabase cache, so the site does not
+# show it. Flip active back on only if it is heard again.
 [[flights]]
 flight_id = "F1A"
 callsign = "KR4OGH"
 band = "20m"
 channel = 206
 active = false
+launch_utc = "2026-08-29 18:40:00"
 
+# In the air. First heard 2026-08-30 12:44 UTC.
 [[flights]]
 flight_id = "F1B"
 callsign = "KR4OGH"
 band = "20m"
 channel = 348
-active = false
+active = true
+launch_utc = "2026-08-30 12:44:00"
