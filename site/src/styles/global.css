@@ -12,7 +12,7 @@
   --text-faint: #5c6a94;
   --accent: #7dd3fc;
   --accent-deep: #38bdf8;
-  --live: #fbbf24;
+  --live: #34d399;  /* a flight that is up is good news, so green */
   --pass: #34d399;
   --fail: #f87171;
   --wounded: #fb923c;
@@ -154,9 +154,10 @@ main { padding: 2.2rem 0 3.5rem; }
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* Green, not amber: amber reads as "degraded" when the flight is fine. */
 .badge-live {
-  color: var(--live); border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(251, 191, 36, 0.08);
+  color: var(--live); border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.09);
 }
 .badge-live::before {
   content: "";
@@ -221,7 +222,7 @@ main { padding: 2.2rem 0 3.5rem; }
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
   gap: 0.7rem;
 }
 .stat {
@@ -267,11 +268,15 @@ main { padding: 2.2rem 0 3.5rem; }
 }
 
 .fv-charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 1rem;
-  margin: 1.2rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  margin: 1.6rem 0;
 }
+/* Full width, one per row. Altitude and speed are most of why people open
+   this page; side by side they were half-size and hard to read. */
+.fv-chart { width: 100%; }
+.fv-chart svg { width: 100%; height: auto; display: block; }
 
 /* Narrative sits below the data, at reading width and visually secondary. */
 .flight-notes {
@@ -440,3 +445,82 @@ main { padding: 2.2rem 0 3.5rem; }
   .site-header .container { flex-wrap: wrap; gap: 0.5rem 1rem; }
   .site-nav { margin-left: 0; }
 }
+
+
+/* ---------- live flight page ---------- */
+
+.flight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.flight-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0;
+}
+.flight-subtitle {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  margin: 0.35rem 0 0;
+}
+
+/* Metric / imperial. A segmented pair rather than a dropdown: two options,
+   both worth showing, and one tap to swap. */
+.unit-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.unit-toggle button {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.85rem;
+  background: transparent;
+  color: var(--text-faint);
+  border: 0;
+  cursor: pointer;
+}
+.unit-toggle button:hover { color: var(--text); }
+.unit-toggle button[aria-pressed="true"] {
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+
+.flight-updated {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  margin: 0.9rem 0 0;
+}
+.flight-note {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  margin-top: 2rem;
+  font-size: 0.86rem;
+  color: var(--text-faint);
+  max-width: 62ch;
+}
+
+/* A button that reads as a link: these are secondary actions next to prose,
+   and a real button would shout louder than the sentence around it. */
+.linklike {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.linklike:disabled { opacity: 0.5; cursor: default; }

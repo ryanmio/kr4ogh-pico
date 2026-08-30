@@ -4,7 +4,8 @@
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { fmtInt, fmtUtc } from "./format";
+import { fmtUtc } from "./format";
+import { altitude as fmtAltitude, type Units } from "./units";
 import type { FlightMeta, TrackPoint } from "./types";
 
 // Keyless dark basemap. CARTO's dark_all was here first, but CARTO now
@@ -78,6 +79,7 @@ function fitHeightToTrack(el: HTMLElement, latlngs: L.LatLng[]): void {
  * initialized" and leaves a blank box. */
 export function renderMap(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
+  units: Units = "metric",
 ): L.Map {
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
@@ -128,8 +130,8 @@ export function renderMap(
       fillColor: altitudeColor(p.altitude_m, altLo, altHi),
       fillOpacity: 0.95,
     }).bindTooltip(
-      `${fmtUtc(p.utc)}<br>${p.grid6} · ${fmtInt(p.altitude_m)} m · ` +
-      `${p.speed_kt} kt · ${p.voltage_v.toFixed(2)} V`,
+      `${fmtUtc(p.utc)}<br>${p.grid6} · ${fmtAltitude(p.altitude_m, units).text}` +
+      ` · ${p.voltage_v.toFixed(2)} V`,
     ).addTo(map);
   });
 
@@ -163,9 +165,9 @@ export function renderMap(
   legend.onAdd = () => {
     const div = L.DomUtil.create("div", "map-legend");
     div.innerHTML =
-      `<span>${fmtInt(altLo)} m</span>` +
+      `<span>${fmtAltitude(altLo, units).text}</span>` +
       '<span class="map-legend-bar"></span>' +
-      `<span>${fmtInt(altHi)} m</span>`;
+      `<span>${fmtAltitude(altHi, units).text}</span>`;
     return div;
   };
   legend.addTo(map);

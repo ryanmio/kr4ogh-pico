@@ -38,7 +38,3 @@ export async function archivedFlights(): Promise<ArchivedFlight[]> {
     return lastOf(b).localeCompare(lastOf(a));
   });
 }
-
-export function archivedFlightIds(): string[] {
-  return [...tracksById.keys()];
-}

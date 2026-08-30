@@ -35,6 +35,14 @@ cycle, and receivers take 2-3 minutes to decode and upload, so the newest fix
 in existence is 3-13 minutes old. The page shows that fix. Nothing can do
 better, including Traquito's own dashboard.
 
+The home page **is** the flight: while something is up, there is nothing to
+click through to. `/live/<flight_id>/` is the permalink for a particular
+flight and renders the same component.
+
+Numbers are shown in metric or imperial, the reader's choice, remembered per
+browser. The stored track is always metric and always knots; conversion
+happens only at display, so there is one representation of the data.
+
 Archived flights are separate and unchanged: `flights/<flight_id>/`
 (`flight.mdx` + `track.json`), read at build time, fully static forever.
 
@@ -64,10 +72,15 @@ npm run gen:channels  # regenerate from tool/picolog/channels_20m.csv
 
 ```sh
 npm install
-npm run dev           # http://localhost:4321
-npm run build         # static output in dist/
-npm run live-check    # fetch + decode the live flight in the terminal
+npm run dev            # http://localhost:4321
+npm run build          # static output in dist/
+npm run live-check     # fetch + decode the live flight in the terminal
+npm run browser-check  # drive the page in Chrome: map draws, survives refresh
 ```
+
+`npm run browser-check` needs a running dev server and the system Chrome. It
+exists because a refresh once blanked the map and nothing in the build or the
+typecheck could see it.
 
 `npm run dev` shows real flights immediately: the data is in git, so there is
 nothing to configure and no local services to start.
