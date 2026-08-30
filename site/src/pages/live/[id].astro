@@ -1,0 +1,149 @@
+---
+/** A flight that is still up.
+ *
+ * The track committed to git is bundled into this page at build time, so the
+ * map, stats and table are all there on first paint with no network round
+ * trip. The script then asks wspr.live directly for anything newer and
+ * re-renders. There is no server and no database in this path: if the export
+ * is stale the page still opens instantly and catches itself up; if
+ * wspr.live is unreachable the bundled track still stands.
+ */
+import Base from "../../layouts/Base.astro";
+import { withBase } from "../../lib/base";
+import { statsHtml, tableHtml } from "../../lib/render";
+import type { FlightMeta, TrackPoint } from "../../lib/types";
+import { liveFlights, trackFor } from "../../lib/flights";
+
+export async function getStaticPaths() {
+  return liveFlights().map((flight) => ({
+    params: { id: flight.flight_id },
+    props: { flight, track: trackFor(flight.flight_id) },
+  }));
+}
+
+const { flight, track } = Astro.props as { flight: FlightMeta; track: TrackPoint[] };
+
+// Rendered at build time so the numbers are on the page before any script
+// runs; the client replaces them once it has anything newer.
+const stats = statsHtml(track, true);
+const table = tableHtml(track);
+const last = track.at(-1);
+---
+
+<Base
+  title={`${flight.flight_id} live — KR4OGH`}
+  description={`Live pico balloon telemetry for ${flight.flight_id}, decoded in your browser from WSPR spots.`}
+>
+  <div class="flight-title-row">
+    <h1>{flight.flight_id} · {flight.callsign}</h1>
+    <span class:list={["badge", flight.status === "live" ? "badge-live" : "badge-closed"]}>
+      {flight.status}
+    </span>
+  </div>
+  <p class="flight-subtitle">
+    {flight.band} · channel {flight.channel}
+    {flight.launch_utc ? ` · launched ${flight.launch_utc.slice(0, 10)} UTC` : ""}
+    {flight.close_reason ? ` · ${flight.close_reason}` : ""}
+  </p>
+
+  <div
+    id="fv"
+    data-flight={JSON.stringify(flight)}
+    data-track={JSON.stringify(track)}
+  >
+    <div class="fv-map-slot"></div>
+    <div class="fv-stats" set:html={stats} />
+    <div class="fv-charts-slot"></div>
+    <Fragment set:html={table} />
+  </div>
+
+  <div class="toolbar">
+    <button class="button" id="refresh">Refresh</button>
+    <button class="button" id="download">Download JSON</button>
+    <span class="updated" id="updated">
+      {last ? `newest fix ${last.utc} UTC` : "no fixes yet"}
+    </span>
+  </div>
+  <p class="empty-note">
+    Positions come straight from <a href="https://wspr.live/">wspr.live</a>,
+    decoded in your browser. The tracker sends one fix every 10 minutes, so the
+    newest position is normally a few minutes old. Gaps overnight are normal:
+    it runs on solar.
+  </p>
+
+  <p class="toolbar"><a class="button" href={withBase("/")}>All flights</a></p>
+</Base>
+
+<script>
+  import { renderChartsInto, renderMapInto } from "../../lib/flightview";
+  import { refreshTrack } from "../../lib/livetrack";
+  import { statsHtml, tableHtml } from "../../lib/render";
+  import type { FlightMeta, TrackPoint } from "../../lib/types";
+
+  const root = document.getElementById("fv")!;
+  const meta = JSON.parse(root.dataset.flight!) as FlightMeta;
+  let track = JSON.parse(root.dataset.track!) as TrackPoint[];
+
+  const updatedEl = document.getElementById("updated")!;
+  const refreshBtn = document.getElementById("refresh") as HTMLButtonElement;
+  const REFRESH_MS = 2 * 60 * 1000;
+
+  const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
+  const chartSlot = root.querySelector<HTMLElement>(".fv-charts-slot")!;
+
+  // Draw immediately from the bundled track: no await, no spinner.
+  renderMapInto(mapSlot, meta, track);
+  renderChartsInto(chartSlot, track);
+
+  function redraw() {
+    root.querySelector(".fv-stats")!.innerHTML = statsHtml(track, true);
+    root.querySelector("table")?.closest(".table-wrap, table")?.remove();
+    root.insertAdjacentHTML("beforeend", tableHtml(track));
+    mapSlot.replaceChildren();
+    mapSlot.classList.remove("fv-map");
+    chartSlot.replaceChildren();
+    chartSlot.classList.remove("fv-charts");
+    renderMapInto(mapSlot, meta, track);
+    renderChartsInto(chartSlot, track);
+  }
+
+  async function update() {
+    refreshBtn.disabled = true;
+    updatedEl.textContent = "checking wspr.live…";
+    const result = await refreshTrack(meta, track);
+    refreshBtn.disabled = false;
+    if (result.error) {
+      const last = track.at(-1);
+      updatedEl.textContent = last
+        ? `wspr.live unreachable — showing up to ${last.utc} UTC`
+        : "wspr.live unreachable";
+      return;
+    }
+    if (result.added > 0) {
+      track = result.track;
+      redraw();
+    }
+    const last = track.at(-1);
+    updatedEl.textContent = last
+      ? `newest fix ${last.utc} UTC, checked ${new Date().toISOString().slice(11, 19)} UTC`
+      : "no fixes yet";
+  }
+
+  refreshBtn.addEventListener("click", update);
+  document.getElementById("download")!.addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify({ ...meta, track }, null, 1)],
+      { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${meta.flight_id}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  update();
+  setInterval(update, REFRESH_MS);
+  // A phone that has been asleep should catch up the moment it is looked at.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") update();
+  });
+</script>
