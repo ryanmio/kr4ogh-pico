@@ -54,7 +54,7 @@ const last = track.at(-1);
     <div class="fv-map-slot"></div>
     <div class="fv-stats" set:html={stats} />
     <div class="fv-charts-slot"></div>
-    <Fragment set:html={table} />
+    <div class="fv-table-slot" set:html={table} />
   </div>
 
   <div class="toolbar">
@@ -75,6 +75,7 @@ const last = track.at(-1);
 </Base>
 
 <script>
+  import type L from "leaflet";
   import { renderChartsInto, renderMapInto } from "../../lib/flightview";
   import { refreshTrack } from "../../lib/livetrack";
   import { statsHtml, tableHtml } from "../../lib/render";
@@ -90,32 +91,64 @@ const last = track.at(-1);
 
   const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
   const chartSlot = root.querySelector<HTMLElement>(".fv-charts-slot")!;
+  const tableSlot = root.querySelector<HTMLElement>(".fv-table-slot")!;
 
-  // Draw immediately from the bundled track: no await, no spinner.
-  renderMapInto(mapSlot, meta, track);
+  let map: L.Map | null = null;
+  // Once the reader has panned or zoomed, a refresh must not yank the view
+  // back to the fitted bounds under their hands.
+  let userMoved = false;
+
+  function drawMap(): L.Map | null {
+    const held = renderMapInto(mapSlot, meta, track);
+    if (!held) return null;
+    const onInteract = () => { userMoved = true; };
+    held.on("dragstart", onInteract);
+    mapSlot.addEventListener("wheel", onInteract, { passive: true });
+    held.getContainer().addEventListener("dblclick", onInteract);
+    held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
+    return held;
+  }
+
+  map = drawMap();
   renderChartsInto(chartSlot, track);
 
   function redraw() {
-    root.querySelector(".fv-stats")!.innerHTML = statsHtml(track, true);
-    root.querySelector("table")?.closest(".table-wrap, table")?.remove();
-    root.insertAdjacentHTML("beforeend", tableHtml(track));
+    const view = userMoved && map
+      ? { center: map.getCenter(), zoom: map.getZoom() }
+      : null;
+
+    // Leaflet refuses to initialise the same container twice, so the old map
+    // has to be disposed rather than merely emptied.
+    map?.remove();
+    map = null;
     mapSlot.replaceChildren();
     mapSlot.classList.remove("fv-map");
+    mapSlot.style.height = "";
+    map = drawMap();
+    if (view && map) map.setView(view.center, view.zoom, { animate: false });
+
     chartSlot.replaceChildren();
     chartSlot.classList.remove("fv-charts");
-    renderMapInto(mapSlot, meta, track);
     renderChartsInto(chartSlot, track);
+
+    // Keep the table's disclosure state: it is annoying to have it snap shut
+    // every couple of minutes while you are reading it.
+    const wasOpen = tableSlot.querySelector("details")?.open ?? false;
+    tableSlot.innerHTML = tableHtml(track);
+    const details = tableSlot.querySelector("details");
+    if (details) details.open = wasOpen;
+
+    root.querySelector(".fv-stats")!.innerHTML = statsHtml(track, true);
   }
 
   async function update() {
     refreshBtn.disabled = true;
-    updatedEl.textContent = "checking wspr.live…";
     const result = await refreshTrack(meta, track);
     refreshBtn.disabled = false;
     if (result.error) {
       const last = track.at(-1);
       updatedEl.textContent = last
-        ? `wspr.live unreachable — showing up to ${last.utc} UTC`
+        ? `wspr.live unreachable \u2014 showing up to ${last.utc} UTC`
         : "wspr.live unreachable";
       return;
     }
