@@ -1,60 +1,65 @@
-/** Client-side flight rendering shared by both data paths: archived pages
- * feed it a static track.json from git, the live page feeds it rows from the
- * Supabase cache, so a flight looks the same either way.
- *
- * Archived pages server-render the stat strip and table at build time and
- * call renderMapInto / renderChartsInto for their own layout. The live page
- * has no build-time data and uses renderFlightView for all of it. */
+/** Client-side map and chart rendering, shared by the live view and archived
+ * flight pages so a flight looks the same either way. Both server-render the
+ * stat strip and table at build time and call these for the interactive
+ * parts. */
 
 import type L from "leaflet";
 import { renderChart } from "./charts";
 import { parseUtc } from "./format";
+import { convert, unitLabels, type Units } from "./units";
 import { renderMap } from "./map";
-import { statsHtml, tableHtml } from "./render";
 import type { FlightMeta, TrackPoint } from "./types";
 
 /** Returns the Leaflet map, or null when there was nothing to draw. Callers
  * that re-render must call remove() on it first; see renderMap. */
 export function renderMapInto(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
+  units: Units = "metric",
 ): L.Map | null {
   if (!track.length && meta.launch_lat == null) return null;
   el.classList.add("fv-map");
-  return renderMap(el, meta, track);
+  return renderMap(el, meta, track, units);
 }
 
-export function renderChartsInto(el: HTMLElement, track: TrackPoint[]): void {
+/** One chart per row, full width, each its own block to scroll past.
+ *
+ * Altitude, speed, battery and temperature are the four things people
+ * actually want to watch, so none of them is squeezed into a half-width
+ * column beside another. Charts are drawn in the reader's chosen units; the
+ * stored track stays metric.
+ */
+export function renderChartsInto(
+  el: HTMLElement, track: TrackPoint[], units: Units = "metric",
+): void {
   if (!track.length) return;
   el.classList.add("fv-charts");
+  const labels = unitLabels(units);
   const t = track.map((p) => parseUtc(p.utc).getTime());
   const domain: [number, number] = [t[0]!, t[t.length - 1]!];
   const series = (get: (p: TrackPoint) => number) =>
     track.map((p, i) => ({ t: t[i]!, v: get(p) }));
   const specs = [
-    { label: "Altitude", unit: "m", color: "#7dd3fc",
-      values: series((p) => p.altitude_m), decimals: 0 },
-    { label: "Speed", unit: "kt", color: "#a78bfa",
-      values: series((p) => p.speed_kt), decimals: 0 },
-    { label: "Voltage", unit: "V", color: "#34d399",
-      values: series((p) => p.voltage_v), decimals: 2 },
-    { label: "Die temperature", unit: "°C", color: "#fb923c",
-      values: series((p) => p.temperature_c), decimals: 0 },
+    {
+      label: "Altitude", unit: labels.altitude, color: "#7dd3fc",
+      values: series((p) => convert.altitude(p.altitude_m, units)), decimals: 0,
+    },
+    {
+      label: "Ground speed", unit: labels.speed, color: "#a78bfa",
+      values: series((p) => convert.speed(p.speed_kt, units)), decimals: 0,
+    },
+    {
+      label: "Battery", unit: "V", color: "#34d399",
+      values: series((p) => p.voltage_v), decimals: 2,
+    },
+    {
+      label: "Tracker temperature", unit: labels.temperature, color: "#fb923c",
+      values: series((p) => convert.temperature(p.temperature_c, units)), decimals: 0,
+    },
   ];
   for (const spec of specs) {
-    const chartEl = document.createElement("div");
-    el.appendChild(chartEl);
-    renderChart(chartEl, { ...spec, domain });
+    const section = document.createElement("section");
+    section.className = "fv-chart";
+    el.appendChild(section);
+    renderChart(section, { ...spec, domain });
   }
-}
-
-export function renderFlightView(
-  root: HTMLElement, meta: FlightMeta, track: TrackPoint[], live: boolean,
-): void {
-  root.innerHTML = `
-    <div class="fv-map-slot"></div>
-    <div class="fv-stats">${statsHtml(track, live)}</div>
-    <div class="fv-charts-slot"></div>
-    ${tableHtml(track)}`;
-  renderMapInto(root.querySelector<HTMLElement>(".fv-map-slot")!, meta, track);
-  renderChartsInto(root.querySelector<HTMLElement>(".fv-charts-slot")!, track);
 }

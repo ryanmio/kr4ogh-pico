@@ -41,12 +41,6 @@ export function fmtInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-export function fmtCoord(lat: number, lon: number): string {
-  const ns = lat >= 0 ? "N" : "S";
-  const ew = lon >= 0 ? "E" : "W";
-  return `${Math.abs(lat).toFixed(2)}° ${ns}, ${Math.abs(lon).toFixed(2)}° ${ew}`;
-}
-
 const EARTH_RADIUS_KM = 6371;
 
 export function haversineKm(
