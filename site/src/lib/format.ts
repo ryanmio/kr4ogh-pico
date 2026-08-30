@@ -5,9 +5,17 @@
 import type { TrackPoint } from "./types";
 
 export function parseUtc(utc: string): Date {
-  // Accepts "2026-08-18T00:04:00Z" (archives) and
-  // "2026-08-18T00:04:00+00:00" (Supabase).
-  return new Date(utc);
+  // Accepts "2026-08-18T00:04:00Z" (archives), "2026-08-18T00:04:00+00:00",
+  // and the naive "2026-08-18 00:04:00" the exporter and the browser decoder
+  // both produce.
+  //
+  // The naive form carries no zone, and V8 parses a space-separated datetime
+  // as LOCAL time. Left alone, every timestamp on the site would be shifted
+  // by whatever offset the visitor's own machine happens to be in. Normalise
+  // to explicit UTC before parsing.
+  const iso = utc.includes("T") ? utc : utc.replace(" ", "T");
+  const zoned = /([Zz]|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  return new Date(zoned);
 }
 
 export function fmtUtc(utc: string | Date): string {

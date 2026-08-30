@@ -10,7 +10,8 @@
     "check": "astro check",
     "verify": "tsx dev/verify-port.ts",
     "gen:channels": "node dev/gen-channels.mjs",
-    "live-check": "tsx dev/live-check.ts"
+    "live-check": "tsx dev/live-check.ts",
+    "browser-check": "node dev/browser-check.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^4.3.13",
@@ -21,6 +22,7 @@
     "@astrojs/check": "^0.9.10",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^26.4.0",
+    "playwright-core": "^1.62.1",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
   }

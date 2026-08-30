@@ -6,18 +6,21 @@
  * call renderMapInto / renderChartsInto for their own layout. The live page
  * has no build-time data and uses renderFlightView for all of it. */
 
+import type L from "leaflet";
 import { renderChart } from "./charts";
 import { parseUtc } from "./format";
 import { renderMap } from "./map";
 import { statsHtml, tableHtml } from "./render";
 import type { FlightMeta, TrackPoint } from "./types";
 
+/** Returns the Leaflet map, or null when there was nothing to draw. Callers
+ * that re-render must call remove() on it first; see renderMap. */
 export function renderMapInto(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
-): void {
-  if (!track.length && meta.launch_lat == null) return;
+): L.Map | null {
+  if (!track.length && meta.launch_lat == null) return null;
   el.classList.add("fv-map");
-  renderMap(el, meta, track);
+  return renderMap(el, meta, track);
 }
 
 export function renderChartsInto(el: HTMLElement, track: TrackPoint[]): void {

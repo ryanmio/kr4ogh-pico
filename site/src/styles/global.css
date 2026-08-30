@@ -286,6 +286,10 @@ main { padding: 2.2rem 0 3.5rem; }
 /* Matches the CARTO dark basemap's ocean fill, so any area beyond the top or
    bottom of the world blends into the map instead of showing as a void. */
 .leaflet-container { background: #1e1e1e; font: inherit; }
+/* Esri's dark canvas is lighter than this page's ground, so knock the tiles
+   back. Scoped to the tile pane so the altitude-coloured track, the tooltips
+   and the controls above it keep their real colours. */
+.leaflet-tile-pane { filter: brightness(0.62) saturate(0.85); }
 .leaflet-container a { color: var(--accent); }
 .leaflet-tooltip {
   background: var(--bg-panel); border: 1px solid var(--border);
