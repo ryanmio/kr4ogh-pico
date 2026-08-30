@@ -1,7 +1,8 @@
 ---
 import Base from "../layouts/Base.astro";
-import { archivedFlightIds, archivedFlights } from "../lib/archive";
+import { archivedFlights } from "../lib/archive";
 import { withBase } from "../lib/base";
+import { liveFlights, trackFor } from "../lib/flights";
 import { fmtInt } from "../lib/format";
 import { flightCardHtml, outcomeBadgeClass } from "../lib/render";
 
@@ -17,6 +18,26 @@ const archiveCards = archives.map(({ entry, archive }) =>
     summary: entry.data.summary,
   }),
 );
+
+// Live cards are built from the committed track, so the card carries a real
+// position before any script runs. The script then refreshes them in place
+// from wspr.live.
+const live = liveFlights().map((flight) => ({ flight, track: trackFor(flight.flight_id) }));
+const liveCards = live.map(({ flight, track }) => {
+  const last = track.at(-1);
+  return flightCardHtml({
+    href: withBase(`/live/${flight.flight_id}/`),
+    title: `${flight.flight_id} · ${flight.callsign}`,
+    badge: "live",
+    badgeClass: "badge-live",
+    meta: `${flight.band} · ch ${flight.channel}` +
+      (flight.launch_utc ? ` · launched ${flight.launch_utc.slice(0, 10)}` : ""),
+    summary: last
+      ? `Last heard ${last.utc} UTC from ${last.grid6} at ` +
+        `${fmtInt(last.altitude_m)} m, ${last.voltage_v.toFixed(2)} V.`
+      : "No decoded telemetry yet.",
+  });
+});
 ---
 
 <Base title="KR4OGH pico balloon flights">
@@ -36,12 +57,14 @@ const archiveCards = archives.map(({ entry, archive }) =>
     <div class="section-head">
       <h2>In the air</h2>
     </div>
-    <div
-      id="live-flights"
-      data-archived={JSON.stringify(archivedFlightIds())}
-    >
-      <p class="loading">Loading…</p>
-    </div>
+    {live.length > 0
+      ? <div
+          class="flight-grid"
+          id="live-flights"
+          data-flights={JSON.stringify(live)}
+          set:html={liveCards.join("")}
+        />
+      : <div class="notice notice-accent">Nothing in the air right now.</div>}
   </section>
 
   <section class="section">
@@ -55,57 +78,32 @@ const archiveCards = archives.map(({ entry, archive }) =>
 </Base>
 
 <script>
-  import { withBase } from "../lib/base";
   import { fmtInt, fmtRelative } from "../lib/format";
-  import { flightCardHtml } from "../lib/render";
-  import { cacheConfigured, fetchFlights, fetchLatest } from "../lib/supabase";
+  import { refreshTrack } from "../lib/livetrack";
+  import type { FlightMeta, TrackPoint } from "../lib/types";
 
-  const el = document.getElementById("live-flights")!;
-  const archivedIds = new Set<string>(JSON.parse(el.dataset.archived!));
+  const grid = document.getElementById("live-flights");
+  if (grid) {
+    const entries = JSON.parse(grid.dataset.flights!) as
+      { flight: FlightMeta; track: TrackPoint[] }[];
+    const cards = [...grid.querySelectorAll<HTMLElement>(".flight-card")];
 
-  function note(html: string, accent = false) {
-    el.innerHTML = `<div class="notice${accent ? " notice-accent" : ""}">${html}</div>`;
-  }
-
-  async function loadLive() {
-    if (!cacheConfigured()) {
-      note("No live cache configured for this build. The archive still works.");
-      return;
-    }
-    let flights;
-    try {
-      flights = await fetchFlights();
-    } catch {
-      note("Live cache unreachable, probably paused between flights. " +
-        "The archive still works.");
-      return;
-    }
-    // Anything already exported to git renders from the archive instead.
-    const live = flights.filter((f) => !archivedIds.has(f.flight_id));
-    if (live.length === 0) {
-      note("Nothing in the air right now.", true);
-      return;
-    }
-    const cards = await Promise.all(
-      live.map(async (f) => {
-        const latest = await fetchLatest(f.flight_id).catch(() => null);
-        const summary = latest
-          ? `Last heard ${fmtRelative(latest.utc)} from ${latest.grid6} at ` +
-            `${fmtInt(latest.altitude_m)} m, ${latest.voltage_v.toFixed(2)} V.`
+    async function refresh() {
+      await Promise.all(entries.map(async ({ flight, track }, i) => {
+        const summary = cards[i]?.querySelector(".flight-card-summary");
+        if (!summary) return;
+        const result = await refreshTrack(flight, track);
+        const last = result.track.at(-1);
+        // On failure refreshTrack returns the bundled track untouched, so the
+        // card degrades to the last known position rather than to an error.
+        summary.textContent = last
+          ? `Last heard ${fmtRelative(last.utc)} from ${last.grid6} at `
+            + `${fmtInt(last.altitude_m)} m, ${last.voltage_v.toFixed(2)} V.`
           : "No decoded telemetry yet.";
-        return flightCardHtml({
-          href: withBase(`/live/?flight=${encodeURIComponent(f.flight_id)}`),
-          title: `${f.flight_id} · ${f.callsign}`,
-          badge: f.status === "live" ? "live" : "closed",
-          badgeClass: f.status === "live" ? "badge-live" : "badge-closed",
-          meta: `${f.band} · ch ${f.channel}` +
-            (f.launch_utc ? ` · launched ${f.launch_utc.slice(0, 10)}` : ""),
-          summary,
-        });
-      }),
-    );
-    el.innerHTML = `<div class="flight-grid">${cards.join("")}</div>`;
-  }
+      }));
+    }
 
-  loadLive();
+    refresh();
+    setInterval(refresh, 2 * 60 * 1000);
+  }
 </script>

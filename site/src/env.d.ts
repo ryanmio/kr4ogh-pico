@@ -1,12 +1,6 @@
 /// <reference path="../.astro/types.d.ts" />
 
-interface ImportMetaEnv {
-  /** Supabase project URL, e.g. https://xyz.supabase.co (optional). */
-  readonly PUBLIC_SUPABASE_URL?: string;
-  /** Supabase anon (or publishable) key. Read-only: RLS grants anon SELECT only. */
-  readonly PUBLIC_SUPABASE_ANON_KEY?: string;
-}
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
-}
+// The site reads no secrets and no service credentials. Flight data comes
+// from committed files under src/data/ and, in the browser, straight from
+// wspr.live's public endpoint. SITE_URL / SITE_BASE are supplied by the
+// Pages build (see .github/workflows/site.yml) and consumed by Astro itself.
