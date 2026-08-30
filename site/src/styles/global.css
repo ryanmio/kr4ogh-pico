@@ -220,10 +220,15 @@ main { padding: 2.2rem 0 3.5rem; }
 
 /* ---------- stat strip ---------- */
 
+/* Fixed column counts rather than auto-fit: with eight cards, 2 / 4 always
+   divide evenly, so the last row is never a single stranded card. */
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
+}
+@media (min-width: 760px) {
+  .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .stat {
   background: var(--bg-raised);
