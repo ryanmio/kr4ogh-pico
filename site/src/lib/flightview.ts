@@ -1,24 +1,24 @@
 /** Client-side map and chart rendering, shared by the live view and archived
- * flight pages so a flight looks the same either way. Both server-render the
- * stat strip and table at build time and call these for the interactive
+ * flight pages so a flight looks the same either way. Both server-render
+ * their summary HTML at build time and call these for the interactive
  * parts. */
 
 import type L from "leaflet";
 import { renderChart } from "./charts";
 import { parseUtc } from "./format";
 import { convert, unitLabels, type Units } from "./units";
-import { renderMap } from "./map";
+import { renderMap, type MapOptions } from "./map";
 import type { FlightMeta, TrackPoint } from "./types";
 
 /** Returns the Leaflet map, or null when there was nothing to draw. Callers
  * that re-render must call remove() on it first; see renderMap. */
 export function renderMapInto(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
-  units: Units = "metric",
+  opts: MapOptions = {},
 ): L.Map | null {
   if (!track.length && meta.launch_lat == null) return null;
-  el.classList.add("fv-map");
-  return renderMap(el, meta, track, units);
+  el.classList.add(opts.sizing === "fill" ? "fv-map-fill" : "fv-map");
+  return renderMap(el, meta, track, opts);
 }
 
 /** One chart per row, full width, each its own block to scroll past.

@@ -1,38 +1,37 @@
-/** Leaflet track map. Points are colored by altitude; longitudes are
- * unwrapped so a Pacific crossing draws as one continuous line instead of
- * jumping across the antimeridian. */
+/** Leaflet track map. Points are colored by a selectable metric (altitude by
+ * default); longitudes are unwrapped so a Pacific crossing draws as one
+ * continuous line instead of jumping across the antimeridian. */
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { fmtUtc } from "./format";
-import { altitude as fmtAltitude, type Units } from "./units";
+import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
+import { altitude as fmtAltitude, speed as fmtSpeed, type Units } from "./units";
 import type { FlightMeta, TrackPoint } from "./types";
 
-// Keyless dark basemap. CARTO's dark_all was here first, but CARTO now
-// requires an API key and serves watermarked "API KEY REQUIRED" tiles
-// without one, which is unusable on a public page. Esri's dark canvas needs
-// no key and suits the dark theme; attribution is required and given below.
+// Keyless satellite basemap. The dark canvas basemap that was here first
+// made land and ocean nearly the same shade of grey, which for a balloon
+// site is the one distinction the map exists to show. Esri's imagery needs
+// no key, and coastlines, mountains and open water read at a glance; a
+// labels layer on top names the places the balloon is drifting past.
 const TILE_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/" +
-  "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/" +
+  "MapServer/tile/{z}/{y}/{x}";
+const LABEL_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/" +
+  "World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 const TILE_ATTRIBUTION =
-  'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, ' +
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' +
-  " contributors";
+  'Imagery &copy; <a href="https://www.esri.com/">Esri</a>, Maxar, ' +
+  "Earthstar Geographics";
 
-/** Blue (low) through cyan to yellow (high). */
-function altitudeColor(alt: number, lo: number, hi: number): string {
-  const stops: [number, number, number][] = [
-    [59, 130, 246],
-    [34, 211, 238],
-    [253, 224, 71],
-  ];
-  const f = hi > lo ? (alt - lo) / (hi - lo) : 0.5;
-  const pos = Math.min(Math.max(f, 0), 1) * (stops.length - 1);
-  const i = Math.min(Math.floor(pos), stops.length - 2);
-  const k = pos - i;
-  const mix = stops[i]!.map((c, ch) => Math.round(c + (stops[i + 1]![ch]! - c) * k));
-  return `rgb(${mix.join(",")})`;
+export interface MapOptions {
+  units?: Units;
+  /** What the spots are colored by. */
+  metric?: MetricKey;
+  /** "fit" sizes the box to the track (article-style pages); "fill" leaves
+   * the box alone because CSS already makes it fill its space (the live
+   * full-page view). */
+  sizing?: "fit" | "fill";
 }
 
 /** Shift each longitude by ±360 as needed so consecutive points never jump
@@ -88,11 +87,11 @@ function fitBoundsFor(latlngs: L.LatLng[]): L.LatLngBounds {
  * the fit is on longitude, so the extra height was slack anyway. */
 const NARROW_PX = 700;
 
-/** Size the map box to the view it has to show. A float that has wrapped the
- * globe several times is fitted on longitude, so its height is pinned to the
- * world's own height at that zoom: any taller and the extra is empty space off
- * the top and bottom of the map. A flight still near its launch point is the
- * other way round and gets a tall box.
+/** Size the map box to the view it has to show ("fit" pages only). A float
+ * that has wrapped the globe several times is fitted on longitude, so its
+ * height is pinned to the world's own height at that zoom: any taller and
+ * the extra is empty space off the top and bottom of the map. A flight still
+ * near its launch point is the other way round and gets a tall box.
  *
  * It takes the fitted bounds rather than the raw track so that the padding
  * and the room around the balloon are counted once, here and in the fit, and
@@ -120,29 +119,39 @@ function fitHeightToBounds(el: HTMLElement, fitted: L.LatLngBounds): void {
  * initialized" and leaves a blank box. */
 export function renderMap(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
-  units: Units = "metric",
+  opts: MapOptions = {},
 ): L.Map {
+  const units = opts.units ?? "metric";
+  const metric = METRICS[opts.metric ?? "altitude"];
+  const fill = opts.sizing === "fill";
+
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
-  // Worked out before the map exists, because the box has to be the right
-  // height before Leaflet measures it.
+  // Worked out before the map exists, because on "fit" pages the box has to
+  // be the right height before Leaflet measures it.
   const fitted = latlngs.length > 0 ? fitBoundsFor(latlngs) : null;
-  if (fitted) fitHeightToBounds(el, fitted);
+  if (fitted && !fill) fitHeightToBounds(el, fitted);
 
   const map = L.map(el, {
     preferCanvas: true,
     worldCopyJump: false,
-    zoomControl: true,
+    // In the full-page view the top corners are under the floating header,
+    // so the zoom control moves to the right edge below it.
+    zoomControl: !fill,
     attributionControl: true,
     // Fractional zoom, so a fitted track fills the box exactly instead of
     // snapping to the next zoom out and leaving slack around the world.
     zoomSnap: 0,
     maxBoundsViscosity: 1,
   });
-  // Classed so the CSS that knocks the basemap back does not also dim a
-  // weather layer drawn over it; see global.css.
+  if (fill) L.control.zoom({ position: "topright" }).addTo(map);
+  // Classed so CSS can treat the basemap, the labels and a weather layer
+  // differently; see global.css.
   L.tileLayer(TILE_URL, {
-    attribution: TILE_ATTRIBUTION, maxZoom: 16, className: "basemap-tiles",
+    attribution: TILE_ATTRIBUTION, maxZoom: 17, className: "basemap-tiles",
+  }).addTo(map);
+  L.tileLayer(LABEL_URL, {
+    maxZoom: 17, maxNativeZoom: 10, className: "label-tiles",
   }).addTo(map);
 
   if (meta.launch_lat != null && meta.launch_lon != null) {
@@ -162,31 +171,37 @@ export function renderMap(
     return map;
   }
 
-  L.polyline(latlngs, { color: "#64748b", weight: 1.5, opacity: 0.8 }).addTo(map);
+  // A dark casing under a light line: over satellite imagery, and over a
+  // weather layer, a single thin grey line vanishes. The casing separates
+  // the path from whatever is beneath it.
+  L.polyline(latlngs, { color: "#0b1020", weight: 5, opacity: 0.5 }).addTo(map);
+  L.polyline(latlngs, { color: "#e2e8f0", weight: 1.8, opacity: 0.9 }).addTo(map);
 
-  // The polyline above carries the full track; interactive per-point markers
+  // The polylines above carry the full track; interactive per-point markers
   // are thinned on long flights so a two-month, several-thousand-point track
   // stays responsive. The most recent point is always kept.
-  const altLo = Math.min(...track.map((p) => p.altitude_m));
-  const altHi = Math.max(...track.map((p) => p.altitude_m));
+  const raws = track.map((p) => metric.raw(p));
+  const lo = Math.min(...raws);
+  const hi = Math.max(...raws);
   const step = Math.max(1, Math.ceil(track.length / 900));
   track.forEach((p, i) => {
     if (i % step !== 0 && i !== track.length - 1) return;
     L.circleMarker(latlngs[i]!, {
-      radius: 3.5,
-      stroke: false,
-      fillColor: altitudeColor(p.altitude_m, altLo, altHi),
-      fillOpacity: 0.95,
+      radius: 4,
+      color: "rgba(11, 16, 32, 0.6)",
+      weight: 1,
+      fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
+      fillOpacity: 1,
     }).bindTooltip(
-      `${fmtUtc(p.utc)}<br>${p.grid6} · ${fmtAltitude(p.altitude_m, units).text}` +
-      ` · ${p.voltage_v.toFixed(2)} V`,
+      `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
+      ` · ${fmtSpeed(p.speed_kt, units).text} · ${p.voltage_v.toFixed(2)} V`,
     ).addTo(map);
   });
 
   // The most recent position gets a pulsing ring (a DOM icon, since the
   // canvas renderer cannot animate). It is hollow on purpose: the
-  // altitude-coloured dot for this same fix is underneath and has to stay
-  // readable, or the newest point is the one point whose altitude you cannot
+  // metric-coloured dot for this same fix is underneath and has to stay
+  // readable, or the newest point is the one point whose value you cannot
   // see.
   L.marker(latlngs[latlngs.length - 1]!, {
     icon: L.divIcon({
@@ -198,8 +213,15 @@ export function renderMap(
     interactive: false,
   }).addTo(map);
 
-  map.fitBounds(fitted!);
-  coverBoxWithWorld(map, el, fitted!);
+  // In the full-page view the card column floats over the map's left edge
+  // and the header over its top, so the fit leaves them room; otherwise the
+  // launch end of the track starts life hidden under the cards. On a narrow
+  // screen the cards are below the map, not over it, so no room is needed.
+  const overlaid = fill && el.clientWidth >= 900;
+  map.fitBounds(fitted!, overlaid
+    ? { paddingTopLeft: [330, 64], paddingBottomRight: [24, 24] }
+    : undefined);
+  if (!fill) coverBoxWithWorld(map, el, fitted!);
 
   // Keep the world covering the box at every zoom and pan: no zooming out
   // past the point where the world is shorter than the box, and no panning
@@ -211,13 +233,20 @@ export function renderMap(
     L.latLng(85, Math.max(...lons) + 360),
   ));
 
-  const legend = new L.Control({ position: "bottomright" });
+  // The legend names the metric the spots are colored by. In the full-page
+  // view it sits with the other controls on the right edge -- except on a
+  // phone, where that stack would reach halfway down the map, so it drops
+  // to the bottom edge instead. Article-style pages keep their old corner.
+  const legend = new L.Control({
+    position: !fill ? "bottomright" : overlaid ? "topright" : "bottomleft",
+  });
   legend.onAdd = () => {
     const div = L.DomUtil.create("div", "map-legend");
     div.innerHTML =
-      `<span>${fmtAltitude(altLo, units).text}</span>` +
-      '<span class="map-legend-bar"></span>' +
-      `<span>${fmtAltitude(altHi, units).text}</span>`;
+      `<span class="map-legend-name">${metric.label}</span>` +
+      `<span>${metric.fmt(lo, units)}</span>` +
+      `<span class="map-legend-bar" style="background:${rampGradient(metric.ramp)}"></span>` +
+      `<span>${metric.fmt(hi, units)}</span>`;
     return div;
   };
   legend.addTo(map);

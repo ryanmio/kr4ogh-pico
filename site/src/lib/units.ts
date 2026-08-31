@@ -75,6 +75,7 @@ export const unitLabels = (units: Units) => ({
 export const convert = {
   altitude: (m: number, u: Units) => (u === "imperial" ? m * M_TO_FT : m),
   speed: (kt: number, u: Units) => kt * (u === "imperial" ? KT_TO_MPH : KT_TO_KMH),
+  distance: (km: number, u: Units) => (u === "imperial" ? km * KM_TO_MI : km),
   temperature: (c: number, u: Units) => (u === "imperial" ? c * 9 / 5 + 32 : c),
 };
 

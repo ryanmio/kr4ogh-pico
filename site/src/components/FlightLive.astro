@@ -1,15 +1,20 @@
 ---
-/** The live flight view: heading, map, stats, charts, table.
+/** The live flight view: a full-page map with stat cards beside it and a
+ * detail panel that opens when a card is pressed.
  *
  * The whole thing is one component so the home page and a flight's own URL
  * show exactly the same view rather than drifting apart.
  *
- * The track committed to git is rendered at build time, so the map, stats
- * and table are in the HTML and the balloon is on screen at first paint,
+ * The track committed to git is rendered at build time, so the map and the
+ * stat cards are in the HTML and the balloon is on screen at first paint,
  * with no round trip and no spinner. The script then asks wspr.live directly
  * for anything newer and re-renders.
+ *
+ * Pressing a card selects a metric: the map's spots recolor by it and the
+ * panel shows its chart and key numbers. The telemetry table and the
+ * explanation live in their own panels, behind the Data and About buttons.
  */
-import { statsHtml, tableHtml } from "../lib/render";
+import { sidebarHtml } from "../lib/render";
 import type { FlightMeta, TrackPoint } from "../lib/types";
 
 interface Props {
@@ -20,71 +25,83 @@ const { flight, track } = Astro.props;
 
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
-const stats = statsHtml(track, true, "metric");
-const table = tableHtml(track);
+const sidebar = sidebarHtml(track, "metric", null);
 const last = track.at(-1);
 ---
 
 <section
-  class="flight"
+  class="fv"
   data-flight={JSON.stringify(flight)}
   data-track={JSON.stringify(track)}
 >
-  <div class="flight-head">
-    <h1>Live telemetry <span class="badge badge-live">live</span></h1>
+  <div class="fv-map-slot" role="region" aria-label="Flight map"></div>
+
+  <header class="fv-top">
+    <div class="fv-flight-chip">
+      <span class="fv-flight-balloon" aria-hidden="true">🎈</span>
+      <span class="badge badge-live">live</span>
+      <span class="fv-flight-meta">{flight.callsign} · {flight.band} ch {flight.channel}</span>
+    </div>
+    <div class="fv-top-spacer"></div>
     <div class="unit-toggle" role="group" aria-label="Units">
       <button type="button" data-units="metric" aria-pressed="true">Metric</button>
       <button type="button" data-units="imperial" aria-pressed="false">Imperial</button>
     </div>
-  </div>
-  <p class="flight-subtitle">
-    {flight.callsign} · {flight.band} channel {flight.channel}
-    {flight.launch_utc ? ` · launched ${flight.launch_utc.slice(0, 10)}` : ""}
-  </p>
+  </header>
 
-  <div class="fv-map-slot"></div>
-  <div class="fv-stats" set:html={stats} />
-
-
-  <div class="charts-head" hidden>
-    <div class="range-toggle" role="group" aria-label="Chart range">
-      <button type="button" data-range="all" aria-pressed="true">Whole flight</button>
-      <button type="button" data-range="ascent" aria-pressed="false">Ascent</button>
-      <button type="button" data-range="recent" aria-pressed="false">Last 24 h</button>
+  <aside class="fv-side">
+    <div class="fv-cards-slot" set:html={sidebar} />
+    <div class="fv-side-foot">
+      <div class="fv-side-links">
+        <button type="button" class="fv-chip" data-panel="data">Data</button>
+        <button type="button" class="fv-chip" data-panel="about">About</button>
+        <button class="linklike" id="refresh" type="button">Check now</button>
+      </div>
+      <span class="fv-updated" id="updated">
+        {last ? `Newest position ${last.utc} UTC` : "No positions yet"}
+      </span>
     </div>
+  </aside>
+
+  <div class="fv-panel" id="panel" hidden>
+    <header class="fv-panel-head">
+      <h2 class="fv-panel-title" id="panel-title"></h2>
+      <div class="range-toggle" role="group" aria-label="Chart range" hidden>
+        <button type="button" data-range="all" aria-pressed="true">Whole flight</button>
+        <button type="button" data-range="ascent" aria-pressed="false">Ascent</button>
+        <button type="button" data-range="recent" aria-pressed="false">Last 24 h</button>
+      </div>
+      <button type="button" class="fv-panel-close" id="panel-close" aria-label="Close panel">×</button>
+    </header>
+    <div class="fv-panel-body" id="panel-body"></div>
   </div>
-  <div class="fv-charts-slot"></div>
-  <div class="fv-table-slot" set:html={table} />
-
-  <p class="flight-note">
-    Positions come from volunteer receiving stations via
-    <a href="https://wspr.live/">wspr.live</a> and are decoded in your browser.
-    The tracker reports once every 10 minutes, so the newest position is
-    normally a few minutes old. It runs on solar power, so it goes quiet
-    overnight.
-    <button class="linklike" id="download" type="button">Download the data</button>
-  </p>
-
-  <p class="flight-updated">
-    <span id="updated">{last ? `Newest position ${last.utc} UTC` : "No positions yet"}</span>
-    <button class="linklike" id="refresh" type="button">Check now</button>
-  </p>
 </section>
 
 <script>
   import type L from "leaflet";
-  import { renderChartsInto, renderMapInto } from "../lib/flightview";
+  import { renderChart } from "../lib/charts";
+  import { renderMapInto } from "../lib/flightview";
+  import {
+    bearingDeg, compassPoint, fmtDuration, haversineKm, parseUtc,
+    trackStats,
+  } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
-  import { statsHtml, tableHtml } from "../lib/render";
+  import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
+  import { sidebarHtml, tableHtml } from "../lib/render";
   import type { FlightMeta, TrackPoint } from "../lib/types";
   import { filterRange, RANGE_MIN_SPAN_MS, spanMs, type Range } from "../lib/range";
-  import { resolveUnits, saveUnits, urlWithUnits, type Units } from "../lib/units";
+  import * as u from "../lib/units";
+  import {
+    convert, resolveUnits, saveUnits, unitLabels, urlWithUnits, type Units,
+  } from "../lib/units";
   import {
     addWeatherControl, resolveWeather, saveWeather, urlWithWeather,
     type WeatherLayer,
   } from "../lib/weather";
 
-  const root = document.querySelector<HTMLElement>(".flight");
+  type PanelKind = MetricKey | "data" | "about";
+
+  const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
     const meta = JSON.parse(root.dataset.flight!) as FlightMeta;
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
@@ -99,12 +116,17 @@ const last = track.at(-1);
     // link outranks the browser's memory, like `?u=` does, so a link sent
     // because of the weather arrives with the weather on.
     let weather: WeatherLayer = resolveWeather(location.search);
+    // What the spots are colored by; matches the build-time render.
+    let metric: MetricKey = "altitude";
+    // Which panel is open, if any.
+    let panel: PanelKind | null = null;
 
     const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
-    const chartSlot = root.querySelector<HTMLElement>(".fv-charts-slot")!;
-    const tableSlot = root.querySelector<HTMLElement>(".fv-table-slot")!;
-    const statsSlot = root.querySelector<HTMLElement>(".fv-stats")!;
-    const chartsHead = root.querySelector<HTMLElement>(".charts-head")!;
+    const cardsSlot = root.querySelector<HTMLElement>(".fv-cards-slot")!;
+    const panelEl = root.querySelector<HTMLElement>("#panel")!;
+    const panelTitle = root.querySelector<HTMLElement>("#panel-title")!;
+    const panelBody = root.querySelector<HTMLElement>("#panel-body")!;
+    const rangeToggle = panelEl.querySelector<HTMLElement>(".range-toggle")!;
     const updatedEl = root.querySelector<HTMLElement>("#updated")!;
     const refreshBtn = root.querySelector<HTMLButtonElement>("#refresh")!;
     const REFRESH_MS = 2 * 60 * 1000;
@@ -115,7 +137,9 @@ const last = track.at(-1);
     let userMoved = false;
 
     function drawMap(): L.Map | null {
-      const held = renderMapInto(mapSlot, meta, track, units);
+      const held = renderMapInto(mapSlot, meta, track, {
+        units, metric, sizing: "fill",
+      });
       if (!held) return null;
       const onInteract = () => { userMoved = true; };
       held.on("dragstart", onInteract);
@@ -126,6 +150,8 @@ const last = track.at(-1);
       // months old, and today's clouds over it would be a picture that lies.
       addWeatherControl(held, {
         lon: track.at(-1)?.lon ?? meta.launch_lon ?? 0,
+        position: window.matchMedia("(min-width: 900px)").matches
+          ? "topright" : "bottomleft",
         initial: weather,
         onChange: (next) => {
           weather = next;
@@ -136,8 +162,8 @@ const last = track.at(-1);
       return held;
     }
 
-    /** Rebuild the map. `keepView` is forced on for a unit change, where the
-     * reader has not asked to move and must not be moved. */
+    /** Rebuild the map. `keepView` is forced on for a unit or metric change,
+     * where the reader has not asked to move and must not be moved. */
     function drawMapAgain(keepView = userMoved) {
       const view = keepView && map
         ? { center: map.getCenter(), zoom: map.getZoom() }
@@ -147,33 +173,222 @@ const last = track.at(-1);
       map?.remove();
       map = null;
       mapSlot.replaceChildren();
-      mapSlot.classList.remove("fv-map");
-      mapSlot.style.height = "";
+      mapSlot.classList.remove("fv-map-fill");
       map = drawMap();
       if (view && map) map.setView(view.center, view.zoom, { animate: false });
     }
 
-    function drawCharts() {
-      chartSlot.replaceChildren();
-      chartSlot.classList.remove("fv-charts");
-      renderChartsInto(chartSlot, filterRange(track, range), units);
-      // The controls are meaningless until a flight outlasts its own climb.
-      chartsHead.hidden = spanMs(track) <= RANGE_MIN_SPAN_MS;
-      for (const b of chartsHead.querySelectorAll<HTMLButtonElement>("[data-range]")) {
+    /** The card whose panel is open; the highlight promises details below,
+     * so it must not light up for coloring alone. */
+    function activeCard(): MetricKey | null {
+      return panel && isMetricKey(panel) ? panel : null;
+    }
+
+    function renderSidebar() {
+      cardsSlot.innerHTML = sidebarHtml(track, units, activeCard());
+    }
+
+    function paintCards() {
+      const active = activeCard();
+      for (const b of cardsSlot.querySelectorAll<HTMLButtonElement>("[data-metric]")) {
+        b.setAttribute("aria-pressed", String(b.dataset.metric === active));
+      }
+    }
+
+    function paintRangeToggle() {
+      for (const b of rangeToggle.querySelectorAll<HTMLButtonElement>("[data-range]")) {
         b.setAttribute("aria-pressed", String(b.dataset.range === range));
       }
     }
 
-    function drawStatsChartsTable() {
-      statsSlot.innerHTML = statsHtml(track, true, units);
-      drawCharts();
-      // Keep the table's disclosure state: it is annoying to have it snap
-      // shut every couple of minutes while you are reading it.
-      const wasOpen = tableSlot.querySelector("details")?.open ?? false;
-      tableSlot.innerHTML = tableHtml(track);
-      const details = tableSlot.querySelector("details");
-      if (details) details.open = wasOpen;
+    // ---------- panel content ----------
+
+    function mini(label: string, value: string): string {
+      return `<div class="fv-mini"><span>${label}</span><b>${value}</b></div>`;
     }
+
+    /** The chart drawn in a metric's panel, in the reader's units. Journey
+     * charts distance covered, which is the story of the flight in one
+     * rising line; the others chart the telemetry itself. */
+    function chartSpec(key: MetricKey, pts: TrackPoint[]) {
+      const labels = unitLabels(units);
+      const t = pts.map((p) => parseUtc(p.utc).getTime());
+      const domain: [number, number] = [t[0]!, t[t.length - 1]!];
+      const m = METRICS[key];
+      if (key === "journey") {
+        let cum = 0;
+        const values = pts.map((p, i) => {
+          if (i > 0) {
+            const q = pts[i - 1]!;
+            cum += haversineKm(q.lat, q.lon, p.lat, p.lon);
+          }
+          return { t: t[i]!, v: convert.distance(cum, units) };
+        });
+        return {
+          label: "Distance covered", unit: labels.distance, color: m.color,
+          values, domain, decimals: 0,
+        };
+      }
+      const get: Record<string, (p: TrackPoint) => number> = {
+        altitude: (p) => convert.altitude(p.altitude_m, units),
+        speed: (p) => convert.speed(p.speed_kt, units),
+        voltage: (p) => p.voltage_v,
+        temperature: (p) => convert.temperature(p.temperature_c, units),
+        receivers: (p) => p.rx_station_count,
+      };
+      const unit: Record<string, string> = {
+        altitude: labels.altitude, speed: labels.speed,
+        voltage: "V", temperature: labels.temperature, receivers: "stations",
+      };
+      return {
+        label: m.label, unit: unit[key]!, color: m.color,
+        values: pts.map((p, i) => ({ t: t[i]!, v: get[key]!(p) })),
+        domain, decimals: key === "voltage" ? 2 : 0,
+      };
+    }
+
+    function metricMinis(key: MetricKey): string {
+      const s = trackStats(track)!;
+      const volts = track.map((p) => p.voltage_v);
+      const temps = track.map((p) => p.temperature_c);
+      const alts = track.map((p) => p.altitude_m);
+      const speeds = track.map((p) => p.speed_kt);
+      const alt = (m: number) => u.altitude(m, units).text;
+      const spd = (kt: number) => u.speed(kt, units).text;
+      const tmp = (c: number) => u.temperature(c, units).text;
+      if (key === "journey") {
+        const prev = track.length >= 2 ? track[track.length - 2]! : null;
+        const heading = prev
+          ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
+          : null;
+        const fromLaunchKm = haversineKm(
+          track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
+        return [
+          mini("Distance covered", u.distance(s.distanceKm, units).text),
+          mini("From launch", u.distance(fromLaunchKm, units).text),
+          mini("Heading", heading === null
+            ? "--"
+            : `${compassPoint(heading)} · ${Math.round(heading)}°`),
+          mini("Time aloft",
+            fmtDuration(Date.parse(s.lastUtc) - Date.parse(s.firstUtc))),
+        ].join("");
+      }
+      if (key === "altitude") {
+        return [
+          mini("Now", alt(s.last.altitude_m)),
+          mini("Peak", alt(s.maxAltitudeM)),
+          mini("Lowest", alt(Math.min(...alts))),
+        ].join("");
+      }
+      if (key === "speed") {
+        const avg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+        return [
+          mini("Now", spd(s.last.speed_kt)),
+          mini("Fastest", spd(s.maxSpeedKt)),
+          mini("Average", spd(avg)),
+        ].join("");
+      }
+      if (key === "voltage") {
+        return [
+          mini("Now", `${s.last.voltage_v.toFixed(2)} V`),
+          mini("Lowest", `${Math.min(...volts).toFixed(2)} V`),
+          mini("Highest", `${Math.max(...volts).toFixed(2)} V`),
+        ].join("");
+      }
+      if (key === "receivers") {
+        const counts = track.map((p) => p.rx_station_count);
+        const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+        return [
+          mini("Last report", `${s.last.rx_station_count} stations`),
+          mini("Most at once", `${Math.max(...counts)}`),
+          mini("Average", `${Math.round(avg)}`),
+        ].join("");
+      }
+      return [
+        mini("Now", tmp(s.last.temperature_c)),
+        mini("Coldest", tmp(Math.min(...temps))),
+        mini("Warmest", tmp(Math.max(...temps))),
+      ].join("");
+    }
+
+    function renderPanel() {
+      if (!panel) return;
+      const isMetric = isMetricKey(panel);
+      rangeToggle.hidden = !isMetric || spanMs(track) <= RANGE_MIN_SPAN_MS;
+      paintRangeToggle();
+      if (isMetric) {
+        const key = panel as MetricKey;
+        panelTitle.textContent = METRICS[key].label;
+        if (!track.length) {
+          panelBody.innerHTML = '<p class="empty-note">No decoded telemetry yet.</p>';
+          return;
+        }
+        panelBody.innerHTML =
+          `<div class="fv-minis">${metricMinis(key)}</div>` +
+          '<div class="fv-panel-chart"></div>';
+        const pts = filterRange(track, range);
+        if (pts.length >= 2) {
+          // The desktop panel is much wider than it is tall; the default
+          // 640x170 box scaled to that width would be a wall of chart. A
+          // wider box keeps the height sane and spans the panel edge to
+          // edge. The phone panel is narrow, where the default is right.
+          const wide = window.matchMedia("(min-width: 900px)").matches;
+          renderChart(
+            panelBody.querySelector<HTMLElement>(".fv-panel-chart")!,
+            { ...chartSpec(key, pts), ...(wide ? { width: 1000 } : {}) },
+          );
+        }
+      } else if (panel === "data") {
+        panelTitle.textContent = "Telemetry data";
+        panelBody.innerHTML =
+          `<p class="fv-panel-note">Every report the tracker has sent, newest
+            first. <button class="linklike" id="download" type="button">Download
+            the full track as JSON</button>.</p>` +
+          tableHtml(track);
+        const details = panelBody.querySelector("details");
+        if (details) details.open = true;
+      } else {
+        panelTitle.textContent = "About this flight";
+        panelBody.innerHTML = `<div class="fv-about prose">
+          <p>This is a pico balloon: a party-balloon-sized solar-powered
+          tracker riding the winds, launched by amateur radio station
+          KR4OGH. It carries no batteries worth the name and weighs less
+          than a slice of bread.</p>
+          <p>Positions come from volunteer receiving stations around the
+          world via <a href="https://wspr.live/">wspr.live</a> and are
+          decoded right here in your browser. The tracker reports once every
+          10 minutes, so the newest position is normally a few minutes old.
+          It runs on solar power alone, which means it goes quiet overnight
+          and calls back in at sunrise.</p>
+          <p class="fv-about-links">
+            <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
+            <a href="https://wspr.live/">Spots: wspr.live</a>
+            <a href="https://traquito.github.io/">Trackers: Traquito</a>
+          </p>
+        </div>`;
+      }
+    }
+
+    function openPanel(kind: PanelKind) {
+      panel = kind;
+      renderPanel();
+      paintCards();
+      panelEl.hidden = false;
+      root!.classList.add("panel-open");
+      // On a phone the panel is below the cards, off screen: bring it up.
+      if (window.matchMedia("(max-width: 899px)").matches) {
+        panelEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
+
+    function closePanel() {
+      panel = null;
+      panelEl.hidden = true;
+      root!.classList.remove("panel-open");
+      paintCards();
+    }
+
+    // ---------- wiring ----------
 
     /** Put a choice in the address bar, so copying the URL shares what is on
      * screen. replaceState, not pushState: flipping a toggle is not a
@@ -197,15 +412,47 @@ const last = track.at(-1);
     }
 
     map = drawMap();
-    drawStatsChartsTable();
     paintUnitToggle();
+    // The build-time sidebar is metric; if the reader's units differ it has
+    // to be redrawn before they read it.
+    if (units !== "metric") renderSidebar();
 
-    for (const b of chartsHead.querySelectorAll<HTMLButtonElement>("[data-range]")) {
+    // Cards re-render on refresh, so listen on the slot, not the buttons.
+    cardsSlot.addEventListener("click", (ev) => {
+      const btn = (ev.target as HTMLElement)
+        .closest<HTMLButtonElement>("[data-metric]");
+      if (!btn || !isMetricKey(btn.dataset.metric)) return;
+      const key = btn.dataset.metric;
+      if (key === metric && panel === key) {
+        // Pressing the active card again puts the panel away; the coloring
+        // stays, because they chose it.
+        closePanel();
+        return;
+      }
+      if (key !== metric) {
+        metric = key;
+        // Recoloring is a redraw; the reader asked for new colors, not a
+        // new view, so the camera holds still.
+        drawMapAgain(true);
+      }
+      openPanel(key);
+    });
+
+    for (const b of root.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
+      b.addEventListener("click", () => {
+        const kind = b.dataset.panel as PanelKind;
+        if (panel === kind) closePanel();
+        else openPanel(kind);
+      });
+    }
+    root.querySelector("#panel-close")!.addEventListener("click", closePanel);
+
+    for (const b of rangeToggle.querySelectorAll<HTMLButtonElement>("[data-range]")) {
       b.addEventListener("click", () => {
         const next = b.dataset.range as Range;
         if (next === range) return;
         range = next;
-        drawCharts();
+        renderPanel();
       });
     }
 
@@ -217,13 +464,26 @@ const last = track.at(-1);
         saveUnits(units);
         pinInUrl(urlWithUnits(location.href, units));
         paintUnitToggle();
-        // The map's altitude legend and its tooltips carry units too, so it
-        // is redrawn as well -- holding the reader's exact view, since they
-        // asked to change units, not to move.
+        // The map's legend and tooltips carry units too, so it is redrawn as
+        // well -- holding the reader's exact view, since they asked to
+        // change units, not to move.
         drawMapAgain(true);
-        drawStatsChartsTable();
+        renderSidebar();
+        renderPanel();
       });
     }
+
+    // The download button lives inside the re-rendered data panel.
+    panelBody.addEventListener("click", (ev) => {
+      if (!(ev.target as HTMLElement).closest("#download")) return;
+      const blob = new Blob([JSON.stringify({ ...meta, track }, null, 1)],
+        { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${meta.flight_id}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
 
     async function update() {
       refreshBtn.disabled = true;
@@ -239,7 +499,8 @@ const last = track.at(-1);
       if (result.added > 0) {
         track = result.track;
         drawMapAgain();
-        drawStatsChartsTable();
+        renderSidebar();
+        renderPanel();
       }
       const last = track.at(-1);
       updatedEl.textContent = last
@@ -248,15 +509,6 @@ const last = track.at(-1);
     }
 
     refreshBtn.addEventListener("click", update);
-    root.querySelector("#download")!.addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify({ ...meta, track }, null, 1)],
-        { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${meta.flight_id}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    });
 
     update();
     setInterval(update, REFRESH_MS);

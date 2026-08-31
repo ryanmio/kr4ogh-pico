@@ -15,10 +15,14 @@ export interface ChartSpec {
   /** Shared time domain (ms epoch) so all charts on a page align. */
   domain: [number, number];
   decimals?: number;
+  /** viewBox size; the SVG itself scales to its container's width. The
+   * detail panel passes a wide box so its one chart spans the panel. */
+  width?: number;
+  height?: number;
 }
 
-const W = 640;
-const H = 170;
+const DEFAULT_W = 640;
+const DEFAULT_H = 170;
 const M = { top: 14, right: 12, bottom: 22, left: 52 };
 const GAP_MS = 60 * 60 * 1000;
 
@@ -64,6 +68,8 @@ function fmtValue(v: number, decimals: number): string {
 
 export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   const { values, domain, decimals = 0 } = spec;
+  const W = spec.width ?? DEFAULT_W;
+  const H = spec.height ?? DEFAULT_H;
   const [t0, t1] = domain;
   const vMin = Math.min(...values.map((p) => p.v));
   const vMax = Math.max(...values.map((p) => p.v));

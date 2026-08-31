@@ -5,9 +5,16 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description?: string;
+  /** false gives the page the whole viewport: no site header or footer.
+   * The live flight view brings its own chrome, floated over the map. */
+  chrome?: boolean;
 }
 
-const { title, description = "KR4OGH pico balloon flights: live WSPR telemetry and archived tracks." } = Astro.props;
+const {
+  title,
+  description = "KR4OGH pico balloon flights: live WSPR telemetry and archived tracks.",
+  chrome = true,
+} = Astro.props;
 ---
 
 <!doctype html>
@@ -20,25 +27,27 @@ const { title, description = "KR4OGH pico balloon flights: live WSPR telemetry a
     <title>{title}</title>
   </head>
   <body>
-    <header class="site-header">
-      <div class="container">
-        <a class="site-title" href={withBase("/")}
-          >KR4OGH<span class="tld">.balloon</span></a
-        >
-      </div>
-    </header>
-    <main>
-      <div class="container">
-        <slot />
-      </div>
-    </main>
-    <footer class="site-footer">
-      <div class="container">
-        <span>KR4OGH pico balloon program</span>
-        <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
-        <a href="https://wspr.live/">Spots: wspr.live</a>
-        <a href="https://traquito.github.io/">Trackers: Traquito</a>
-      </div>
-    </footer>
+    {chrome && (
+      <header class="site-header">
+        <div class="container">
+          <a class="site-title" href={withBase("/")}
+            >KR4OGH<span class="tld">.balloon</span></a
+          >
+        </div>
+      </header>
+    )}
+    {chrome
+      ? <main><div class="container"><slot /></div></main>
+      : <main class="bare"><slot /></main>}
+    {chrome && (
+      <footer class="site-footer">
+        <div class="container">
+          <span>KR4OGH pico balloon program</span>
+          <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
+          <a href="https://wspr.live/">Spots: wspr.live</a>
+          <a href="https://traquito.github.io/">Trackers: Traquito</a>
+        </div>
+      </footer>
+    )}
   </body>
 </html>

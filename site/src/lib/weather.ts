@@ -379,6 +379,9 @@ function cloudLayer(sat: GeoSat): L.TileLayer {
 export interface WeatherOpts {
   /** Longitude of the balloon now: it picks the geostationary satellite. */
   lon: number;
+  /** Where the switch sits; default top right. The phone layout puts it at
+   * the bottom, where it does not stack halfway down a short map. */
+  position?: L.ControlPosition;
   /** Layer to start on, so a rebuilt map comes back the way it went away. */
   initial: WeatherLayer;
   /** Called on every change, for the caller to remember across rebuilds. */
@@ -423,7 +426,7 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
   let dead = false;
   map.on("unload", () => { dead = true; });
 
-  const control = new L.Control({ position: "topright" });
+  const control = new L.Control({ position: opts.position ?? "topright" });
   const buttons = new Map<WeatherLayer, HTMLButtonElement>();
 
   control.onAdd = () => {

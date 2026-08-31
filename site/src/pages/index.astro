@@ -10,8 +10,10 @@ const flight = liveFlights()[0];
 const track = flight ? trackFor(flight.flight_id) : [];
 ---
 
-<Base title="KR4OGH — live balloon telemetry">
-  {flight
-    ? <FlightLive flight={flight} track={track} />
-    : <div class="notice notice-accent">Nothing in the air right now.</div>}
-</Base>
+{flight
+  ? <Base title="KR4OGH — live balloon telemetry" chrome={false}>
+      <FlightLive flight={flight} track={track} />
+    </Base>
+  : <Base title="KR4OGH — live balloon telemetry">
+      <div class="notice notice-accent">Nothing in the air right now.</div>
+    </Base>}

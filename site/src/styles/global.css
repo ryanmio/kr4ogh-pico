@@ -308,15 +308,15 @@ main { padding: 2.2rem 0 3.5rem; }
 
 /* ---------- map ---------- */
 
-/* Matches the CARTO dark basemap's ocean fill, so any area beyond the top or
-   bottom of the world blends into the map instead of showing as a void. */
-.leaflet-container { background: #1e1e1e; font: inherit; }
-/* Esri's dark canvas is lighter than this page's ground, so knock the tiles
-   back. Scoped to the basemap layer itself, not the whole tile pane: a
-   weather layer shares that pane and must not be dimmed with it, and the
-   altitude-coloured track, the tooltips and the controls above keep their
-   real colours either way. */
-.basemap-tiles { filter: brightness(0.62) saturate(0.85); }
+/* Deep ocean blue, so any area beyond the top or bottom of the world blends
+   into the imagery instead of showing as a void. */
+.leaflet-container { background: #0c1524; font: inherit; }
+/* The satellite imagery is knocked back just a touch so the track, the
+   floating cards and the weather read over it, without losing the land /
+   ocean contrast that is the whole reason it is here. Scoped to the basemap
+   layer itself, not the whole tile pane: the labels and any weather layer
+   share that pane and must not be dimmed with it. */
+.basemap-tiles { filter: brightness(0.82) saturate(0.9); }
 .leaflet-container a { color: var(--accent); }
 .leaflet-tooltip {
   background: var(--bg-panel); border: 1px solid var(--border);
@@ -337,6 +337,7 @@ main { padding: 2.2rem 0 3.5rem; }
 
 .map-legend {
   display: flex; align-items: center; gap: 0.45rem;
+  white-space: nowrap;
   background: rgba(17, 24, 49, 0.9);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -347,7 +348,11 @@ main { padding: 2.2rem 0 3.5rem; }
 }
 .map-legend-bar {
   width: 70px; height: 7px; border-radius: 4px;
-  background: linear-gradient(90deg, #3b82f6, #22d3ee, #fde047);
+  /* The gradient itself is set inline, from the selected metric's ramp. */
+}
+.map-legend-name {
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  color: var(--text-faint);
 }
 
 /* Weather over the basemap, under the track. Radar tiles arrive with real
@@ -604,3 +609,267 @@ main { padding: 2.2rem 0 3.5rem; }
   text-underline-offset: 2px;
 }
 .linklike:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- full-page live view ---------- */
+
+/* The live flight is an app screen, not an article: the map takes the whole
+   viewport, the stat cards float over its left edge, and the detail panel
+   slides over the bottom. On a phone all of it stacks: map on top, cards
+   below, panel under the card that opened it. */
+
+:root {
+  --glass: rgba(9, 13, 26, 0.82);
+  --glass-border: rgba(148, 163, 184, 0.16);
+}
+
+main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
+
+.fv { position: relative; flex: 1; height: 100dvh; overflow: hidden; }
+
+.fv-map-slot { position: absolute; inset: 0; background: #0c1524; }
+.fv-map-fill { width: 100%; height: 100%; }
+
+/* Floating header. pointer-events pass through the empty stretch so the map
+   under it still pans. */
+.fv-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 1100;
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  pointer-events: none;
+}
+.fv-top > * { pointer-events: auto; }
+.fv-top-spacer { flex: 1; pointer-events: none; }
+
+.fv-flight-chip {
+  display: flex; align-items: center; gap: 0.55rem;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 12px; padding: 0.38rem 0.7rem;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.fv-flight-balloon { font-size: 1rem; line-height: 1; }
+.fv-flight-meta {
+  font-family: var(--mono); font-size: 0.76rem; color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.fv-top .unit-toggle {
+  background: var(--glass);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+
+/* ----- the card column ----- */
+
+.fv-side {
+  position: absolute; top: 62px; left: 0.9rem; bottom: 0.9rem;
+  z-index: 1050; width: 288px;
+  display: flex; flex-direction: column;
+  overflow-y: auto; scrollbar-width: none;
+  pointer-events: none;  /* gaps between cards still pan the map */
+}
+.fv-side::-webkit-scrollbar { display: none; }
+
+.fv-cards-slot { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.fv-status {
+  pointer-events: auto;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 14px; padding: 0.7rem 0.9rem;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.fv-status-main { font-weight: 600; font-size: 0.95rem; }
+.fv-status-main::before {
+  content: ""; display: inline-block; width: 8px; height: 8px;
+  margin-right: 0.5rem; border-radius: 50%; background: var(--live);
+  animation: pulse 1.8s ease-out infinite;
+}
+.fv-status-sub {
+  font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint);
+  margin-top: 0.15rem;
+}
+
+.fv-hint {
+  display: none;
+  pointer-events: auto;
+  margin: 0; padding: 0 0.2rem;
+  font-size: 0.74rem; color: var(--text-dim);
+}
+
+.fv-card {
+  pointer-events: auto;
+  min-width: 0;
+  display: flex; align-items: center; gap: 0.7rem;
+  width: 100%; text-align: left;
+  font: inherit; color: var(--text); cursor: pointer;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 14px; padding: 0.55rem 0.7rem;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.fv-card:hover { border-color: rgba(148, 163, 184, 0.4); transform: translateY(-1px); }
+.fv-card[aria-pressed="true"] {
+  border-color: rgba(226, 232, 240, 0.55);
+  background: rgba(15, 23, 42, 0.92);
+}
+.fv-card-icon {
+  flex-shrink: 0; width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.fv-card-icon svg { width: 19px; height: 19px; }
+.fv-card-text { min-width: 0; display: flex; flex-direction: column; }
+.fv-card-label {
+  font-size: 0.64rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.fv-card-value {
+  font-family: var(--mono); font-size: 1.02rem; font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-card-sub {
+  font-family: var(--mono); font-size: 0.68rem; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-card-chevron {
+  margin-left: auto; color: var(--text-faint); font-size: 1.1rem;
+  transition: transform 120ms ease;
+}
+.fv-card[aria-pressed="true"] .fv-card-chevron { color: var(--accent); }
+
+.fv-side-foot {
+  pointer-events: auto;
+  margin-top: auto; padding-top: 0.5rem;
+}
+.fv-side-links {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 12px; padding: 0.4rem 0.6rem;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.fv-side-links .linklike { margin-left: auto; font-size: 0.76rem; }
+.fv-chip {
+  font: inherit; font-size: 0.76rem; font-weight: 600;
+  color: var(--text-dim); cursor: pointer;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid transparent; border-radius: 99px;
+  padding: 0.22rem 0.75rem;
+}
+.fv-chip:hover { color: var(--text); border-color: var(--glass-border); }
+.fv-updated {
+  display: block;
+  font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint);
+  margin-top: 0.35rem; padding: 0 0.2rem;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* ----- the detail panel ----- */
+
+.fv-panel {
+  position: absolute; z-index: 1060;
+  left: calc(288px + 1.8rem); right: 0.9rem; bottom: 0.9rem;
+  max-height: min(46%, 340px);
+  overflow-y: auto;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 16px; padding: 0.8rem 1rem 0.9rem;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.fv-panel-head {
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.fv-panel-title { font-size: 1rem; margin: 0; letter-spacing: 0.01em; }
+.fv-panel-head .range-toggle { margin-left: auto; }
+.fv-panel-head .range-toggle[hidden] { display: none; }
+.fv-panel-close {
+  font: inherit; font-size: 1.15rem; line-height: 1;
+  color: var(--text-faint); cursor: pointer;
+  background: none; border: 0; padding: 0.15rem 0.35rem;
+  margin-left: 0.2rem;
+}
+.fv-panel-head .range-toggle:not([hidden]) + .fv-panel-close { margin-left: 0.2rem; }
+.fv-panel-close:hover { color: var(--text); }
+
+.fv-minis { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; margin-bottom: 0.6rem; }
+.fv-mini span {
+  display: block;
+  font-size: 0.64rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.fv-mini b { font-family: var(--mono); font-size: 0.95rem; font-weight: 600; }
+
+/* The panel is already a card; its chart should not be a card in a card. */
+.fv-panel .chart { background: transparent; border: 0; padding: 0; }
+.fv-panel .chart-tooltip { top: 1rem; }
+.fv-panel-note { margin: 0 0 0.6rem; font-size: 0.82rem; color: var(--text-dim); }
+.fv-panel .telemetry-table { margin: 0; background: rgba(15, 23, 42, 0.5); }
+.fv-about { font-size: 0.88rem; }
+.fv-about p { margin: 0.5rem 0; }
+.fv-about-links { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+
+/* ----- leaflet furniture in the full-page view ----- */
+
+/* The floating header owns the top edge, so the right-hand control stack
+   starts below it. */
+.fv .leaflet-top.leaflet-right { top: 56px; }
+.fv .leaflet-control-attribution {
+  font-size: 0.58rem;
+  background: rgba(11, 16, 32, 0.75) !important;
+}
+
+/* ----- phones and narrow windows ----- */
+
+@media (max-width: 899px) {
+  .fv { height: auto; min-height: 100dvh; overflow: visible;
+    display: flex; flex-direction: column; }
+
+  .fv-top {
+    position: static; order: 0;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 0.55rem 0.8rem;
+    flex-wrap: nowrap; gap: 0.4rem;
+  }
+  .fv-top .unit-toggle button { font-size: 0.72rem; padding: 0.28rem 0.6rem; }
+  .fv-flight-chip, .fv-top .unit-toggle {
+    background: transparent; border-color: transparent;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    padding-left: 0; padding-right: 0;
+  }
+  .fv-top .unit-toggle { border: 1px solid var(--border); padding: 0; }
+
+  .fv-map-slot {
+    position: relative; inset: auto; order: 1;
+    height: 47dvh; min-height: 300px;
+  }
+  .fv .leaflet-top.leaflet-right { top: 0; }
+
+  /* The aside dissolves so its children can interleave with the panel:
+     cards, then the panel that a card opens, then the footer line. */
+  .fv-side { display: contents; }
+  .fv-cards-slot {
+    order: 2;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+    padding: 0.7rem 0.8rem 0;
+  }
+  .fv-status, .fv-hint { grid-column: 1 / -1; }
+  .fv-hint { display: block; margin-top: -0.15rem; }
+  .fv-card, .fv-status, .fv-side-links {
+    background: var(--bg-raised); border-color: var(--border);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .fv-card { padding: 0.55rem 0.6rem; }
+  .fv-card-icon { width: 30px; height: 30px; border-radius: 8px; }
+  .fv-card-icon svg { width: 16px; height: 16px; }
+  .fv-card-value { font-size: 0.95rem; }
+
+  .fv-panel {
+    position: static; order: 3;
+    margin: 0.7rem 0.8rem 0; max-height: none;
+    background: var(--bg-raised); border-color: var(--border);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+
+  .fv-side-foot { order: 4; margin: 0; padding: 0.7rem 0.8rem 1rem; }
+}

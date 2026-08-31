@@ -33,13 +33,14 @@ const probe = async (label) => {
       loadedTiles: document.querySelectorAll(".leaflet-tile-loaded").length,
       markers: document.querySelectorAll(".leaflet-marker-icon, canvas.leaflet-zoom-animated").length,
       hasLeafletPane: !!document.querySelector(".leaflet-map-pane"),
-      detailsCount: document.querySelectorAll(".fv-table-slot details").length,
-      rows: document.querySelectorAll(".fv-table-slot tbody tr").length,
+      cards: document.querySelectorAll(".fv-card").length,
+      activeCard: document.querySelector('.fv-card[aria-pressed="true"]')
+        ?.dataset.metric,
       updated: document.getElementById("updated")?.textContent?.trim().slice(0, 60),
     };
   });
   console.log(`${label}: height=${r.height}px tiles=${r.tiles} (loaded ${r.loadedTiles}) ` +
-    `leafletPane=${r.hasLeafletPane} details=${r.detailsCount} tableRows=${r.rows}`);
+    `leafletPane=${r.hasLeafletPane} cards=${r.cards} active=${r.activeCard}`);
   console.log(`   updated: ${r.updated}`);
   return r;
 };
@@ -55,6 +56,36 @@ const after = await probe("after refresh    ");
 await page.evaluate(() => document.getElementById("refresh").click());
 await page.waitForTimeout(4000);
 const twice = await probe("after 2nd refresh");
+
+// Pressing a card is the new core interaction: the map recolors by that
+// metric and the panel opens with its chart. Both have to survive a refresh
+// too, since the sidebar is re-rendered and the map rebuilt around them.
+await page.evaluate(() =>
+  document.querySelector('.fv-card[data-metric="speed"]').click());
+await page.waitForTimeout(1500);
+const panelProbe = async (label) => {
+  const r = await page.evaluate(() => ({
+    open: !document.getElementById("panel").hidden,
+    title: document.getElementById("panel-title")?.textContent?.trim(),
+    chart: !!document.querySelector(".fv-panel-chart svg"),
+    active: document.querySelector('.fv-card[aria-pressed="true"]')
+      ?.dataset.metric,
+    legend: document.querySelector(".map-legend-name")?.textContent?.trim(),
+  }));
+  console.log(`${label}: open=${r.open} title=${r.title} chart=${r.chart} ` +
+    `active=${r.active} legend=${r.legend}`);
+  return r;
+};
+const panelOn = await panelProbe("speed card       ");
+await page.evaluate(() => document.getElementById("refresh").click());
+await page.waitForTimeout(4000);
+const panelAfter = await panelProbe("speed, refresh   ");
+const panelOk =
+  panelOn.open && panelOn.title === "Ground speed" && panelOn.chart &&
+  panelOn.active === "speed" && panelOn.legend === "Ground speed" &&
+  panelAfter.open && panelAfter.active === "speed" &&
+  panelAfter.legend === "Ground speed";
+await page.evaluate(() => document.getElementById("panel-close").click());
 
 // The weather layer is the other thing a rebuilt map can lose. Its control
 // is created fresh with each map, so the chosen layer has to be handed back
@@ -91,10 +122,10 @@ await setWeather("Off");
 await page.screenshot({ path: "dev/browser-check.png", fullPage: false });
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.detailsCount === 1
-  && weatherOk && errors.length === 0;
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 6
+  && panelOk && weatherOk && errors.length === 0;
 console.log(ok
-  ? "\nRESULT: map and weather layer survive refreshes"
+  ? "\nRESULT: map, panel and weather layer survive refreshes"
   : "\nRESULT: STILL BROKEN");
 await browser.close();
 process.exit(ok ? 0 : 1);
