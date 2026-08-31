@@ -80,6 +80,52 @@ export const convert = {
 
 const STORAGE_KEY = "kr4ogh-units";
 
+/** The query parameter that pins units for one link: `?u=i`, `?u=m`. The
+ * long forms are accepted too, so a hand-typed `?u=imperial` works. */
+export const URL_PARAM = "u";
+
+/** Read units out of a query string, or null when it does not ask for any.
+ *
+ * Takes the search string rather than reading `location` so it stays pure
+ * and testable, and so a caller can parse a link it has not navigated to.
+ * An unrecognised value is null, not an error: a share link with a typo in
+ * it should still show the flight.
+ */
+export function unitsFromSearch(search: string): Units | null {
+  let raw: string | null;
+  try {
+    raw = new URLSearchParams(search).get(URL_PARAM);
+  } catch {
+    return null;
+  }
+  if (raw === null) return null;
+  const v = raw.trim().toLowerCase();
+  if (v === "i" || v === "imperial") return "imperial";
+  if (v === "m" || v === "metric") return "metric";
+  return null;
+}
+
+/** Units for a page load: the link wins, then the browser's memory, then
+ * metric.
+ *
+ * The link has to outrank stored preference or sharing does not work -- the
+ * recipient most likely has a stored preference of their own, and it would
+ * silently override the units the sender chose. It does not write through to
+ * storage, though: following someone else's link is not the reader choosing
+ * a default, and it must not quietly rewrite one they already set.
+ */
+export function resolveUnits(search: string, fallback: Units = "metric"): Units {
+  return unitsFromSearch(search) ?? loadUnits(fallback);
+}
+
+/** The same page with its units pinned, for the address bar. Preserves every
+ * other parameter and the hash so a deep link survives a unit toggle. */
+export function urlWithUnits(href: string, units: Units): string {
+  const url = new URL(href);
+  url.searchParams.set(URL_PARAM, units === "imperial" ? "i" : "m");
+  return url.toString();
+}
+
 /** The reader's choice, remembered per browser. Storage can throw (private
  * windows, blocked site data), so every access is guarded and falls back to
  * the default rather than breaking the page. */
