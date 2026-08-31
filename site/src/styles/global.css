@@ -312,9 +312,11 @@ main { padding: 2.2rem 0 3.5rem; }
    bottom of the world blends into the map instead of showing as a void. */
 .leaflet-container { background: #1e1e1e; font: inherit; }
 /* Esri's dark canvas is lighter than this page's ground, so knock the tiles
-   back. Scoped to the tile pane so the altitude-coloured track, the tooltips
-   and the controls above it keep their real colours. */
-.leaflet-tile-pane { filter: brightness(0.62) saturate(0.85); }
+   back. Scoped to the basemap layer itself, not the whole tile pane: a
+   weather layer shares that pane and must not be dimmed with it, and the
+   altitude-coloured track, the tooltips and the controls above keep their
+   real colours either way. */
+.basemap-tiles { filter: brightness(0.62) saturate(0.85); }
 .leaflet-container a { color: var(--accent); }
 .leaflet-tooltip {
   background: var(--bg-panel); border: 1px solid var(--border);
@@ -328,7 +330,7 @@ main { padding: 2.2rem 0 3.5rem; }
 }
 .leaflet-bar a:hover { background: var(--bg-raised); color: var(--accent); }
 .leaflet-control-attribution {
-  background: rgba(11, 16, 32, 0.75) !important;
+  background: rgba(11, 16, 32, 0.9) !important;
   color: var(--text-faint);
   font-size: 0.62rem;
 }
@@ -347,6 +349,40 @@ main { padding: 2.2rem 0 3.5rem; }
   width: 70px; height: 7px; border-radius: 4px;
   background: linear-gradient(90deg, #3b82f6, #22d3ee, #fde047);
 }
+
+/* Weather over the basemap, under the track. Radar tiles arrive with real
+   transparency; the infrared tiles are made transparent per pixel from their
+   own brightness temperature, in weather.ts, because no CSS filter can tell
+   a -62 C storm top from the warm sea around it. Neither needs help here. */
+
+/* Same segmented pill as the unit and range toggles, sized down and given a
+   solid ground so it stays readable over whatever is under it. */
+.weather-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(17, 24, 49, 0.9);
+  font-family: var(--sans);
+}
+.weather-toggle button {
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  padding: 0.25rem 0.6rem;
+  background: transparent;
+  color: var(--text-faint);
+  border: 0;
+  cursor: pointer;
+}
+.weather-toggle button:hover:not(:disabled) { color: var(--text); }
+.weather-toggle button[aria-pressed="true"] {
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+/* Nowhere on earth for it to draw: shown, so the reason is visible in the
+   title, but not offered. */
+.weather-toggle button:disabled { opacity: 0.4; cursor: default; }
 
 /* The newest position sits on top of its own altitude-coloured dot, so it
    must not paint over it: a hollow ring, not a filled disc. Neutral white,
