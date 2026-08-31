@@ -32,7 +32,9 @@ Rows that did not correspond one-to-one, with cause:
   These are partial reports — no station that heard the Regular message also
   heard the Telemetry message, or no telemetry was received at all — so there
   is nothing to decode. This tool's telemetry table only holds full records;
-  the raw Regular spots are retained in `spots`. Not a discrepancy.
+  the raw Regular spots are retained in `spots`. Not a discrepancy -- but see
+  `docs/partial-spots.md`, which tracks whether the site should show these
+  coarse positions the way the dashboard does.
 - One methodological artifact worth recording: the dashboard interprets
   `dtGte`/`dtLte` in the **browser's local timezone** and prints timestamps
   without seconds. The first comparison ran with a US-Eastern browser and

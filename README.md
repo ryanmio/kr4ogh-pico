@@ -43,4 +43,6 @@ stays current regardless, because the browser queries wspr.live itself.
   tracks of closed flights under `site/flights/`, rendered statically forever.
 
 See `docs/telemetry-format.md` for the wire format and sources,
-`docs/decode-status.md` for validation status.
+`docs/decode-status.md` for validation status, and
+`docs/partial-spots.md` for the known gap where only one of a fix's two
+messages is heard.
