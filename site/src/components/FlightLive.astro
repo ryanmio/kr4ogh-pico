@@ -79,6 +79,10 @@ const last = track.at(-1);
   import type { FlightMeta, TrackPoint } from "../lib/types";
   import { filterRange, RANGE_MIN_SPAN_MS, spanMs, type Range } from "../lib/range";
   import { resolveUnits, saveUnits, urlWithUnits, type Units } from "../lib/units";
+  import {
+    addWeatherControl, resolveWeather, saveWeather, urlWithWeather,
+    type WeatherLayer,
+  } from "../lib/weather";
 
   const root = document.querySelector<HTMLElement>(".flight");
   if (root) {
@@ -90,6 +94,11 @@ const last = track.at(-1);
     // Charts only. The map keeps the whole flight so the current position is
     // always on it, and the stats always describe now.
     let range: Range = "all";
+    // The map is torn down and rebuilt on every refresh, so the weather
+    // choice is held out here and handed back to each new control. A `?w=c`
+    // link outranks the browser's memory, like `?u=` does, so a link sent
+    // because of the weather arrives with the weather on.
+    let weather: WeatherLayer = resolveWeather(location.search);
 
     const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
     const chartSlot = root.querySelector<HTMLElement>(".fv-charts-slot")!;
@@ -113,6 +122,17 @@ const last = track.at(-1);
       mapSlot.addEventListener("wheel", onInteract, { passive: true });
       held.getContainer().addEventListener("dblclick", onInteract);
       held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
+      // Weather is offered for a live flight only: an archived track is
+      // months old, and today's clouds over it would be a picture that lies.
+      addWeatherControl(held, {
+        lon: track.at(-1)?.lon ?? meta.launch_lon ?? 0,
+        initial: weather,
+        onChange: (next) => {
+          weather = next;
+          saveWeather(next);
+          pinInUrl(urlWithWeather(location.href, next));
+        },
+      });
       return held;
     }
 
@@ -155,18 +175,18 @@ const last = track.at(-1);
       if (details) details.open = wasOpen;
     }
 
-    /** Put the current units in the address bar, so copying the URL shares
-     * what is on screen. replaceState, not pushState: toggling units is not
-     * a navigation, and a back button that walks through unit changes rather
-     * than leaving the page is worse than useless.
+    /** Put a choice in the address bar, so copying the URL shares what is on
+     * screen. replaceState, not pushState: flipping a toggle is not a
+     * navigation, and a back button that walks through them rather than
+     * leaving the page is worse than useless.
      *
-     * Only ever called from the toggle. Doing it on load would stamp a
+     * Only ever called from a toggle. Doing it on load would stamp a
      * parameter onto a URL the reader never asked to change. */
-    function pinUnitsInUrl() {
+    function pinInUrl(href: string) {
       try {
-        history.replaceState(history.state, "", urlWithUnits(location.href, units));
+        history.replaceState(history.state, "", href);
       } catch {
-        /* a sandboxed or file:// page refuses this; the units still change */
+        /* a sandboxed or file:// page refuses this; the view still changes */
       }
     }
 
@@ -195,7 +215,7 @@ const last = track.at(-1);
         if (next === units) return;
         units = next;
         saveUnits(units);
-        pinUnitsInUrl();
+        pinInUrl(urlWithUnits(location.href, units));
         paintUnitToggle();
         // The map's altitude legend and its tooltips carry units too, so it
         // is redrawn as well -- holding the reader's exact view, since they

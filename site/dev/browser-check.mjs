@@ -2,6 +2,9 @@
  * typecheck cannot: that the map actually draws, that it survives the
  * refresh cycle, and that no JS error is thrown along the way.
  *
+ * It also checks that the weather overlay's chosen layer survives a refresh,
+ * which is the same class of bug: the control is rebuilt with the map.
+ *
  * This exists because a refresh used to blank the map. Leaflet stamps its
  * container with a _leaflet_id and refuses to initialise it twice, so
  * emptying the element and re-rendering threw and left a sized but empty
@@ -53,10 +56,45 @@ await page.evaluate(() => document.getElementById("refresh").click());
 await page.waitForTimeout(4000);
 const twice = await probe("after 2nd refresh");
 
+// The weather layer is the other thing a rebuilt map can lose. Its control
+// is created fresh with each map, so the chosen layer has to be handed back
+// in or a refresh quietly switches it off under the reader.
+const setWeather = async (label) => {
+  await page.evaluate((l) => {
+    [...document.querySelectorAll(".weather-toggle button")]
+      .find((b) => b.textContent === l)?.click();
+  }, label);
+  await page.waitForTimeout(4000);
+};
+const weatherProbe = async (label) => {
+  const r = await page.evaluate(() => ({
+    on: document.querySelector('.weather-toggle button[aria-pressed="true"]')?.textContent,
+    buttons: document.querySelectorAll(".weather-toggle button").length,
+    tiles: document.querySelectorAll(".weather-tiles .leaflet-tile-loaded").length,
+  }));
+  console.log(`${label}: on=${r.on} buttons=${r.buttons} weatherTiles=${r.tiles}`);
+  return r;
+};
+
+await setWeather("Clouds");
+const wx = await weatherProbe("weather on       ");
+await page.evaluate(() => document.getElementById("refresh").click());
+await page.waitForTimeout(4000);
+const wxAfter = await weatherProbe("weather, refresh ");
+// The tiles come from third parties: the count is reported, never asserted,
+// so someone else's outage cannot fail our check. The state surviving the
+// rebuild is the part that is ours.
+const weatherOk =
+  wx.buttons === 3 && wx.on === "Clouds" && wxAfter.on === "Clouds";
+await setWeather("Off");
+
 await page.screenshot({ path: "dev/browser-check.png", fullPage: false });
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.detailsCount === 1 && errors.length === 0;
-console.log(ok ? "\nRESULT: map survives refreshes" : "\nRESULT: STILL BROKEN");
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.detailsCount === 1
+  && weatherOk && errors.length === 0;
+console.log(ok
+  ? "\nRESULT: map and weather layer survive refreshes"
+  : "\nRESULT: STILL BROKEN");
 await browser.close();
 process.exit(ok ? 0 : 1);
