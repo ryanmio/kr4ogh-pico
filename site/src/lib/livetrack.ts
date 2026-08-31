@@ -12,10 +12,19 @@
 import { fetchTrack, mergeTrack, type FlightSpec } from "./wspr/track";
 import type { TrackPoint } from "./types";
 
-/** How far back to look when the bundled track is empty or ancient. The
- * wspr.live guidance is to bound every query; a day covers any realistic
- * export gap, and the export normally keeps the gap under an hour. */
-const MAX_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+/** How far back to look when the bundled track is empty or ancient.
+ *
+ * This is the safety net, not the normal case: the window normally starts at
+ * the last bundled fix, minutes or hours back. It only binds when the
+ * committed export is stale, and it has to exceed the export's own cadence
+ * or a gap opens in the middle of the track -- the browser would fetch the
+ * recent end and merge it onto an old seed with nothing in between.
+ *
+ * The export runs daily, so three days leaves room for two consecutive
+ * failures. wspr.live asks that every query be bounded, and three days of one
+ * flight's spots is a few MB in the worst case, which only a neglected site
+ * ever pays. */
+const MAX_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Overlap re-queried before the last bundled fix. A fix is only decodable
  * once both its Regular and Telemetry spots have been reported, and stations

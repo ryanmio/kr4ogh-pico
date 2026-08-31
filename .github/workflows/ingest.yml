@@ -7,18 +7,22 @@ name: ingest
 # queries wspr.live directly in the visitor's browser for anything newer than
 # the committed track, so if this workflow runs late, fails, or never runs at
 # all, the site is still current -- it just takes one extra second to get
-# there. That is why a 30-minute cron is fine and why nothing here holds a
+# there. That is why a daily cron is enough and why nothing here holds a
 # secret: the export reads a public data source and writes a public file.
 
 on:
   schedule:
-    # Every 30 minutes. GitHub Free includes 2,000 Actions minutes/month for
-    # private repos and bills each job rounded up to the minute; a 10-minute
-    # cron (~4,320 runs/month) would blow through that, and even 30 minutes
-    # (~1,440 runs) only fits if this job stays under a minute. Public-repo
-    # minutes are free, so this can be tightened once the repo is public --
-    # though there is little reason to, given the browser fills the gap.
-    - cron: "*/30 * * * *"
+    # Once a day. This is not the liveness path -- the browser queries
+    # wspr.live itself, so the site is current no matter when this last ran.
+    # All this job has to do is keep the committed track fresh enough that
+    # the browser's catch-up window still reaches it, which is a question of
+    # days, not minutes.
+    #
+    # It ran every 30 minutes when the site depended on a cache. That is 48
+    # commits a day of pure noise for no benefit. (They are authored by
+    # github-actions[bot], so they never counted toward anyone's contribution
+    # graph, but the history is the operator's to read.)
+    - cron: "17 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -48,10 +52,11 @@ jobs:
           python -m picolog.run
           --flights tool/flights.toml
           --db "$RUNNER_TEMP/ingest.db"
-          --window-hours 1
+          --window-hours 26
 
-      # The export MERGES into the committed track, so this one-hour database
-      # extends a long flight rather than truncating it to the last hour.
+      # A day's window, matching the cron. The export MERGES into the
+      # committed track, so this database extends a long flight rather than
+      # truncating it to what one run happened to see.
       - name: Export the site's flight data
         run: >
           python -m picolog.export_site
@@ -68,8 +73,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site/src/data
-          # No [skip ci]: this commit touches site/**, which is exactly what
-          # site.yml watches. The rebuild is the point -- it is what refreshes
-          # the track bundled into the deployed page.
+          # No [skip ci]: the deploy is the point -- it is what refreshes the
+          # track bundled into the deployed page.
           git commit -m "flight data: refresh committed track"
           git push

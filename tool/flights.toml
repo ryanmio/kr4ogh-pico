@@ -6,8 +6,8 @@
 # stay inactive until they are actually in the air.
 
 # Launched 2026-08-29, heard 18:40-20:20 UTC, then silent. Left inactive: it
-# is not pulled and never reaches the Supabase cache, so the site does not
-# show it. Flip active back on only if it is heard again.
+# is not pulled and never reaches the site's committed data, so the site does
+# not show it. Flip active back on only if it is heard again.
 [[flights]]
 flight_id = "F1A"
 callsign = "KR4OGH"
