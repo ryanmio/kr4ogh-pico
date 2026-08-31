@@ -3,8 +3,7 @@
 Telemetry data layer and public site for KR4OGH pico balloon flights: WSPR
 U4B-style telemetry ingest, decode, storage, and display. Monorepo: `/tool`
 (Python package `picolog`), `/docs` (format spec, architecture, status),
-`/site` (the website — see `site/README.md`), `/supabase` (schema for the
-tool's optional sink).
+`/site` (the website — see `site/README.md`).
 
 The site needs no server and no database. Each page ships with the flight
 track committed to git, so the balloon is on screen on first paint, and then
@@ -42,8 +41,6 @@ stays current regardless, because the browser queries wspr.live itself.
 - **git** — frozen channel table, test vectors, the site's committed flight
   data under `site/src/data/`, and (per `docs/architecture.md`) archived
   tracks of closed flights under `site/flights/`, rendered statically forever.
-- **Supabase** — an optional write-only sink the tool still supports. Nothing
-  reads from it; the site does not use it.
 
 See `docs/telemetry-format.md` for the wire format and sources,
 `docs/decode-status.md` for validation status.

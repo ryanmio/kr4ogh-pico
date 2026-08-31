@@ -34,8 +34,8 @@ There is deliberately no database in the serving path. An earlier design put
 a Supabase cache between the tool and the site; it made the site only as
 fresh as the last scheduled write (30-45 minutes, since GitHub's cron runs
 late), and it required publishing an API key in the page. Querying the source
-directly is both fresher and simpler. The tool retains its Supabase sink, but
-nothing reads from it.
+directly is both fresher and simpler. The sink, its schema and its
+credentials have been removed: nothing in this repo now holds a secret.
 
 ## Flight-archive export (specified here, not yet built)
 
