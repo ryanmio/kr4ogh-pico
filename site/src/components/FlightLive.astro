@@ -25,7 +25,7 @@ const { flight, track } = Astro.props;
 
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
-const sidebar = sidebarHtml(track, "metric", null);
+const sidebar = sidebarHtml(flight, track, "metric", null);
 const last = track.at(-1);
 ---
 
@@ -37,12 +37,8 @@ const last = track.at(-1);
   <div class="fv-map-slot" role="region" aria-label="Flight map"></div>
 
   <header class="fv-top">
-    <div class="fv-flight-chip">
-      <span class="fv-flight-balloon" aria-hidden="true">🎈</span>
-      <span class="badge badge-live">live</span>
-      <span class="fv-flight-meta">{flight.callsign} · {flight.band} ch {flight.channel}</span>
-    </div>
     <div class="fv-top-spacer"></div>
+    <div class="fv-ctl-slot"></div>
     <div class="unit-toggle" role="group" aria-label="Units">
       <button type="button" data-units="metric" aria-pressed="true">Metric</button>
       <button type="button" data-units="imperial" aria-pressed="false">Imperial</button>
@@ -87,7 +83,8 @@ const last = track.at(-1);
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
-  import { sidebarHtml, tableHtml } from "../lib/render";
+  import { sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
+  import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type { FlightMeta, TrackPoint } from "../lib/types";
   import { filterRange, RANGE_MIN_SPAN_MS, spanMs, type Range } from "../lib/range";
   import * as u from "../lib/units";
@@ -99,7 +96,7 @@ const last = track.at(-1);
     type WeatherLayer,
   } from "../lib/weather";
 
-  type PanelKind = MetricKey | "data" | "about";
+  type PanelKind = MetricKey | "tracker" | "data" | "about";
 
   const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
@@ -122,6 +119,7 @@ const last = track.at(-1);
     let panel: PanelKind | null = null;
 
     const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
+    const ctlSlot = root.querySelector<HTMLElement>(".fv-ctl-slot")!;
     const cardsSlot = root.querySelector<HTMLElement>(".fv-cards-slot")!;
     const panelEl = root.querySelector<HTMLElement>("#panel")!;
     const panelTitle = root.querySelector<HTMLElement>("#panel-title")!;
@@ -137,8 +135,13 @@ const last = track.at(-1);
     let userMoved = false;
 
     function drawMap(): L.Map | null {
+      // On desktop the weather switch and the color key line up in the top
+      // bar beside the unit toggle, leaving the right edge to the zoom
+      // control alone; on a phone both sit along the bottom of the map.
+      const wide = window.matchMedia("(min-width: 900px)").matches;
       const held = renderMapInto(mapSlot, meta, track, {
         units, metric, sizing: "fill",
+        ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return null;
       const onInteract = () => { userMoved = true; };
@@ -150,8 +153,7 @@ const last = track.at(-1);
       // months old, and today's clouds over it would be a picture that lies.
       addWeatherControl(held, {
         lon: track.at(-1)?.lon ?? meta.launch_lon ?? 0,
-        position: window.matchMedia("(min-width: 900px)").matches
-          ? "topright" : "bottomleft",
+        ...(wide ? { into: ctlSlot } : { position: "bottomleft" as const }),
         initial: weather,
         onChange: (next) => {
           weather = next;
@@ -173,6 +175,9 @@ const last = track.at(-1);
       map?.remove();
       map = null;
       mapSlot.replaceChildren();
+      // The legend and weather switch live outside the map, in the top bar,
+      // so the teardown has to sweep them too.
+      ctlSlot.replaceChildren();
       mapSlot.classList.remove("fv-map-fill");
       map = drawMap();
       if (view && map) map.setView(view.center, view.zoom, { animate: false });
@@ -180,12 +185,13 @@ const last = track.at(-1);
 
     /** The card whose panel is open; the highlight promises details below,
      * so it must not light up for coloring alone. */
-    function activeCard(): MetricKey | null {
+    function activeCard(): ActiveCard {
+      if (panel === "tracker") return "tracker";
       return panel && isMetricKey(panel) ? panel : null;
     }
 
     function renderSidebar() {
-      cardsSlot.innerHTML = sidebarHtml(track, units, activeCard());
+      cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard());
     }
 
     function paintCards() {
@@ -193,6 +199,8 @@ const last = track.at(-1);
       for (const b of cardsSlot.querySelectorAll<HTMLButtonElement>("[data-metric]")) {
         b.setAttribute("aria-pressed", String(b.dataset.metric === active));
       }
+      cardsSlot.querySelector('[data-panel="tracker"]')
+        ?.setAttribute("aria-pressed", String(active === "tracker"));
     }
 
     function paintRangeToggle() {
@@ -338,6 +346,9 @@ const last = track.at(-1);
             { ...chartSpec(key, pts), ...(wide ? { width: 1000 } : {}) },
           );
         }
+      } else if (panel === "tracker") {
+        panelTitle.textContent = `The tracker · ${meta.callsign} ${meta.flight_id}`;
+        panelBody.innerHTML = trackerDetailsHtml(meta.flight_id);
       } else if (panel === "data") {
         panelTitle.textContent = "Telemetry data";
         panelBody.innerHTML =
@@ -419,6 +430,13 @@ const last = track.at(-1);
 
     // Cards re-render on refresh, so listen on the slot, not the buttons.
     cardsSlot.addEventListener("click", (ev) => {
+      const trackerBtn = (ev.target as HTMLElement)
+        .closest<HTMLButtonElement>('[data-panel="tracker"]');
+      if (trackerBtn) {
+        if (panel === "tracker") closePanel();
+        else openPanel("tracker");
+        return;
+      }
       const btn = (ev.target as HTMLElement)
         .closest<HTMLButtonElement>("[data-metric]");
       if (!btn || !isMetricKey(btn.dataset.metric)) return;

@@ -87,6 +87,19 @@ const panelOk =
   panelAfter.legend === "Ground speed";
 await page.evaluate(() => document.getElementById("panel-close").click());
 
+// The tracker card opens a text panel, no chart, no range toggle.
+await page.evaluate(() =>
+  document.querySelector('[data-panel="tracker"]').click());
+const tracker = await page.evaluate(() => ({
+  open: !document.getElementById("panel").hidden,
+  minis: document.querySelectorAll(".fv-tracker .fv-mini").length,
+  rangeHidden: document.querySelector(".fv-panel .range-toggle").hidden,
+}));
+console.log(`tracker card     : open=${tracker.open} minis=${tracker.minis} ` +
+  `rangeHidden=${tracker.rangeHidden}`);
+const trackerOk = tracker.open && tracker.minis > 5 && tracker.rangeHidden;
+await page.evaluate(() => document.getElementById("panel-close").click());
+
 // The weather layer is the other thing a rebuilt map can lose. Its control
 // is created fresh with each map, so the chosen layer has to be handed back
 // in or a refresh quietly switches it off under the reader.
@@ -122,8 +135,8 @@ await setWeather("Off");
 await page.screenshot({ path: "dev/browser-check.png", fullPage: false });
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 6
-  && panelOk && weatherOk && errors.length === 0;
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 7
+  && panelOk && trackerOk && weatherOk && errors.length === 0;
 console.log(ok
   ? "\nRESULT: map, panel and weather layer survive refreshes"
   : "\nRESULT: STILL BROKEN");

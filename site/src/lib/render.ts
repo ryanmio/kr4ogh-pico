@@ -7,6 +7,7 @@ import {
   trackStats,
 } from "./format";
 import { METRICS, type MetricKey } from "./metrics";
+import type { FlightMeta } from "./types";
 import * as u from "./units";
 import type { Units } from "./units";
 import type { TrackPoint } from "./types";
@@ -133,8 +134,17 @@ const ICONS: Record<MetricKey, string> = {
     '<path d="M6.2 15.3a8 8 0 0 1 0-11.6M17.8 3.7a8 8 0 0 1 0 11.6"/></svg>',
 };
 
+/** Which card is lit: a metric card, the tracker card, or none. */
+export type ActiveCard = MetricKey | "tracker" | null;
+
+const TRACKER_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+  ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 2.5a6 6 0 0 1 6 6c0 3.7-2.7 6.7-6 6.7s-6-3-6-6.7a6 6 0 0 1 6-6z"/>' +
+  '<path d="M10.8 15l-.8 2.5h4l-.8-2.5"/><path d="M12 17.5V21"/></svg>';
+
 function metricCard(
-  key: MetricKey, value: string, sub: string, active: MetricKey | null,
+  key: MetricKey, value: string, sub: string, active: ActiveCard,
 ): string {
   const m = METRICS[key];
   return `<button type="button" class="fv-card" data-metric="${key}"
@@ -157,13 +167,27 @@ function metricCard(
  * highlight means "details shown below", so nothing is highlighted until
  * the reader asks. The map's coloring is named by its own legend. */
 export function sidebarHtml(
-  track: TrackPoint[], units: Units, active: MetricKey | null,
+  meta: FlightMeta, track: TrackPoint[], units: Units, active: ActiveCard,
 ): string {
+  // The tracker card leads: it is what the header used to say (who this
+  // is), shaped like every other card, and pressing it opens the build
+  // details panel.
+  const tracker = `<button type="button" class="fv-card fv-card-wide"
+    data-panel="tracker" aria-pressed="${active === "tracker"}">
+    <span class="fv-card-icon" style="color:#e2e8f0">${TRACKER_ICON}</span>
+    <span class="fv-card-text">
+      <span class="fv-card-label">Tracker</span>
+      <span class="fv-card-value">${esc(meta.callsign)} · ${esc(meta.flight_id)}</span>
+      <span class="fv-card-sub">${esc(meta.band)} ch ${meta.channel}${
+        meta.launch_utc ? " · up since " + esc(meta.launch_utc.slice(5, 10)) : ""}</span>
+    </span>
+    <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
+  </button>`;
   const s = trackStats(track);
   if (!s) {
-    return `<div class="fv-status"><p class="empty-note">No decoded telemetry
-      yet. The tracker reports every 10 minutes once it has sun and a GPS
-      fix.</p></div>`;
+    return tracker + `<div class="fv-status"><p class="empty-note">No decoded
+      telemetry yet. The tracker reports every 10 minutes once it has sun
+      and a GPS fix.</p></div>`;
   }
   const volts = track.map((p) => p.voltage_v);
   const temps = track.map((p) => p.temperature_c);
@@ -218,7 +242,7 @@ export function sidebarHtml(
       active,
     ),
   ];
-  return status + cards.join("");
+  return tracker + status + cards.join("");
 }
 
 /** Telemetry table, newest first. Long flights are capped so a two-month

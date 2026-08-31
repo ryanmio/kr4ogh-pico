@@ -382,6 +382,9 @@ export interface WeatherOpts {
   /** Where the switch sits; default top right. The phone layout puts it at
    * the bottom, where it does not stack halfway down a short map. */
   position?: L.ControlPosition;
+  /** Render the switch into this element instead of a map corner. The
+   * desktop live view lines it up in the top bar with the other controls. */
+  into?: HTMLElement;
   /** Layer to start on, so a rebuilt map comes back the way it went away. */
   initial: WeatherLayer;
   /** Called on every change, for the caller to remember across rebuilds. */
@@ -426,10 +429,9 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
   let dead = false;
   map.on("unload", () => { dead = true; });
 
-  const control = new L.Control({ position: opts.position ?? "topright" });
   const buttons = new Map<WeatherLayer, HTMLButtonElement>();
 
-  control.onAdd = () => {
+  const buildToggle = () => {
     const div = L.DomUtil.create("div", "weather-toggle");
     div.setAttribute("role", "group");
     div.setAttribute("aria-label", "Weather");
@@ -451,7 +453,13 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
     paint();
     return div;
   };
-  control.addTo(map);
+  if (opts.into) {
+    opts.into.appendChild(buildToggle());
+  } else {
+    const control = new L.Control({ position: opts.position ?? "topright" });
+    control.onAdd = buildToggle;
+    control.addTo(map);
+  }
 
   function paint(): void {
     for (const [id, btn] of buttons) {

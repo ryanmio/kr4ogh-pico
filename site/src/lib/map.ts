@@ -32,6 +32,9 @@ export interface MapOptions {
    * the box alone because CSS already makes it fill its space (the live
    * full-page view). */
   sizing?: "fit" | "fill";
+  /** Render the legend into this element instead of a map corner. The
+   * desktop live view lines it up in the top bar with the other controls. */
+  legendInto?: HTMLElement;
 }
 
 /** Shift each longitude by ±360 as needed so consecutive points never jump
@@ -233,23 +236,25 @@ export function renderMap(
     L.latLng(85, Math.max(...lons) + 360),
   ));
 
-  // The legend names the metric the spots are colored by. In the full-page
-  // view it sits with the other controls on the right edge -- except on a
-  // phone, where that stack would reach halfway down the map, so it drops
-  // to the bottom edge instead. Article-style pages keep their old corner.
-  const legend = new L.Control({
-    position: !fill ? "bottomright" : overlaid ? "topright" : "bottomleft",
-  });
-  legend.onAdd = () => {
-    const div = L.DomUtil.create("div", "map-legend");
-    div.innerHTML =
-      `<span class="map-legend-name">${metric.label}</span>` +
-      `<span>${metric.fmt(lo, units)}</span>` +
-      `<span class="map-legend-bar" style="background:${rampGradient(metric.ramp)}"></span>` +
-      `<span>${metric.fmt(hi, units)}</span>`;
-    return div;
-  };
-  legend.addTo(map);
+  // The legend names the metric the spots are colored by. The desktop live
+  // view hands in a slot in its top bar; a phone drops it to the bottom
+  // edge, where it does not stack halfway down a short map; article-style
+  // pages keep their old corner.
+  const legendDiv = L.DomUtil.create("div", "map-legend");
+  legendDiv.innerHTML =
+    `<span class="map-legend-name">${metric.label}</span>` +
+    `<span>${metric.fmt(lo, units)}</span>` +
+    `<span class="map-legend-bar" style="background:${rampGradient(metric.ramp)}"></span>` +
+    `<span>${metric.fmt(hi, units)}</span>`;
+  if (opts.legendInto) {
+    opts.legendInto.appendChild(legendDiv);
+  } else {
+    const legend = new L.Control({
+      position: fill ? "bottomleft" : "bottomright",
+    });
+    legend.onAdd = () => legendDiv;
+    legend.addTo(map);
+  }
   return map;
 }
 

@@ -640,22 +640,18 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 .fv-top > * { pointer-events: auto; }
 .fv-top-spacer { flex: 1; pointer-events: none; }
 
-.fv-flight-chip {
-  display: flex; align-items: center; gap: 0.55rem;
-  background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: 12px; padding: 0.38rem 0.7rem;
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-}
-.fv-flight-balloon { font-size: 1rem; line-height: 1; }
-.fv-flight-meta {
-  font-family: var(--mono); font-size: 0.76rem; color: var(--text-dim);
-  white-space: nowrap;
-}
-
 .fv-top .unit-toggle {
   background: var(--glass);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
+
+/* The weather switch and the color key are lifted out of the map into this
+   strip on desktop, so every control the map offers reads as one row:
+   weather · key · units, with the zoom control alone down the right edge.
+   The weather switch is appended after the legend but belongs before it. */
+.fv-ctl-slot { display: flex; align-items: center; gap: 0.6rem; }
+.fv-ctl-slot .weather-toggle { order: -1; }
+.fv-ctl-slot .map-legend { white-space: nowrap; }
 
 /* ----- the card column ----- */
 
@@ -808,6 +804,12 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 .fv-about { font-size: 0.88rem; }
 .fv-about p { margin: 0.5rem 0; }
 .fv-about-links { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+.fv-tracker { max-width: 62rem; }
+.fv-tracker p {
+  margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--text-dim);
+  max-width: 46rem;
+}
+.fv-tracker a { color: var(--accent); }
 
 /* ----- leaflet furniture in the full-page view ----- */
 
@@ -825,25 +827,21 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   .fv { height: auto; min-height: 100dvh; overflow: visible;
     display: flex; flex-direction: column; }
 
+  /* With no branding left in it, a full-width bar would be an empty strip;
+     the unit toggle floats over the map instead, and the zoom control drops
+     below it. */
   .fv-top {
-    position: static; order: 0;
-    background: var(--bg); border-bottom: 1px solid var(--border);
-    padding: 0.55rem 0.8rem;
-    flex-wrap: nowrap; gap: 0.4rem;
+    top: 0.55rem; right: 0.55rem; left: auto;
+    padding: 0;
   }
   .fv-top .unit-toggle button { font-size: 0.72rem; padding: 0.28rem 0.6rem; }
-  .fv-flight-chip, .fv-top .unit-toggle {
-    background: transparent; border-color: transparent;
-    backdrop-filter: none; -webkit-backdrop-filter: none;
-    padding-left: 0; padding-right: 0;
-  }
-  .fv-top .unit-toggle { border: 1px solid var(--border); padding: 0; }
+  .fv-ctl-slot { display: none; }
 
   .fv-map-slot {
     position: relative; inset: auto; order: 1;
     height: 47dvh; min-height: 300px;
   }
-  .fv .leaflet-top.leaflet-right { top: 0; }
+  .fv .leaflet-top.leaflet-right { top: 40px; }
 
   /* The aside dissolves so its children can interleave with the panel:
      cards, then the panel that a card opens, then the footer line. */
@@ -853,7 +851,7 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
     display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
     padding: 0.7rem 0.8rem 0;
   }
-  .fv-status, .fv-hint { grid-column: 1 / -1; }
+  .fv-status, .fv-hint, .fv-card-wide { grid-column: 1 / -1; }
   .fv-hint { display: block; margin-top: -0.15rem; }
   .fv-card, .fv-status, .fv-side-links {
     background: var(--bg-raised); border-color: var(--border);
