@@ -151,13 +151,16 @@ export function renderMap(
     ).addTo(map);
   });
 
-  // The most recent position gets a visible pulse (a DOM icon, since the
-  // canvas renderer cannot animate).
+  // The most recent position gets a pulsing ring (a DOM icon, since the
+  // canvas renderer cannot animate). It is hollow on purpose: the
+  // altitude-coloured dot for this same fix is underneath and has to stay
+  // readable, or the newest point is the one point whose altitude you cannot
+  // see.
   L.marker(latlngs[latlngs.length - 1]!, {
     icon: L.divIcon({
       className: "last-pos-icon",
       html: '<span class="last-pos-pulse"></span>',
-      iconSize: [14, 14],
+      iconSize: [16, 16],
     }),
     keyboard: false,
     interactive: false,
