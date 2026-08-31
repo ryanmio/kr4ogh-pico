@@ -9,7 +9,7 @@
  * Emits the site's shared TrackPoint, so a track decoded here and a track
  * read from a committed archive are the same shape and feed the same
  * renderer. The Python's internal `speed_knots` is `speed_kt` here, the same
- * rename tool/picolog/sink_supabase.py already performs on its way out.
+ * rename tool/picolog/export_site.py performs on its way out.
  */
 import type { TrackPoint } from "../types";
 import { channel20m, type Channel } from "./channels";

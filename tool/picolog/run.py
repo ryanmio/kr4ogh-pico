@@ -1,9 +1,13 @@
-"""Ingest run: pull, decode, push. One invocation, bounded window.
+"""Ingest run: pull and decode. One invocation, bounded window.
 
 Used both by the operator locally (persistent SQLite, the flight record) and
-by the scheduled GitHub Actions workflow (throwaway SQLite, only there to feed
-the Supabase cache while the operator's laptop is asleep). Same code either
+by the scheduled GitHub Actions workflow (throwaway SQLite, feeding
+picolog.export_site so the committed track stays current). Same code either
 way — the operator's local run is authoritative.
+
+There is no push step and no sink: the public site reads the track committed
+to git and queries wspr.live directly from the browser for anything newer, so
+nothing downstream needs credentials. See docs/architecture.md.
 """
 
 import argparse
@@ -11,8 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from .config import load_flights
 from .pipeline import pull_flight_window, rebuild_flight_telemetry
-from .sink_supabase import push_flights, push_telemetry
-from .store import Store, TELEMETRY_COLUMNS
+from .store import Store
 
 
 def run(flights_path: str, db_path: str, window_hours: float) -> None:
@@ -31,13 +34,6 @@ def run(flights_path: str, db_path: str, window_hours: float) -> None:
             records = rebuild_flight_telemetry(store, flight)
             print(f"{flight.flight_id}: {new_spots} new spots, "
                   f"{records} telemetry records")
-
-        pushed = push_flights(flights)
-        rows = [dict(zip(TELEMETRY_COLUMNS, r)) for r in store.conn.execute(
-            f"SELECT {', '.join(TELEMETRY_COLUMNS)} FROM telemetry")]
-        pushed = push_telemetry(rows) and pushed
-        print(f"supabase push {'ok' if pushed else 'FAILED (record unaffected)'}: "
-              f"{len(rows)} telemetry rows")
 
 
 def main() -> None:

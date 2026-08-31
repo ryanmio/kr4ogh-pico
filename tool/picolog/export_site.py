@@ -31,7 +31,7 @@ from pathlib import Path
 from .config import Flight, load_flights
 
 # The site's TrackPoint shape (site/src/lib/types.ts). `speed_knots` is
-# `speed_kt` here, the same rename sink_supabase.py performs.
+# `speed_kt` here, which is what the site has always called it.
 _TRACK_FIELDS = (
     ("utc", "utc"),
     ("grid6", "grid6"),

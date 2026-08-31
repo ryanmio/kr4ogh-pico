@@ -41,8 +41,8 @@ const got = decodeSpots(regular, telemetry);
 const want = vector.expected_telemetry as Record<string, unknown>[];
 
 // Left side is the site's TrackPoint field, right side the vector's
-// (Python) name. They differ only for speed, which sink_supabase.py
-// renames the same way on its way to the cache.
+// (Python) name. They differ only for speed: the site has always called it
+// speed_kt, the decoder speed_knots.
 const FIELDS: [string, string][] = [
   ["utc", "utc"], ["grid6", "grid6"], ["lat", "lat"], ["lon", "lon"],
   ["altitude_m", "altitude_m"], ["speed_kt", "speed_knots"],
