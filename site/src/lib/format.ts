@@ -27,13 +27,15 @@ export function fmtUtcShort(d: Date): string {
   return d.toISOString().slice(5, 16).replace("T", " ");
 }
 
+/** Compact on purpose: this lands in a stat card that is half a phone screen
+ * wide, and "5 h 20 min ago" does not fit there. */
 export function fmtRelative(utc: string, now: Date = new Date()): string {
   const ms = now.getTime() - parseUtc(utc).getTime();
   const min = Math.round(ms / 60_000);
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   const h = Math.floor(min / 60);
-  if (h < 48) return `${h} h ${min % 60} min ago`;
+  if (h < 48) return `${h}h ${min % 60}m ago`;
   return `${Math.floor(h / 24)} days ago`;
 }
 
@@ -41,14 +43,14 @@ export function fmtInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-/** "6 h 20 m", "2 d 4 h". Coarse on purpose: nobody reading a balloon page
- * needs seconds, and two units is as much as a stat card can carry. */
+/** "6h 20m", "2d 4h". Coarse and compact on purpose: nobody reading a balloon
+ * page needs seconds, and a stat card is half a phone screen wide. */
 export function fmtDuration(ms: number): string {
   const min = Math.max(0, Math.round(ms / 60_000));
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h} h ${min % 60} min`;
-  return `${Math.floor(h / 24)} d ${h % 24} h`;
+  if (h < 24) return `${h}h ${min % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 /** Initial great-circle bearing from one point to the next, in degrees from

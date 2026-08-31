@@ -56,6 +56,15 @@ function unwrapLons(track: TrackPoint[]): number[] {
 // between the height calculation and the fitBounds call below.
 const FIT_PAD = 0.06;
 
+/** Phones get a square map at most.
+ *
+ * A flight that has not spread out yet asks for a tall box, and on a portrait
+ * phone the viewport ceiling below is most of the screen: the map alone fills
+ * it and the numbers are a scroll away. A square is the widest box that still
+ * leaves the stats in reach, and it costs nothing on a track this shape --
+ * the fit is on longitude, so the extra height was slack anyway. */
+const NARROW_PX = 700;
+
 /** Size the map box to the track it has to show. A float that has wrapped the
  * globe several times is fitted on longitude, so its height is pinned to the
  * world's own height at that zoom: any taller and the extra is empty space off
@@ -65,11 +74,18 @@ function fitHeightToTrack(el: HTMLElement, latlngs: L.LatLng[]): void {
   const lons = latlngs.map((p) => p.lng);
   const worldsWide =
     ((Math.max(...lons) - Math.min(...lons)) * (1 + 2 * FIT_PAD)) / 360;
-  const worldHeightPx = (el.clientWidth || 900) / Math.max(worldsWide, 1e-6);
+  const width = el.clientWidth || 900;
+  const worldHeightPx = width / Math.max(worldsWide, 1e-6);
   // Ceiling keeps the stat strip under the map within reach of the first screen.
-  const ceiling = window.innerHeight * 0.62;
+  const narrow = window.innerWidth < NARROW_PX;
+  const ceiling = narrow
+    ? Math.min(width, window.innerHeight * 0.62)
+    : window.innerHeight * 0.62;
+  // The floor has to stay under the ceiling, or a very narrow screen would be
+  // forced taller than square by the floor itself.
+  const floor = narrow ? Math.min(240, ceiling) : 300;
   el.style.height =
-    `${Math.round(Math.max(300, Math.min(ceiling, worldHeightPx)))}px`;
+    `${Math.round(Math.max(floor, Math.min(ceiling, worldHeightPx)))}px`;
 }
 
 /** Draw the track and return the Leaflet map, so a caller that re-renders
