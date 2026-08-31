@@ -1,7 +1,7 @@
 /** Shared shapes. TrackPoint matches the track.json entries specified in
- * docs/architecture.md; FlightMeta matches the Supabase `flights` row and the
- * track.json header fields. The same types serve both data paths — archived
- * flights from git, live flights from the Supabase cache. */
+ * docs/architecture.md; FlightMeta the flight header fields. The same types
+ * serve every path — archived flights from git, the track committed for a
+ * live flight, and rows decoded in the browser from wspr.live. */
 
 export interface TrackPoint {
   utc: string; // ISO 8601, always UTC
