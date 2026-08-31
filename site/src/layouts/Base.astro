@@ -8,11 +8,6 @@ interface Props {
 }
 
 const { title, description = "KR4OGH pico balloon flights: live WSPR telemetry and archived tracks." } = Astro.props;
-const nav = [
-  { href: withBase("/"), label: "Flights" },
-  { href: withBase("/about/"), label: "About" },
-];
-const current = Astro.url.pathname.replace(/\/+$/, "/") || "/";
 ---
 
 <!doctype html>
@@ -30,15 +25,6 @@ const current = Astro.url.pathname.replace(/\/+$/, "/") || "/";
         <a class="site-title" href={withBase("/")}
           >KR4OGH<span class="tld">.balloon</span></a
         >
-        <nav class="site-nav">
-          {nav.map((item) => (
-            <a
-              href={item.href}
-              aria-current={current === item.href ? "page" : undefined}
-              >{item.label}</a
-            >
-          ))}
-        </nav>
       </div>
     </header>
     <main>

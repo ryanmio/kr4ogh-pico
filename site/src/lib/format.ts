@@ -5,9 +5,17 @@
 import type { TrackPoint } from "./types";
 
 export function parseUtc(utc: string): Date {
-  // Accepts "2026-08-18T00:04:00Z" (archives) and
-  // "2026-08-18T00:04:00+00:00" (Supabase).
-  return new Date(utc);
+  // Accepts "2026-08-18T00:04:00Z" (archives), "2026-08-18T00:04:00+00:00",
+  // and the naive "2026-08-18 00:04:00" the exporter and the browser decoder
+  // both produce.
+  //
+  // The naive form carries no zone, and V8 parses a space-separated datetime
+  // as LOCAL time. Left alone, every timestamp on the site would be shifted
+  // by whatever offset the visitor's own machine happens to be in. Normalise
+  // to explicit UTC before parsing.
+  const iso = utc.includes("T") ? utc : utc.replace(" ", "T");
+  const zoned = /([Zz]|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  return new Date(zoned);
 }
 
 export function fmtUtc(utc: string | Date): string {
@@ -33,10 +41,35 @@ export function fmtInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-export function fmtCoord(lat: number, lon: number): string {
-  const ns = lat >= 0 ? "N" : "S";
-  const ew = lon >= 0 ? "E" : "W";
-  return `${Math.abs(lat).toFixed(2)}° ${ns}, ${Math.abs(lon).toFixed(2)}° ${ew}`;
+/** "6 h 20 m", "2 d 4 h". Coarse on purpose: nobody reading a balloon page
+ * needs seconds, and two units is as much as a stat card can carry. */
+export function fmtDuration(ms: number): string {
+  const min = Math.max(0, Math.round(ms / 60_000));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h ${min % 60} min`;
+  return `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+
+/** Initial great-circle bearing from one point to the next, in degrees from
+ * true north. */
+export function bearingDeg(
+  lat1: number, lon1: number, lat2: number, lon2: number,
+): number {
+  const rad = Math.PI / 180;
+  const dLon = (lon2 - lon1) * rad;
+  const y = Math.sin(dLon) * Math.cos(lat2 * rad);
+  const x = Math.cos(lat1 * rad) * Math.sin(lat2 * rad) -
+    Math.sin(lat1 * rad) * Math.cos(lat2 * rad) * Math.cos(dLon);
+  return (Math.atan2(y, x) / rad + 360) % 360;
+}
+
+/** A compass point, because "ESE" means something to everyone and "112°"
+ * does not. */
+export function compassPoint(deg: number): string {
+  const points = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  return points[Math.round(deg / 22.5) % 16]!;
 }
 
 const EARTH_RADIUS_KM = 6371;

@@ -1,0 +1,25 @@
+---
+/** A flight at its own URL. Same view as the home page, by the same
+ * component; the home page shows whichever flight is up, this is the
+ * permalink for a particular one. */
+import FlightLive from "../../components/FlightLive.astro";
+import Base from "../../layouts/Base.astro";
+import { liveFlights, trackFor } from "../../lib/flights";
+import type { FlightMeta, TrackPoint } from "../../lib/types";
+
+export async function getStaticPaths() {
+  return liveFlights().map((flight) => ({
+    params: { id: flight.flight_id },
+    props: { flight, track: trackFor(flight.flight_id) },
+  }));
+}
+
+const { flight, track } = Astro.props as { flight: FlightMeta; track: TrackPoint[] };
+---
+
+<Base
+  title={`${flight.flight_id} — live balloon telemetry`}
+  description={`Live telemetry for ${flight.callsign} flight ${flight.flight_id}.`}
+>
+  <FlightLive flight={flight} track={track} />
+</Base>

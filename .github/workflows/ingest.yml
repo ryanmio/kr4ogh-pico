@@ -1,17 +1,32 @@
 name: ingest
 
+# Refresh the flight data committed under site/src/data/, which the site
+# bundles into each page so a visitor sees the balloon on first paint.
+#
+# This job is deliberately NOT on the critical path for liveness. The page
+# queries wspr.live directly in the visitor's browser for anything newer than
+# the committed track, so if this workflow runs late, fails, or never runs at
+# all, the site is still current -- it just takes one extra second to get
+# there. That is why a 30-minute cron is fine and why nothing here holds a
+# secret: the export reads a public data source and writes a public file.
+
 on:
   schedule:
     # Every 30 minutes. GitHub Free includes 2,000 Actions minutes/month for
     # private repos and bills each job rounded up to the minute; a 10-minute
     # cron (~4,320 runs/month) would blow through that, and even 30 minutes
-    # (~1,440 runs) only fits if this job stays under a minute. Tighten to
-    # */10 when the repo goes public — public-repo minutes are free.
-    #
-    # Scheduled workflows run late under load. Acceptable: the site displays
-    # "last heard", and the operator's local run is authoritative.
+    # (~1,440 runs) only fits if this job stays under a minute. Public-repo
+    # minutes are free, so this can be tightened once the repo is public --
+    # though there is little reason to, given the browser fills the gap.
     - cron: "*/30 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
 
 jobs:
   ingest:
@@ -26,9 +41,35 @@ jobs:
 
       - run: pip install --quiet ./tool
 
-      # Throwaway database: this run only feeds the Supabase cache. The
+      # Throwaway database: this run only refreshes the committed export. The
       # authoritative record is the operator's local SQLite file.
-      - run: python -m picolog.run --flights tool/flights.toml --db "$RUNNER_TEMP/ingest.db" --window-hours 1
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Pull the last hour of spots
+        run: >
+          python -m picolog.run
+          --flights tool/flights.toml
+          --db "$RUNNER_TEMP/ingest.db"
+          --window-hours 1
+
+      # The export MERGES into the committed track, so this one-hour database
+      # extends a long flight rather than truncating it to the last hour.
+      - name: Export the site's flight data
+        run: >
+          python -m picolog.export_site
+          --flights tool/flights.toml
+          --db "$RUNNER_TEMP/ingest.db"
+          --site site
+
+      - name: Commit any change
+        run: |
+          if git diff --quiet -- site/src/data; then
+            echo "no new telemetry"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/src/data
+          # No [skip ci]: this commit touches site/**, which is exactly what
+          # site.yml watches. The rebuild is the point -- it is what refreshes
+          # the track bundled into the deployed page.
+          git commit -m "flight data: refresh committed track"
+          git push

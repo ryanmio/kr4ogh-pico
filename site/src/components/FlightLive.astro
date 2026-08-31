@@ -1,0 +1,230 @@
+---
+/** The live flight view: heading, map, stats, charts, table.
+ *
+ * The whole thing is one component so the home page and a flight's own URL
+ * show exactly the same view rather than drifting apart.
+ *
+ * The track committed to git is rendered at build time, so the map, stats
+ * and table are in the HTML and the balloon is on screen at first paint,
+ * with no round trip and no spinner. The script then asks wspr.live directly
+ * for anything newer and re-renders.
+ */
+import { statsHtml, tableHtml } from "../lib/render";
+import type { FlightMeta, TrackPoint } from "../lib/types";
+
+interface Props {
+  flight: FlightMeta;
+  track: TrackPoint[];
+}
+const { flight, track } = Astro.props;
+
+// Build-time render is metric; the script re-renders in the reader's
+// remembered choice on load, which cannot be known here.
+const stats = statsHtml(track, true, "metric");
+const table = tableHtml(track);
+const last = track.at(-1);
+---
+
+<section
+  class="flight"
+  data-flight={JSON.stringify(flight)}
+  data-track={JSON.stringify(track)}
+>
+  <div class="flight-head">
+    <h1>Live telemetry <span class="badge badge-live">live</span></h1>
+    <div class="unit-toggle" role="group" aria-label="Units">
+      <button type="button" data-units="metric" aria-pressed="true">Metric</button>
+      <button type="button" data-units="imperial" aria-pressed="false">Imperial</button>
+    </div>
+  </div>
+  <p class="flight-subtitle">
+    {flight.callsign} · {flight.flight_id} · {flight.band} channel {flight.channel}
+    {flight.launch_utc ? ` · launched ${flight.launch_utc.slice(0, 10)}` : ""}
+  </p>
+
+  <div class="fv-map-slot"></div>
+  <div class="fv-stats" set:html={stats} />
+
+
+  <div class="charts-head" hidden>
+    <div class="range-toggle" role="group" aria-label="Chart range">
+      <button type="button" data-range="all" aria-pressed="true">Whole flight</button>
+      <button type="button" data-range="ascent" aria-pressed="false">Ascent</button>
+      <button type="button" data-range="recent" aria-pressed="false">Last 24 h</button>
+    </div>
+  </div>
+  <div class="fv-charts-slot"></div>
+  <div class="fv-table-slot" set:html={table} />
+
+  <p class="flight-note">
+    Positions come from volunteer receiving stations via
+    <a href="https://wspr.live/">wspr.live</a> and are decoded in your browser.
+    The tracker reports once every 10 minutes, so the newest position is
+    normally a few minutes old. It runs on solar power, so it goes quiet
+    overnight.
+    <button class="linklike" id="download" type="button">Download the data</button>
+  </p>
+
+  <p class="flight-updated">
+    <span id="updated">{last ? `Newest position ${last.utc} UTC` : "No positions yet"}</span>
+    <button class="linklike" id="refresh" type="button">Check now</button>
+  </p>
+</section>
+
+<script>
+  import type L from "leaflet";
+  import { renderChartsInto, renderMapInto } from "../lib/flightview";
+  import { refreshTrack } from "../lib/livetrack";
+  import { statsHtml, tableHtml } from "../lib/render";
+  import type { FlightMeta, TrackPoint } from "../lib/types";
+  import { filterRange, RANGE_MIN_SPAN_MS, spanMs, type Range } from "../lib/range";
+  import { loadUnits, saveUnits, type Units } from "../lib/units";
+
+  const root = document.querySelector<HTMLElement>(".flight");
+  if (root) {
+    const meta = JSON.parse(root.dataset.flight!) as FlightMeta;
+    let track = JSON.parse(root.dataset.track!) as TrackPoint[];
+    let units: Units = loadUnits("metric");
+    // Charts only. The map keeps the whole flight so the current position is
+    // always on it, and the stats always describe now.
+    let range: Range = "all";
+
+    const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
+    const chartSlot = root.querySelector<HTMLElement>(".fv-charts-slot")!;
+    const tableSlot = root.querySelector<HTMLElement>(".fv-table-slot")!;
+    const statsSlot = root.querySelector<HTMLElement>(".fv-stats")!;
+    const chartsHead = root.querySelector<HTMLElement>(".charts-head")!;
+    const updatedEl = root.querySelector<HTMLElement>("#updated")!;
+    const refreshBtn = root.querySelector<HTMLButtonElement>("#refresh")!;
+    const REFRESH_MS = 2 * 60 * 1000;
+
+    let map: L.Map | null = null;
+    // Once the reader has panned or zoomed, a refresh must not yank the view
+    // back to the fitted bounds under their hands.
+    let userMoved = false;
+
+    function drawMap(): L.Map | null {
+      const held = renderMapInto(mapSlot, meta, track, units);
+      if (!held) return null;
+      const onInteract = () => { userMoved = true; };
+      held.on("dragstart", onInteract);
+      mapSlot.addEventListener("wheel", onInteract, { passive: true });
+      held.getContainer().addEventListener("dblclick", onInteract);
+      held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
+      return held;
+    }
+
+    /** Rebuild the map. `keepView` is forced on for a unit change, where the
+     * reader has not asked to move and must not be moved. */
+    function drawMapAgain(keepView = userMoved) {
+      const view = keepView && map
+        ? { center: map.getCenter(), zoom: map.getZoom() }
+        : null;
+      // Leaflet refuses to initialise the same container twice, so the old
+      // map has to be disposed rather than merely emptied.
+      map?.remove();
+      map = null;
+      mapSlot.replaceChildren();
+      mapSlot.classList.remove("fv-map");
+      mapSlot.style.height = "";
+      map = drawMap();
+      if (view && map) map.setView(view.center, view.zoom, { animate: false });
+    }
+
+    function drawCharts() {
+      chartSlot.replaceChildren();
+      chartSlot.classList.remove("fv-charts");
+      renderChartsInto(chartSlot, filterRange(track, range), units);
+      // The controls are meaningless until a flight outlasts its own climb.
+      chartsHead.hidden = spanMs(track) <= RANGE_MIN_SPAN_MS;
+      for (const b of chartsHead.querySelectorAll<HTMLButtonElement>("[data-range]")) {
+        b.setAttribute("aria-pressed", String(b.dataset.range === range));
+      }
+    }
+
+    function drawStatsChartsTable() {
+      statsSlot.innerHTML = statsHtml(track, true, units);
+      drawCharts();
+      // Keep the table's disclosure state: it is annoying to have it snap
+      // shut every couple of minutes while you are reading it.
+      const wasOpen = tableSlot.querySelector("details")?.open ?? false;
+      tableSlot.innerHTML = tableHtml(track);
+      const details = tableSlot.querySelector("details");
+      if (details) details.open = wasOpen;
+    }
+
+    function paintUnitToggle() {
+      for (const b of root!.querySelectorAll<HTMLButtonElement>("[data-units]")) {
+        b.setAttribute("aria-pressed", String(b.dataset.units === units));
+      }
+    }
+
+    map = drawMap();
+    drawStatsChartsTable();
+    paintUnitToggle();
+
+    for (const b of chartsHead.querySelectorAll<HTMLButtonElement>("[data-range]")) {
+      b.addEventListener("click", () => {
+        const next = b.dataset.range as Range;
+        if (next === range) return;
+        range = next;
+        drawCharts();
+      });
+    }
+
+    for (const b of root.querySelectorAll<HTMLButtonElement>("[data-units]")) {
+      b.addEventListener("click", () => {
+        const next = b.dataset.units as Units;
+        if (next === units) return;
+        units = next;
+        saveUnits(units);
+        paintUnitToggle();
+        // The map's altitude legend and its tooltips carry units too, so it
+        // is redrawn as well -- holding the reader's exact view, since they
+        // asked to change units, not to move.
+        drawMapAgain(true);
+        drawStatsChartsTable();
+      });
+    }
+
+    async function update() {
+      refreshBtn.disabled = true;
+      const result = await refreshTrack(meta, track);
+      refreshBtn.disabled = false;
+      if (result.error) {
+        const last = track.at(-1);
+        updatedEl.textContent = last
+          ? `Can't reach wspr.live — showing up to ${last.utc} UTC`
+          : "Can't reach wspr.live";
+        return;
+      }
+      if (result.added > 0) {
+        track = result.track;
+        drawMapAgain();
+        drawStatsChartsTable();
+      }
+      const last = track.at(-1);
+      updatedEl.textContent = last
+        ? `Newest position ${last.utc} UTC · checked ${new Date().toISOString().slice(11, 16)} UTC`
+        : "No positions yet";
+    }
+
+    refreshBtn.addEventListener("click", update);
+    root.querySelector("#download")!.addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify({ ...meta, track }, null, 1)],
+        { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${meta.flight_id}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    update();
+    setInterval(update, REFRESH_MS);
+    // A phone that has been asleep should catch up the moment it is looked at.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") update();
+    });
+  }
+</script>

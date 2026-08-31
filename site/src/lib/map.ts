@@ -4,15 +4,21 @@
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { fmtInt, fmtUtc } from "./format";
+import { fmtUtc } from "./format";
+import { altitude as fmtAltitude, type Units } from "./units";
 import type { FlightMeta, TrackPoint } from "./types";
 
-// Free-tier basemap that suits a dark site; OSM data underneath.
+// Keyless dark basemap. CARTO's dark_all was here first, but CARTO now
+// requires an API key and serves watermarked "API KEY REQUIRED" tiles
+// without one, which is unusable on a public page. Esri's dark canvas needs
+// no key and suits the dark theme; attribution is required and given below.
 const TILE_URL =
-  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/" +
+  "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 const TILE_ATTRIBUTION =
+  'Tiles &copy; <a href="https://www.esri.com/">Esri</a>, ' +
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' +
-  ' contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  " contributors";
 
 /** Blue (low) through cyan to yellow (high). */
 function altitudeColor(alt: number, lo: number, hi: number): string {
@@ -66,9 +72,15 @@ function fitHeightToTrack(el: HTMLElement, latlngs: L.LatLng[]): void {
     `${Math.round(Math.max(300, Math.min(ceiling, worldHeightPx)))}px`;
 }
 
+/** Draw the track and return the Leaflet map, so a caller that re-renders
+ * can dispose of it with map.remove(). Leaflet stamps the container with a
+ * _leaflet_id and refuses to initialise it twice, so simply emptying the
+ * element and calling this again throws "Map container is already
+ * initialized" and leaves a blank box. */
 export function renderMap(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
-): void {
+  units: Units = "metric",
+): L.Map {
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
   if (latlngs.length > 0) fitHeightToTrack(el, latlngs);
@@ -83,7 +95,7 @@ export function renderMap(
     zoomSnap: 0,
     maxBoundsViscosity: 1,
   });
-  L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 12 }).addTo(map);
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 16 }).addTo(map);
 
   if (meta.launch_lat != null && meta.launch_lon != null) {
     L.circleMarker([meta.launch_lat, meta.launch_lon], {
@@ -99,7 +111,7 @@ export function renderMap(
     } else {
       map.setView([25, -40], 2);
     }
-    return;
+    return map;
   }
 
   L.polyline(latlngs, { color: "#64748b", weight: 1.5, opacity: 0.8 }).addTo(map);
@@ -118,8 +130,8 @@ export function renderMap(
       fillColor: altitudeColor(p.altitude_m, altLo, altHi),
       fillOpacity: 0.95,
     }).bindTooltip(
-      `${fmtUtc(p.utc)}<br>${p.grid6} · ${fmtInt(p.altitude_m)} m · ` +
-      `${p.speed_kt} kt · ${p.voltage_v.toFixed(2)} V`,
+      `${fmtUtc(p.utc)}<br>${p.grid6} · ${fmtAltitude(p.altitude_m, units).text}` +
+      ` · ${p.voltage_v.toFixed(2)} V`,
     ).addTo(map);
   });
 
@@ -153,12 +165,13 @@ export function renderMap(
   legend.onAdd = () => {
     const div = L.DomUtil.create("div", "map-legend");
     div.innerHTML =
-      `<span>${fmtInt(altLo)} m</span>` +
+      `<span>${fmtAltitude(altLo, units).text}</span>` +
       '<span class="map-legend-bar"></span>' +
-      `<span>${fmtInt(altHi)} m</span>`;
+      `<span>${fmtAltitude(altHi, units).text}</span>`;
     return div;
   };
   legend.addTo(map);
+  return map;
 }
 
 /** Keep tiles covering the whole box. A globe-spanning track is fitted on

@@ -2,11 +2,9 @@
 # paid plan, so this stays dormant until the repo goes public — enable Pages
 # with "GitHub Actions" as the source, then this deploys on every push.
 #
-# PUBLIC_SUPABASE_URL / PUBLIC_SUPABASE_ANON_KEY come from repository
-# *variables* (Settings > Secrets and variables > Actions > Variables): the
-# anon key is public by design (RLS grants SELECT only) and a variable keeps
-# it visible. Leave them unset and the site builds fully static — archived
-# flights work, the live section reports the cache as not configured.
+# The build takes no secrets and no credentials. Flight data is read from
+# committed files under site/src/data/; live positions are fetched by the
+# visitor's browser straight from wspr.live's public endpoint.
 
 name: site
 
@@ -46,8 +44,6 @@ jobs:
         env:
           SITE_URL: ${{ steps.pages.outputs.origin }}${{ steps.pages.outputs.base_path }}
           SITE_BASE: ${{ steps.pages.outputs.base_path }}
-          PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-          PUBLIC_SUPABASE_ANON_KEY: ${{ vars.PUBLIC_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist
