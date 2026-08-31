@@ -252,6 +252,15 @@ main { padding: 2.2rem 0 3.5rem; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* On the narrowest phones a card is about 140px wide and subtitles like
+   "329 km from launch" do not fit. Wrapping to a second line keeps the
+   information; an ellipsis throws it away. Grid rows stretch together, so
+   the cards stay level. */
+@media (max-width: 420px) {
+  .stat-value { font-size: 0.98rem; }
+  .stat-sub { white-space: normal; overflow: visible; }
+}
+
 /* ---------- flight view layout ---------- */
 
 .fv-stats { margin: 1rem 0; }
@@ -259,6 +268,8 @@ main { padding: 2.2rem 0 3.5rem; }
 /* The map is the point of a flight page: it breaks out past the text column
    on wide screens, and its height is set from the track's own shape once the
    data is in (see fitHeightToTrack). This is the pre-script fallback. */
+/* Pre-script fallback only; fitHeightToTrack sets the real height inline
+   once the track is in. Square on a phone, matching the cap it applies. */
 .fv-map {
   height: clamp(340px, 52vh, 600px);
   border-radius: 10px;
@@ -266,6 +277,10 @@ main { padding: 2.2rem 0 3.5rem; }
   overflow: hidden;
   background: var(--bg-raised);
   margin: 1.2rem 0;
+}
+
+@media (max-width: 699px) {
+  .fv-map { height: auto; aspect-ratio: 1; }
 }
 
 @media (min-width: 1240px) {
