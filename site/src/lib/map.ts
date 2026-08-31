@@ -52,9 +52,32 @@ function unwrapLons(track: TrackPoint[]): number[] {
   return lons;
 }
 
-// Fraction of the track's span added as breathing room around it, matched
-// between the height calculation and the fitBounds call below.
+// Fraction of the track's span added as breathing room around it.
 const FIT_PAD = 0.06;
+
+/** Room kept clear on every side of the current position, as a fraction of
+ * the track's own span, capped at something like the width of a weather
+ * system.
+ *
+ * Fitting the track alone puts the balloon hard against the frame, because
+ * the newest fix is by definition the far end of the line. What is in front
+ * of it is then off the map entirely -- which is exactly the half a reader
+ * wants, and with the weather layer on it means the storm being flown into
+ * is the one thing not on screen. The whole flight still fits; there is just
+ * air around the balloon. */
+const POS_ROOM = 0.25;
+const POS_ROOM_MAX_DEG = 12;
+
+/** The view: the whole track, plus room around where the balloon is now. */
+function fitBoundsFor(latlngs: L.LatLng[]): L.LatLngBounds {
+  const b = L.latLngBounds(latlngs).pad(FIT_PAD);
+  const here = latlngs[latlngs.length - 1]!;
+  const span = Math.max(b.getEast() - b.getWest(), b.getNorth() - b.getSouth());
+  const r = Math.min(POS_ROOM * span, POS_ROOM_MAX_DEG);
+  return b
+    .extend(L.latLng(here.lat - r, here.lng - r))
+    .extend(L.latLng(here.lat + r, here.lng + r));
+}
 
 /** Phones get a square map at most.
  *
@@ -65,15 +88,17 @@ const FIT_PAD = 0.06;
  * the fit is on longitude, so the extra height was slack anyway. */
 const NARROW_PX = 700;
 
-/** Size the map box to the track it has to show. A float that has wrapped the
+/** Size the map box to the view it has to show. A float that has wrapped the
  * globe several times is fitted on longitude, so its height is pinned to the
  * world's own height at that zoom: any taller and the extra is empty space off
  * the top and bottom of the map. A flight still near its launch point is the
- * other way round and gets a tall box. */
-function fitHeightToTrack(el: HTMLElement, latlngs: L.LatLng[]): void {
-  const lons = latlngs.map((p) => p.lng);
-  const worldsWide =
-    ((Math.max(...lons) - Math.min(...lons)) * (1 + 2 * FIT_PAD)) / 360;
+ * other way round and gets a tall box.
+ *
+ * It takes the fitted bounds rather than the raw track so that the padding
+ * and the room around the balloon are counted once, here and in the fit, and
+ * cannot drift apart. */
+function fitHeightToBounds(el: HTMLElement, fitted: L.LatLngBounds): void {
+  const worldsWide = (fitted.getEast() - fitted.getWest()) / 360;
   const width = el.clientWidth || 900;
   const worldHeightPx = width / Math.max(worldsWide, 1e-6);
   // Ceiling keeps the stat strip under the map within reach of the first screen.
@@ -99,7 +124,10 @@ export function renderMap(
 ): L.Map {
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
-  if (latlngs.length > 0) fitHeightToTrack(el, latlngs);
+  // Worked out before the map exists, because the box has to be the right
+  // height before Leaflet measures it.
+  const fitted = latlngs.length > 0 ? fitBoundsFor(latlngs) : null;
+  if (fitted) fitHeightToBounds(el, fitted);
 
   const map = L.map(el, {
     preferCanvas: true,
@@ -111,7 +139,11 @@ export function renderMap(
     zoomSnap: 0,
     maxBoundsViscosity: 1,
   });
-  L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 16 }).addTo(map);
+  // Classed so the CSS that knocks the basemap back does not also dim a
+  // weather layer drawn over it; see global.css.
+  L.tileLayer(TILE_URL, {
+    attribution: TILE_ATTRIBUTION, maxZoom: 16, className: "basemap-tiles",
+  }).addTo(map);
 
   if (meta.launch_lat != null && meta.launch_lon != null) {
     L.circleMarker([meta.launch_lat, meta.launch_lon], {
@@ -166,9 +198,8 @@ export function renderMap(
     interactive: false,
   }).addTo(map);
 
-  const fitted = L.latLngBounds(latlngs).pad(FIT_PAD);
-  map.fitBounds(fitted);
-  coverBoxWithWorld(map, el, fitted);
+  map.fitBounds(fitted!);
+  coverBoxWithWorld(map, el, fitted!);
 
   // Keep the world covering the box at every zoom and pan: no zooming out
   // past the point where the world is shorter than the box, and no panning

@@ -52,8 +52,70 @@ current position on it, and the stats always describe now. The control hides
 itself while a flight is still shorter than six hours, when every range would
 show the same thing.
 
+The map fits the whole track and then keeps clear air around the current
+position as well. Fitting the track alone puts the balloon hard against the
+frame — the newest fix is by definition the end of the line — which leaves
+whatever it is flying into off the map. That is the half a reader wants, and
+with the weather layer on it is the storm ahead.
+
 Archived flights are separate and unchanged: `flights/<flight_id>/`
 (`flight.mdx` + `track.json`), read at build time, fully static forever.
+
+## Weather on the map
+
+A switch on the live map draws weather under the track. Two layers, because
+neither one covers a whole flight:
+
+- **Rain** — the RainViewer radar mosaic, newest frame, about ten minutes
+  old. It is built from national radar networks, so it stops a couple of
+  hundred km off any coast and is blank for most of an ocean crossing.
+- **Clouds** — band 13 infrared (cloud-top temperature) from whichever
+  geostationary satellite is nearest the balloon's longitude, via NASA GIBS,
+  about forty minutes old. This is the layer that works over open ocean.
+  GIBS carries GOES-East, GOES-West and Himawari and nothing over Europe,
+  Africa or the Indian Ocean; a flight out there gets the button greyed out
+  rather than a layer that draws nothing.
+
+Two things about the infrared are worth knowing before touching it.
+
+**It is already an enhanced product, not a grey picture.** Its colour map is
+grey from about +57 °C down to −19 °C and colour below that — cyan, blue,
+green, yellow, orange, red, magenta, on past −90 °C. The colours are the
+storms. A CSS filter cannot be used to make it transparent, and the attempt
+is actively harmful: `grayscale()` turns a red −62 °C top into luminance 43,
+and any contrast curve steep enough to clear the warm background then erases
+it, keeping the harmless mid-level cloud instead. So `enhance()` in
+`weather.ts` computes the alpha per pixel from the data — grey is converted
+back to a temperature and fades in as cloud, colour is kept as published —
+over a canvas tile layer, which works because GIBS sends CORS headers and so
+does not taint the canvas. The one band that is dropped is the warmest
+colours, cyan through teal, −19 °C to −32 °C: GIBS starts colouring well
+before convection does, and that band otherwise outlines every cloud edge on
+the map. Colour therefore starts at green, near −33 °C.
+
+**The frame is pinned, not `default`.** `TIME=default` resolves to whatever
+the node answering has finished ingesting, which is not the same answer
+twice — two probes seconds apart returned 12:30 and 12:50 — so one map gets
+drawn from several moments with a tile-shaped hole wherever one is not ready.
+Sampling nine tiles across zooms 3–6 showed frames complete from about 30
+minutes old and ragged before that, so `gibsFrameTime()` asks for the newest
+ten-minute slot at least 40 minutes back. That is the whole reason the layer
+is 40 minutes old rather than 20.
+
+The chosen layer is remembered per browser and can be pinned to a link:
+`?w=c` for clouds, `?w=r` for rain, `?w=n` for none, with the long forms
+(`?w=clouds`) accepted too. It follows the same rule as `?u=`, and for the
+same reason — a link sent because of the storm has to arrive with the storm
+on it, so the link outranks the recipient's stored preference, and following
+it does not overwrite that preference. The two compose: `?u=i&w=c`.
+
+Both sources are keyless and send `access-control-allow-origin: *`, so this
+keeps the site's rule: no proxy, no secrets in the build, nothing of ours
+awake. If a source is down the layer does not appear and the map is what it
+always was.
+
+Live flights only. An archived flight is months old, and today's weather
+drawn over its track would be a picture that lies.
 
 ## The decoder
 
