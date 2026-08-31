@@ -1,44 +1,117 @@
 # site
 
-The public website for KR4OGH pico balloon flights. Astro, static output.
+The public website for KR4OGH pico balloon flights. Astro, static output, no
+server and no database.
 
-Two data paths, per `docs/architecture.md`:
+## How a live flight reaches the page
 
-- **Archived flights** are read at build time from `site/flights/<flight_id>/`
-  (`flight.mdx` narrative + `track.json` full decoded track), committed to
-  git by the flight-archive export. These pages are fully static and never
-  touch a database.
-- **Live flights** are read in the browser from the Supabase cache with the
-  anon key (RLS allows SELECT only). If the cache is unset, paused, or
-  broken, the live section degrades to a notice and everything else still
-  works.
+1. **Bundled track, instant.** `src/data/flights.json` and
+   `src/data/tracks/<flight_id>.json` are committed to git and imported at
+   build time, so the map, stats and table are in the HTML. The balloon is on
+   screen on first paint, with no network round trip and no spinner. The stats
+   and table render even with JavaScript off.
+2. **Live tail, about a second later.** The page then queries
+   [wspr.live](https://wspr.live/) directly from the browser for anything
+   newer than the bundled track, decodes it in place, and merges. wspr.live
+   sends `access-control-allow-origin: *`, so this needs no proxy.
+
+The page refreshes every two minutes, on the Refresh button, and whenever a
+backgrounded tab becomes visible again.
+
+Consequences worth knowing:
+
+- **Nothing of ours has to be awake.** No cron, no cache, no laptop. The site
+  is current because the visitor's browser asks the source.
+- **The committed track being stale is cosmetic, never wrong.** A visitor
+  always ends up with the newest fixes; a stale export only means the browser
+  fetches a slightly wider window to catch up.
+- **wspr.live being down is survivable.** The bundled track still renders and
+  the page says when it was last updated.
+- **No credentials anywhere.** The build takes no secrets and the page
+  publishes no API key.
+
+How current is it, really? The tracker sends one telemetry fix per 10-minute
+cycle, and receivers take 2-3 minutes to decode and upload, so the newest fix
+in existence is 3-13 minutes old. The page shows that fix. Nothing can do
+better, including Traquito's own dashboard.
+
+The home page **is** the flight: while something is up, there is nothing to
+click through to. `/live/<flight_id>/` is the permalink for a particular
+flight and renders the same component.
+
+Numbers are shown in metric or imperial, the reader's choice, remembered per
+browser. The stored track is always metric and always knots; conversion
+happens only at display, so there is one representation of the data.
+
+The charts carry a range control — whole flight / ascent / last 24 h —
+because a float ruins its own charts: the ascent ends up a couple of percent
+of the width and the float a flat line across the rest. Slicing the track
+fixes both axes at once, since each chart scales to the values it is handed.
+It applies to the charts only: the map always shows the whole flight with the
+current position on it, and the stats always describe now. The control hides
+itself while a flight is still shorter than six hours, when every range would
+show the same thing.
+
+Archived flights are separate and unchanged: `flights/<flight_id>/`
+(`flight.mdx` + `track.json`), read at build time, fully static forever.
+
+## The decoder
+
+`src/lib/wspr/` is a TypeScript port of the Python in `tool/picolog/` —
+`decode.ts`, `match.ts`, `channels.ts`, `query.ts`, `track.ts`. Both must
+agree exactly.
+
+```sh
+npm run verify        # 67 rows of the frozen vector, field by field
+```
+
+That runs the port over `tool/tests/vectors/basic_telemetry.json`, the same
+real flight day the Python is tested against, whose expected output was
+verified row-by-row against the Traquito Flight Search Dashboard. Any
+divergence between the two implementations fails it.
+
+`src/lib/wspr/channels-20m.json` is generated from the frozen channel table,
+never hand-edited:
+
+```sh
+npm run gen:channels  # regenerate from tool/picolog/channels_20m.csv
+```
 
 ## Run
 
 ```sh
 npm install
-npm run dev        # http://localhost:4321, archived flights only
-npm run build      # static output in dist/
+npm run dev            # http://localhost:4321
+npm run build          # static output in dist/
+npm run live-check     # fetch + decode the live flight in the terminal
+npm run browser-check  # drive the page in Chrome: map draws, survives refresh
 ```
 
-To see the live path without a Supabase project, replay local data through
-the mock cache (uses `tool/demo.db`; rebuild it from the frozen test vectors
-if absent — see `tool/tests/test_vectors.py` for the replay recipe):
+`npm run browser-check` needs a running dev server and the system Chrome. It
+exists because a refresh once blanked the map and nothing in the build or the
+typecheck could see it.
+
+`npm run dev` shows real flights immediately: the data is in git, so there is
+nothing to configure and no local services to start.
+
+## Refreshing the committed data
+
+From the repo root, against the authoritative SQLite record:
 
 ```sh
-python3 dev/mock_supabase.py --db ../tool/demo.db \
-    --flights dev/demo_flights.toml --shift-to-now
-PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 PUBLIC_SUPABASE_ANON_KEY=dev npm run dev
+cd tool
+python -m picolog.run         --flights flights.toml --db picolog.db --window-hours 1
+python -m picolog.export_site --flights flights.toml --db picolog.db --site ../site
 ```
 
-Against the real cache, copy `.env.example` to `.env` and fill in the
-project URL and anon (or publishable) key. Both values are compiled into the
-client bundle; that is safe for the anon key and why the service role key
-must never appear here.
+The export **merges** into the committed track, so running it from a
+short-window database extends a long flight rather than truncating it.
+`.github/workflows/ingest.yml` does exactly this every 30 minutes and commits
+the result.
 
 ## Deploy
 
 `.github/workflows/site.yml` builds and deploys to GitHub Pages on push to
 `main` once Pages is enabled (source: GitHub Actions). `SITE_URL` /
-`SITE_BASE` are derived from the Pages configuration; the Supabase values
-come from repository Actions variables and may be left unset.
+`SITE_BASE` are derived from the Pages configuration. No other configuration
+is required.

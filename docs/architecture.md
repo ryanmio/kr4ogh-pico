@@ -5,8 +5,8 @@
 | Store | Role | Holds | Loss tolerance |
 |-------|------|-------|----------------|
 | SQLite (local, `*.db`) | **The record** | Raw spots (append-only), pull coverage, derived telemetry | None. This is the authoritative flight record. |
-| Supabase (Postgres) | **A cache** | Flights metadata + decoded telemetry only | Total. Can be absent, broken, or paused with zero effect on the record. |
-| git (this repo) | **The archive** | Code, channel table, test vectors, and exported flight archives | None, but everything in it is reproducible or frozen-by-choice. |
+| git (this repo) | **The archive and the site's data** | Code, channel table, test vectors, exported flight archives, and the committed track each page ships with | None, but everything in it is reproducible or frozen-by-choice. |
+| wspr.live | **The live source** | Every raw spot, queried by the visitor's browser | Total. If it is unreachable the page still renders its committed track. |
 
 Why three stores rather than one:
 
@@ -17,13 +17,25 @@ Why three stores rather than one:
   of wspr.live and when, which is what lets the tool distinguish "window never
   queried" from "balloon was silent" — the Fail/Wounded scoring depends on
   that distinction.
-- **Supabase is a cache** because the public site needs a queryable hot copy
-  and nothing else does. The tool only ever writes to it (idempotent upserts,
-  never deletes); nothing reads from it. The free tier has zero backup
-  retention, which is fine for a cache and disqualifying for a record. No raw
-  spots go there: a long flight's raw rows would crowd the 500 MB free tier.
 - **git is the archive** because a closed flight should render forever without
-  any database. That is the flight-archive export below.
+  any database. That is the flight-archive export below. It also holds
+  `site/src/data/`, written by `picolog.export_site`: the flight list and each
+  flight's decoded track, which the site bundles into the page so a visitor
+  sees the balloon on first paint with no round trip.
+- **wspr.live is the live source** because a live tracker must not depend on
+  anything of ours being awake. The page queries it directly from the
+  browser (it sends `access-control-allow-origin: *`) and decodes in place,
+  using a TypeScript port of the same decoder, validated row-for-row against
+  the same frozen vector (`site/dev/verify-port.ts`, `npm run verify`). A
+  visitor therefore sees the newest fix that exists anywhere, whether or not
+  the operator's machine is on and whether or not the scheduled export ran.
+
+There is deliberately no database in the serving path. An earlier design put
+a Supabase cache between the tool and the site; it made the site only as
+fresh as the last scheduled write (30-45 minutes, since GitHub's cron runs
+late), and it required publishing an API key in the page. Querying the source
+directly is both fresher and simpler. The tool retains its Supabase sink, but
+nothing reads from it.
 
 ## Flight-archive export (specified here, not yet built)
 
@@ -67,10 +79,11 @@ render the map and charts from static data.
 
 Consequences, and the point of the design:
 
-- The Supabase project can pause between flights (free-tier projects pause
-  after inactivity anyway) and nothing breaks: live flights use the cache,
-  closed flights use git.
-- The site's history pages have no runtime dependency at all.
+- Nothing of ours has to be running for the site to be current: live flights
+  are decoded in the visitor's browser, closed flights render from git.
+- The site's pages have no runtime dependency on any service we operate. The
+  scheduled export only affects how much the browser has to fetch to catch
+  up, never whether it can.
 - git ends up holding the durable archive of every completed flight, next to
   the raw spots in the operator's SQLite file and the frozen test vectors.
 

@@ -1,8 +1,13 @@
-/** HTML string builders shared by build-time rendering (archived pages) and
- * the browser (live pages). One source for the markup means the two data
- * paths — git archive and Supabase cache — always look identical. */
+/** HTML string builders shared by build-time rendering and the browser, so a
+ * flight looks the same whether its numbers came from the committed track or
+ * from a live wspr.live query. */
 
-import { fmtCoord, fmtInt, fmtRelative, fmtUtc, trackStats } from "./format";
+import {
+  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtRelative, fmtUtc, haversineKm,
+  trackStats,
+} from "./format";
+import * as u from "./units";
+import type { Units } from "./units";
 import type { TrackPoint } from "./types";
 
 export function esc(s: string): string {
@@ -19,48 +24,73 @@ function statCard(label: string, value: string, sub: string): string {
   </div>`;
 }
 
-/** The stat strip above the map. `live` switches "last heard" to relative
- * time, which only makes sense while a flight is still flying. */
-export function statsHtml(track: TrackPoint[], live: boolean): string {
+/** The stat strip under the map.
+ *
+ * Eight cards, so the grid divides evenly at every breakpoint instead of
+ * leaving an orphan on its own row. Labels are written for someone who has
+ * never heard of WSPR: "distance covered", not "track"; "battery", not
+ * "volts". Position is deliberately absent -- the map above says where it is
+ * far better than a grid square does.
+ *
+ * `live` switches "last heard" to relative time, which only makes sense
+ * while a flight is still flying.
+ */
+export function statsHtml(
+  track: TrackPoint[], live: boolean, units: Units = "metric",
+): string {
   const s = trackStats(track);
   if (!s) {
     return '<p class="empty-note">No decoded telemetry yet.</p>';
   }
-  const days =
-    (Date.parse(s.lastUtc) - Date.parse(s.firstUtc)) / 86_400_000;
   const volts = track.map((p) => p.voltage_v);
   const temps = track.map((p) => p.temperature_c);
+  const alt = (m: number) => u.altitude(m, units).text;
+  const spd = (kt: number) => u.speed(kt, units).text;
+  const tmp = (c: number) => u.temperature(c, units).text;
+
+  // Heading over the last leg. One fix is not a direction, so it stays blank
+  // rather than inventing one.
+  const prev = track.length >= 2 ? track[track.length - 2]! : null;
+  const heading = prev
+    ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
+    : null;
+
+  const aloftMs = Date.parse(s.lastUtc) - Date.parse(s.firstUtc);
+  const fromLaunchKm = haversineKm(
+    track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
+
   const cards = [
     statCard(
       "Last heard",
       live ? fmtRelative(s.lastUtc) : fmtUtc(s.lastUtc),
-      live ? fmtUtc(s.lastUtc) : `first ${fmtUtc(s.firstUtc)}`,
+      live ? `${s.lastUtc.slice(11, 16)} UTC` : `first ${fmtUtc(s.firstUtc)}`,
     ),
     statCard(
-      "Position",
-      s.last.grid6,
-      fmtCoord(s.last.lat, s.last.lon),
+      "Time in the air",
+      fmtDuration(aloftMs),
+      `since ${s.firstUtc.slice(11, 16)} UTC`,
+    ),
+    statCard("Altitude", alt(s.last.altitude_m), `highest ${alt(s.maxAltitudeM)}`),
+    statCard("Ground speed", spd(s.last.speed_kt), `fastest ${spd(s.maxSpeedKt)}`),
+    statCard(
+      "Heading",
+      heading === null ? "--" : compassPoint(heading),
+      heading === null ? "needs two fixes" : `${Math.round(heading)}\u00b0 from north`,
     ),
     statCard(
-      "Altitude",
-      `${fmtInt(s.last.altitude_m)} m`,
-      `max ${fmtInt(s.maxAltitudeM)} m`,
+      "Distance flown",
+      u.distance(s.distanceKm, units).text,
+      `${u.distance(fromLaunchKm, units).text} from launch`,
     ),
     statCard(
-      "Track",
-      `${fmtInt(Math.round(s.distanceKm))} km`,
-      `${fmtInt(s.points)} records over ${days.toFixed(1)} days`,
+      "Battery",
+      `${s.last.voltage_v.toFixed(2)} V`,
+      `${Math.min(...volts).toFixed(2)}-${Math.max(...volts).toFixed(2)} V`,
     ),
     statCard(
-      "Speed",
-      `${s.last.speed_kt} kt`,
-      `max ${s.maxSpeedKt} kt`,
-    ),
-    statCard(
-      "Volts / die temp",
-      `${s.last.voltage_v.toFixed(2)} V · ${s.last.temperature_c} °C`,
-      `${Math.min(...volts).toFixed(2)}–${Math.max(...volts).toFixed(2)} V · ` +
-        `${Math.min(...temps)}–${Math.max(...temps)} °C`,
+      "Tracker temp",
+      tmp(s.last.temperature_c),
+      `${u.temperature(Math.min(...temps), units).value} to ${tmp(Math.max(...temps))}`,
     ),
   ];
   return `<div class="stats">${cards.join("")}</div>`;
@@ -112,20 +142,3 @@ export function outcomeBadgeClass(outcome: string): string {
 
 /** A flight card for the home page. Used at build time for archived flights
  * and in the browser for live ones. */
-export function flightCardHtml(o: {
-  href: string;
-  title: string;
-  badge: string;
-  badgeClass: string;
-  meta: string;
-  summary: string;
-}): string {
-  return `<a class="flight-card" href="${esc(o.href)}">
-    <div class="flight-card-top">
-      <h3>${esc(o.title)}</h3>
-      <span class="badge ${esc(o.badgeClass)}">${esc(o.badge)}</span>
-    </div>
-    <p class="flight-card-meta mono">${esc(o.meta)}</p>
-    <p class="flight-card-summary">${esc(o.summary)}</p>
-  </a>`;
-}
