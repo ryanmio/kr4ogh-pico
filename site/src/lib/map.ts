@@ -88,6 +88,8 @@ export function renderMap(
 
   const map = L.map(el, {
     preferCanvas: true,
+    // Replaced below by a continuous handler; see smoothWheelZoom.
+    scrollWheelZoom: false,
     worldCopyJump: false,
     // In the full-page view the top corners are under the floating header,
     // so the zoom control moves to the right edge below it.
@@ -98,6 +100,7 @@ export function renderMap(
     zoomSnap: 0,
     maxBoundsViscosity: 1,
   });
+  smoothWheelZoom(map);
   if (fill) L.control.zoom({ position: "topright" }).addTo(map);
   // Classed so CSS can treat the basemap, the labels and a weather layer
   // differently; see global.css.
@@ -207,6 +210,66 @@ export function renderMap(
     legend.addTo(map);
   }
   return map;
+}
+
+/** How far a wheel has to travel for one zoom level, in pixels. Sized for a
+ * trackpad: a comfortable two-finger swipe is a couple of hundred pixels of
+ * delta, which should be worth a couple of zoom levels. */
+const WHEEL_PX_PER_LEVEL = 55;
+
+/** Pinching a trackpad arrives as ctrl+wheel. It is a deliberate zoom rather
+ * than a scroll that happens to be over the map, so it moves further. */
+const PINCH_GAIN = 2.5;
+
+/** Continuous wheel zoom, in place of Leaflet's own.
+ *
+ * Leaflet buffers 40 ms of wheel events, runs the total through a sigmoid and
+ * applies it in one jump. That is right for a notched mouse wheel and wrong
+ * for a trackpad, which sends a stream of few-pixel deltas: a full two-finger
+ * swipe came to about one zoom level, delivered in visible stair-steps.
+ *
+ * This zooms on every event, folded into one frame, anchored under the
+ * pointer. The per-event clamp is what lets a single rule serve both devices
+ * -- a mouse notch of ~100 px lands on a whole level, while a trackpad's
+ * small deltas accumulate smoothly -- so nothing has to guess which one is
+ * in the reader's hand. */
+function smoothWheelZoom(map: L.Map): void {
+  const el = map.getContainer();
+  let pending = 0;
+  let anchor: L.Point | null = null;
+  let frame = 0;
+
+  const apply = () => {
+    frame = 0;
+    const delta = pending;
+    pending = 0;
+    if (!delta || !anchor) return;
+    // Leaflet clamps to the map's own min and max zoom on the way through.
+    map.setZoomAround(anchor, map.getZoom() + delta, { animate: false });
+  };
+
+  const onWheel = (ev: WheelEvent) => {
+    // The page must not scroll behind a map that is handling the gesture.
+    ev.preventDefault();
+    // Firefox reports lines and pages as well as pixels.
+    const px = ev.deltaMode === 1 ? ev.deltaY * 20
+      : ev.deltaMode === 2 ? ev.deltaY * 60
+        : ev.deltaY;
+    const step = Math.max(-1, Math.min(1, -px / WHEEL_PX_PER_LEVEL));
+    pending += ev.ctrlKey ? step * PINCH_GAIN : step;
+    anchor = map.mouseEventToContainerPoint(ev);
+    if (!frame) frame = requestAnimationFrame(apply);
+  };
+
+  el.addEventListener("wheel", onWheel, { passive: false });
+  // The live view rebuilds its map on every refresh, into the same element:
+  // `map.remove()` disposes the map but leaves the container standing. A
+  // listener left on it would outlive its map, and the next scroll would
+  // reach into a torn-down one.
+  map.on("unload", () => {
+    el.removeEventListener("wheel", onWheel);
+    if (frame) cancelAnimationFrame(frame);
+  });
 }
 
 /** Keep tiles covering the whole box. A globe-spanning track is fitted on

@@ -171,6 +171,43 @@ const globeOk =
   gAfter.canvas && gAfter.on === "Globe" &&
   gOff.leaflet && !gOff.canvas && gOff.on === "Flat";
 
+// Trackpad zoom is not something a typecheck can see. Leaflet's own handler
+// batches 40 ms of wheel events and applies them in one jump, which turns a
+// two-finger swipe into about one zoom level; map.ts replaces it with a
+// continuous one. Read the zoom back out of the DOM -- tile level plus the
+// log of the container's scale -- since the map lives in a module closure.
+const zoomNow = () => page.evaluate(() => {
+  const c = document.querySelector(".leaflet-tile-container");
+  const t = document.querySelector(".leaflet-tile");
+  if (!c || !t) return null;
+  const m = new DOMMatrixReadOnly(getComputedStyle(c).transform);
+  const z = Number(t.src.match(/\/(\d+)\/\d+\/\d+/)?.[1]);
+  return Number((z + Math.log2(m.a || 1)).toFixed(3));
+});
+const swipe = async (deltaY, count) => {
+  const before = await zoomNow();
+  await page.evaluate(async ({ deltaY, count }) => {
+    const el = document.querySelector(".leaflet-container");
+    const r = el.getBoundingClientRect();
+    for (let i = 0; i < count; i++) {
+      el.dispatchEvent(new WheelEvent("wheel", {
+        deltaY, deltaMode: 0, bubbles: true, cancelable: true,
+        clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+      }));
+      await new Promise((done) => setTimeout(done, 16));
+    }
+  }, { deltaY, count });
+  await page.waitForTimeout(300);
+  return (await zoomNow()) - before;
+};
+const swipeIn = await swipe(-4.2, 30);
+const notch = await swipe(-100, 1);
+console.log(`wheel zoom       : trackpad swipe=${swipeIn.toFixed(2)} levels ` +
+  `mouse notch=${notch.toFixed(2)} levels`);
+// A swipe has to be worth real travel, and a notch has to stay near one
+// level or a mouse user overshoots the flight on every scroll.
+const wheelOk = swipeIn > 1.5 && notch > 0.8 && notch < 1.3;
+
 // A link is the last piece of shared state: `?p=speed` has to arrive with
 // the speed panel open and the map colored by it, without rewriting the URL
 // that asked for it, and closing a panel has to take the parameter back out
@@ -198,7 +235,7 @@ const linkOk =
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
   && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 7
-  && panelOk && trackerOk && weatherOk && globeOk && linkOk
+  && panelOk && trackerOk && weatherOk && globeOk && linkOk && wheelOk
   && errors.length === 0;
 console.log(ok
   ? "\nRESULT: map, panel, weather and globe survive refreshes; links share the panel"
