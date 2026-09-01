@@ -18,7 +18,7 @@ const { flight, track } = Astro.props as { flight: FlightMeta; track: TrackPoint
 ---
 
 <Base
-  title={`${flight.flight_id} — live balloon telemetry`}
+  title={`${flight.callsign} ${flight.flight_id} — live balloon telemetry`}
   description={`Live telemetry for ${flight.callsign} flight ${flight.flight_id}.`}
   chrome={false}
 >

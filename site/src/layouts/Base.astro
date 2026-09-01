@@ -25,6 +25,15 @@ const {
     <meta name="description" content={description} />
     <link rel="icon" href={withBase("/favicon.svg")} type="image/svg+xml" />
     <title>{title}</title>
+
+    <!-- Share cards. Title and description carry them for now; X falls back
+         to these when no twitter:* tags exist. No og:url and no canonical
+         until SITE_URL is set in the deploy -- `site` defaults to localhost,
+         and a localhost canonical is worse than none. Same blocker as
+         og:image, which has to be absolute. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
   </head>
   <body>
     {chrome && (
