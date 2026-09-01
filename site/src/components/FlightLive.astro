@@ -78,7 +78,7 @@ const last = track.at(-1);
   import { renderChart } from "../lib/charts";
   import { renderMapInto } from "../lib/flightview";
   import {
-    bearingDeg, compassPoint, fmtDuration, haversineKm, parseUtc,
+    bearingDeg, compassPoint, fmtDuration, fmtInt, haversineKm, parseUtc,
     trackStats,
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
@@ -96,7 +96,7 @@ const last = track.at(-1);
     type WeatherLayer,
   } from "../lib/weather";
 
-  type PanelKind = MetricKey | "tracker" | "data" | "about";
+  type PanelKind = MetricKey | "status" | "tracker" | "data" | "about";
 
   const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
@@ -186,7 +186,7 @@ const last = track.at(-1);
     /** The card whose panel is open; the highlight promises details below,
      * so it must not light up for coloring alone. */
     function activeCard(): ActiveCard {
-      if (panel === "tracker") return "tracker";
+      if (panel === "tracker" || panel === "status") return panel;
       return panel && isMetricKey(panel) ? panel : null;
     }
 
@@ -199,8 +199,9 @@ const last = track.at(-1);
       for (const b of cardsSlot.querySelectorAll<HTMLButtonElement>("[data-metric]")) {
         b.setAttribute("aria-pressed", String(b.dataset.metric === active));
       }
-      cardsSlot.querySelector('[data-panel="tracker"]')
-        ?.setAttribute("aria-pressed", String(active === "tracker"));
+      for (const b of cardsSlot.querySelectorAll<HTMLButtonElement>("[data-panel]")) {
+        b.setAttribute("aria-pressed", String(b.dataset.panel === active));
+      }
     }
 
     function paintRangeToggle() {
@@ -319,10 +320,48 @@ const last = track.at(-1);
       ].join("");
     }
 
+    /** Minutes between consecutive reports, stamped on the later one. The
+     * 10-minute baseline is the tracker working; the tall spikes are the
+     * overnight silences, which is exactly the shape that answers "has it
+     * been too quiet?". */
+    function statusPanelBody() {
+      const gaps: { t: number; v: number }[] = [];
+      const pts = filterRange(track, range);
+      for (let i = 1; i < pts.length; i++) {
+        const t = parseUtc(pts[i]!.utc).getTime();
+        gaps.push({ t, v: (t - parseUtc(pts[i - 1]!.utc).getTime()) / 60_000 });
+      }
+      const s = trackStats(track)!;
+      let longest = 0;
+      for (let i = 1; i < track.length; i++) {
+        longest = Math.max(longest,
+          parseUtc(track[i]!.utc).getTime() -
+          parseUtc(track[i - 1]!.utc).getTime());
+      }
+      const sinceMs = Date.now() - parseUtc(s.lastUtc).getTime();
+      panelBody.innerHTML =
+        `<div class="fv-minis">${[
+          mini("Last heard", `${s.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`),
+          mini("Reports", `${fmtInt(s.points)} since launch`),
+          mini("Cadence", "every 10 min in sunlight"),
+          mini("Longest silence", `${fmtDuration(longest)} (overnight)`),
+        ].join("")}</div>` +
+        '<div class="fv-panel-chart"></div>';
+      if (gaps.length >= 2) {
+        const wide = window.matchMedia("(min-width: 900px)").matches;
+        renderChart(panelBody.querySelector<HTMLElement>(".fv-panel-chart")!, {
+          label: "Minutes between reports", unit: "min", color: "#5eead4",
+          values: gaps, domain: [gaps[0]!.t, gaps[gaps.length - 1]!.t],
+          decimals: 0, ...(wide ? { width: 1000 } : {}),
+        });
+      }
+    }
+
     function renderPanel() {
       if (!panel) return;
       const isMetric = isMetricKey(panel);
-      rangeToggle.hidden = !isMetric || spanMs(track) <= RANGE_MIN_SPAN_MS;
+      const hasChart = isMetric || panel === "status";
+      rangeToggle.hidden = !hasChart || spanMs(track) <= RANGE_MIN_SPAN_MS;
       paintRangeToggle();
       if (isMetric) {
         const key = panel as MetricKey;
@@ -346,6 +385,13 @@ const last = track.at(-1);
             { ...chartSpec(key, pts), ...(wide ? { width: 1000 } : {}) },
           );
         }
+      } else if (panel === "status") {
+        panelTitle.textContent = "Signal";
+        if (track.length < 2) {
+          panelBody.innerHTML = '<p class="empty-note">Not enough reports yet.</p>';
+          return;
+        }
+        statusPanelBody();
       } else if (panel === "tracker") {
         panelTitle.textContent = `The tracker · ${meta.callsign} ${meta.flight_id}`;
         panelBody.innerHTML = trackerDetailsHtml(meta.flight_id);
@@ -375,6 +421,7 @@ const last = track.at(-1);
             <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
             <a href="https://wspr.live/">Spots: wspr.live</a>
             <a href="https://traquito.github.io/">Trackers: Traquito</a>
+            <a href="https://traquito.github.io/search/spots/dashboard/?band=20m&channel=348&callsign=KR4OGH&dtGte=2026-08-30&dtLte=2026-09-30">Traquito dashboard</a>
           </p>
         </div>`;
       }
@@ -430,11 +477,12 @@ const last = track.at(-1);
 
     // Cards re-render on refresh, so listen on the slot, not the buttons.
     cardsSlot.addEventListener("click", (ev) => {
-      const trackerBtn = (ev.target as HTMLElement)
-        .closest<HTMLButtonElement>('[data-panel="tracker"]');
-      if (trackerBtn) {
-        if (panel === "tracker") closePanel();
-        else openPanel("tracker");
+      const panelBtn = (ev.target as HTMLElement)
+        .closest<HTMLButtonElement>("[data-panel]");
+      if (panelBtn) {
+        const kind = panelBtn.dataset.panel as PanelKind;
+        if (panel === kind) closePanel();
+        else openPanel(kind);
         return;
       }
       const btn = (ev.target as HTMLElement)

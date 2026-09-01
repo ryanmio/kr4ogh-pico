@@ -196,7 +196,22 @@ const GEO_SATS: GeoSat[] = [
  * imagery is smeared to uselessness, or absent. GIBS carries nothing over
  * Europe, Africa or the Indian Ocean, so a flight there has no cloud layer
  * at all — better to say so than to offer a button that draws nothing. */
-const GEO_LIMIT_DEG = 70;
+const GEO_LIMIT_DEG = 65;
+
+/** Where the drawn disc starts fading and where it ends.
+ *
+ * The published tiles do not stop at the useful part of the disc: they run
+ * to its geometric edge, where the camera sees the atmosphere edge-on and
+ * everything smears cold, and past it, where resampling leaves cold-looking
+ * junk. Unmasked, that paints a white ring around the whole disc and a
+ * solid blob over the Arctic — on a zoomed-out map the ring and the blob
+ * were the only "clouds" visible, because genuine scattered cloud averages
+ * away into warm grey when downsampled while the edge stays uniformly cold.
+ * So the layer is cut by geometry, not temperature: full strength to 60°
+ * from the sub-point, gone by 70°. Cold polar surfaces (Greenland, sea ice)
+ * sit past 70° from every sub-point and are cut by the same knife. */
+const DISC_FULL_COS = Math.cos((60 * Math.PI) / 180);
+const DISC_EDGE_COS = Math.cos((70 * Math.PI) / 180);
 
 /** How far back to ask for, and the product's cadence.
  *
@@ -310,10 +325,11 @@ function enhance(px: Uint8ClampedArray): void {
       }
       continue;
     }
-    // Grey 255 is the single entry below -91 C, colder than the colours and
-    // far colder than anything the ramp below covers. Off-disc is grey 0.
+    // Grey 255 is the single entry below -91 C, colder than the colours
+    // and far colder than anything the ramp below covers. (Grey 0, the
+    // off-disc fill, lands below the ramp's threshold and goes clear.)
     if (r > GREY_AT_COLD) {
-      px[i + 3] = r === 0 ? 0 : Math.round(255 * STORM_ALPHA);
+      px[i + 3] = Math.round(255 * STORM_ALPHA);
       continue;
     }
     const t = (GREY_CLEAR_C - greyToC(r)) / span;
@@ -321,7 +337,42 @@ function enhance(px: Uint8ClampedArray): void {
   }
 }
 
-/** A tile layer that runs `enhance` over every tile before it is shown.
+/** Multiply per-pixel alpha by the disc mask for one tile.
+ *
+ * The angular distance from the sub-point factors: cos θ = cos φ · cos Δλ,
+ * with φ per pixel row (inverse mercator) and Δλ per pixel column, so the
+ * mask is two 256-entry tables and a multiply, not 65k trig calls. Column
+ * longitude is linear in tile x, so wrapped world copies come out right
+ * through the cosine's own periodicity. */
+function maskDisc(
+  px: Uint8ClampedArray, size: { x: number; y: number },
+  coords: { x: number; y: number; z: number }, satLon: number,
+): void {
+  const n = 2 ** coords.z;
+  const rowCos = new Float64Array(size.y);
+  for (let r = 0; r < size.y; r++) {
+    const yNorm = (coords.y + (r + 0.5) / size.y) / n;
+    const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * yNorm)));
+    rowCos[r] = Math.cos(lat);
+  }
+  const colCos = new Float64Array(size.x);
+  for (let c = 0; c < size.x; c++) {
+    const lon = ((coords.x + (c + 0.5) / size.x) / n) * 360 - 180;
+    colCos[c] = Math.cos(((lon - satLon) * Math.PI) / 180);
+  }
+  const spanCos = DISC_FULL_COS - DISC_EDGE_COS;
+  for (let r = 0; r < size.y; r++) {
+    for (let c = 0; c < size.x; c++) {
+      const f = (rowCos[r]! * colCos[c]! - DISC_EDGE_COS) / spanCos;
+      if (f >= 1) continue;
+      const i = (r * size.x + c) * 4;
+      px[i + 3] = f <= 0 ? 0 : Math.round(px[i + 3]! * f);
+    }
+  }
+}
+
+/** A tile layer that runs `enhance` and the disc mask over every tile
+ * before it is shown.
  *
  * GIBS sends `access-control-allow-origin: *`, so an anonymous crossOrigin
  * image does not taint the canvas and the pixels can be read back. If a
@@ -348,6 +399,8 @@ const EnhancedIrLayer = L.TileLayer.extend({
         return done(undefined, canvas);
       }
       enhance(data.data);
+      const satLon = (this.options as { satLon?: number }).satLon;
+      if (satLon !== undefined) maskDisc(data.data, size, coords, satLon);
       ctx.putImageData(data, 0, 0);
       done(undefined, canvas);
     };
@@ -355,7 +408,9 @@ const EnhancedIrLayer = L.TileLayer.extend({
     img.src = this.getTileUrl(coords);
     return canvas;
   },
-}) as new (url: string, options?: L.TileLayerOptions) => L.TileLayer;
+}) as new (
+  url: string, options?: L.TileLayerOptions & { satLon?: number },
+) => L.TileLayer;
 
 function cloudLayer(sat: GeoSat): L.TileLayer {
   const time = gibsFrameTime();
@@ -364,6 +419,7 @@ function cloudLayer(sat: GeoSat): L.TileLayer {
     `${sat.layer}/default/${time}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`,
     {
       className: "weather-tiles weather-clouds",
+      satLon: sat.lon,
       // The product itself stops at zoom 6; upscale past that.
       maxNativeZoom: 6,
       maxZoom: 16,

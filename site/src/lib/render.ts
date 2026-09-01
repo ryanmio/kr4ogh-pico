@@ -134,8 +134,8 @@ const ICONS: Record<MetricKey, string> = {
     '<path d="M6.2 15.3a8 8 0 0 1 0-11.6M17.8 3.7a8 8 0 0 1 0 11.6"/></svg>',
 };
 
-/** Which card is lit: a metric card, the tracker card, or none. */
-export type ActiveCard = MetricKey | "tracker" | null;
+/** Which card is lit: a metric card, the tracker or status card, or none. */
+export type ActiveCard = MetricKey | "tracker" | "status" | null;
 
 const TRACKER_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
@@ -205,11 +205,15 @@ export function sidebarHtml(
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
-  const status = `<div class="fv-status">
-    <div class="fv-status-main">Last heard ${esc(fmtRelative(s.lastUtc))}</div>
-    <div class="fv-status-sub">flying for ${esc(fmtDuration(aloftMs))}
-      · ${fmtInt(s.points)} reports</div>
-  </div>
+  const status = `<button type="button" class="fv-status" data-panel="status"
+    aria-pressed="${active === "status"}">
+    <span class="fv-status-text">
+      <span class="fv-status-main">Last heard ${esc(fmtRelative(s.lastUtc))}</span>
+      <span class="fv-status-sub">flying for ${esc(fmtDuration(aloftMs))}
+        · ${fmtInt(s.points)} reports</span>
+    </span>
+    <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
+  </button>
   <p class="fv-hint">Tap a stat to color the map by it and see its chart</p>`;
 
   const cards = [
