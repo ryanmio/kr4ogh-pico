@@ -134,26 +134,52 @@ export function renderMap(
   L.polyline(latlngs, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
   L.polyline(latlngs, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
 
-  // The polylines above carry the full track; interactive per-point markers
-  // are thinned on long flights so a two-month, several-thousand-point track
-  // stays responsive. The most recent point is always kept.
+  // The polylines above carry the full track; the per-point spots are drawn
+  // separately, and redrawn at each zoom -- see drawSpots.
   const raws = track.map((p) => metric.raw(p));
   const lo = Math.min(...raws);
   const hi = Math.max(...raws);
+  const spots = L.layerGroup().addTo(map);
+
+  /** Draw the spots for the current zoom, dropping any that would land on
+   * top of one already drawn.
+   *
+   * Zoomed out, a week of ten-minute fixes falls inside a few pixels. Drawing
+   * them all stacks each dot's translucent casing over its neighbours' fill,
+   * and forty of those compound into a dark colourless mass -- the colour is
+   * still there, buried under the outlines. Spacing them by their own width
+   * keeps every dot's fill visible, and none of the detail is lost: the line
+   * underneath still carries the whole path, and zooming in brings the rest
+   * of the spots back as fast as there is room for them.
+   *
+   * The launch and the newest fix are always drawn. They are the two ends of
+   * the story, and the newest one has the pulse ring around it.
+   *
+   * `step` is the older, cruder thinning, and it stays: zoomed right in on a
+   * two-month flight the gap test would admit every one of several thousand
+   * fixes, each with a tooltip, and the map would crawl. */
   const step = Math.max(1, Math.ceil(track.length / 900));
-  track.forEach((p, i) => {
-    if (i % step !== 0 && i !== track.length - 1) return;
-    L.circleMarker(latlngs[i]!, {
-      radius: 6,
-      color: "rgba(11, 16, 32, 0.6)",
-      weight: 1.5,
-      fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
-      fillOpacity: 1,
-    }).bindTooltip(
-      `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
-      ` · ${fmtSpeed(p.speed_kt, units).text} · ${p.voltage_v.toFixed(2)} V`,
-    ).addTo(map);
-  });
+  const drawSpots = () => {
+    spots.clearLayers();
+    let last: L.Point | null = null;
+    track.forEach((p, i) => {
+      const ends = i === 0 || i === track.length - 1;
+      if (!ends && i % step !== 0) return;
+      const at = map.latLngToLayerPoint(latlngs[i]!);
+      if (!ends && last && at.distanceTo(last) < MIN_SPOT_GAP_PX) return;
+      last = at;
+      L.circleMarker(latlngs[i]!, {
+        radius: SPOT_RADIUS,
+        color: "rgba(11, 16, 32, 0.6)",
+        weight: 1.5,
+        fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
+        fillOpacity: 1,
+      }).bindTooltip(
+        `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
+        ` · ${fmtSpeed(p.speed_kt, units).text} · ${p.voltage_v.toFixed(2)} V`,
+      ).addTo(spots);
+    });
+  };
 
   // The most recent position gets a pulsing ring (a DOM icon, since the
   // canvas renderer cannot animate). It is hollow on purpose: the
@@ -185,6 +211,10 @@ export function renderMap(
   // off the top or bottom of it. Otherwise both leave bare strips. Longitude
   // is left loose, with room for the wrapped copies a multi-lap track needs.
   map.setMinZoom(Math.log2(el.clientHeight / 256));
+  // Now that the map is at its fitted zoom, the spots know how far apart
+  // they land on screen. Every zoom after this one re-thins them.
+  drawSpots();
+  map.on("zoomend", drawSpots);
   map.setMaxBounds(L.latLngBounds(
     L.latLng(-85, Math.min(...lons) - 360),
     L.latLng(85, Math.max(...lons) + 360),
@@ -211,6 +241,12 @@ export function renderMap(
   }
   return map;
 }
+
+/** Radius of a spot, and the gap two of them need before both are worth
+ * drawing. Slightly wider than a spot, so neighbours touch and overlap a
+ * little rather than piling up. */
+const SPOT_RADIUS = 6;
+const MIN_SPOT_GAP_PX = 10;
 
 /** How far a wheel has to travel for one zoom level, in pixels. macOS piles
  * acceleration onto a trackpad swipe, so a brisk one is several hundred
