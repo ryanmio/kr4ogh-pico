@@ -15,16 +15,21 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 ```
 
 The runner pulls the last hour (`--window-hours` to change) of spots for every
-active flight in `flights.toml` from wspr.live and decodes them. `picolog.
-export_site` then writes the site's committed flight data:
+active flight in `flights.toml` from wspr.live and decodes them.
+`picolog.export_site` then writes the site's committed flight data:
 
 ```sh
 .venv/bin/python -m picolog.export_site --flights flights.toml --db picolog.db --site ../site
 ```
 
-A scheduled workflow (`.github/workflows/ingest.yml`) runs both every 30
-minutes and commits the result. That schedule is not load-bearing: the site
-stays current regardless, because the browser queries wspr.live itself.
+A scheduled workflow (`.github/workflows/ingest.yml`) runs both once a day
+and commits the result. That schedule is not load-bearing: the site stays
+current regardless, because the visitor's browser queries wspr.live itself
+and decodes the telemetry in place, with its own TypeScript port of the
+decoder in `site/src/lib/wspr/`. All the export has to do is keep the
+committed track fresh enough that the browser's catch-up window still
+reaches it, which is a question of days. It ran every 30 minutes when the
+site depended on a cache.
 
 ## Where the data goes
 
