@@ -143,7 +143,7 @@ function addTrack(
     style.layers.push({
       id: "launch", type: "circle", source: "launch",
       paint: {
-        "circle-radius": 6, "circle-color": "#0b1020",
+        "circle-radius": 8, "circle-color": "#0b1020",
         "circle-stroke-color": "#e2e8f0", "circle-stroke-width": 2,
       },
     });
@@ -171,17 +171,17 @@ function addTrack(
   };
   style.layers.push(
     { id: "track-casing", type: "line", source: "flight",
-      paint: { "line-color": "#0b1020", "line-width": 5, "line-opacity": 0.5 } },
+      paint: { "line-color": "#0b1020", "line-width": 7, "line-opacity": 0.5 } },
     { id: "track", type: "line", source: "flight",
-      paint: { "line-color": "#e2e8f0", "line-width": 1.8, "line-opacity": 0.9 } },
+      paint: { "line-color": "#e2e8f0", "line-width": 2.6, "line-opacity": 0.9 } },
     // A solid dot for the newest fix; the pulsing ring rides on top as a
     // DOM marker, since only the DOM can animate. Unlike the flat map there
     // is no metric-coloured point underneath to keep visible, so the dot is
     // filled with the track's own colour.
     { id: "here", type: "circle", source: "here",
       paint: {
-        "circle-radius": 4, "circle-color": "#e2e8f0",
-        "circle-stroke-color": "#0b1020", "circle-stroke-width": 1,
+        "circle-radius": 6, "circle-color": "#e2e8f0",
+        "circle-stroke-color": "#0b1020", "circle-stroke-width": 1.5,
       } },
   );
 }
@@ -353,7 +353,7 @@ export function renderGlobe(
     // The pulsing "you are here", same CSS as the flat map's.
     const icon = document.createElement("div");
     icon.className = "last-pos-icon";
-    icon.style.width = icon.style.height = "16px";
+    icon.style.width = icon.style.height = "22px";
     icon.innerHTML = '<span class="last-pos-pulse"></span>';
     new Marker({ element: icon })
       .setLngLat([lons[lons.length - 1]!, track[track.length - 1]!.lat])

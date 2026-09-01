@@ -113,7 +113,7 @@ export function renderMap(
 
   if (meta.launch_lat != null && meta.launch_lon != null) {
     L.circleMarker([meta.launch_lat, meta.launch_lon], {
-      radius: 6, color: "#e2e8f0", weight: 2, fillColor: "#0b1020",
+      radius: 8, color: "#e2e8f0", weight: 2, fillColor: "#0b1020",
       fillOpacity: 1,
     }).bindTooltip(`Launch${meta.launch_utc ? " · " + fmtUtc(meta.launch_utc) : ""}`)
       .addTo(map);
@@ -131,8 +131,8 @@ export function renderMap(
   // A dark casing under a light line: over satellite imagery, and over a
   // weather layer, a single thin grey line vanishes. The casing separates
   // the path from whatever is beneath it.
-  L.polyline(latlngs, { color: "#0b1020", weight: 5, opacity: 0.5 }).addTo(map);
-  L.polyline(latlngs, { color: "#e2e8f0", weight: 1.8, opacity: 0.9 }).addTo(map);
+  L.polyline(latlngs, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
+  L.polyline(latlngs, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
 
   // The polylines above carry the full track; interactive per-point markers
   // are thinned on long flights so a two-month, several-thousand-point track
@@ -144,9 +144,9 @@ export function renderMap(
   track.forEach((p, i) => {
     if (i % step !== 0 && i !== track.length - 1) return;
     L.circleMarker(latlngs[i]!, {
-      radius: 4,
+      radius: 6,
       color: "rgba(11, 16, 32, 0.6)",
-      weight: 1,
+      weight: 1.5,
       fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
       fillOpacity: 1,
     }).bindTooltip(
@@ -164,7 +164,7 @@ export function renderMap(
     icon: L.divIcon({
       className: "last-pos-icon",
       html: '<span class="last-pos-pulse"></span>',
-      iconSize: [16, 16],
+      iconSize: [22, 22],
     }),
     keyboard: false,
     interactive: false,
