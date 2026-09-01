@@ -152,6 +152,9 @@ export function renderMap(
    * underneath still carries the whole path, and zooming in brings the rest
    * of the spots back as fast as there is room for them.
    *
+   * The spots shrink as they thin, so the world view is a line with beads on
+   * it rather than a widely spaced string of discs.
+   *
    * The launch and the newest fix are always drawn. They are the two ends of
    * the story, and the newest one has the pulse ring around it.
    *
@@ -161,15 +164,19 @@ export function renderMap(
   const step = Math.max(1, Math.ceil(track.length / 900));
   const drawSpots = () => {
     spots.clearLayers();
+    // The two ends keep their full size at every zoom: they are the launch
+    // and the balloon, and the pulse ring is drawn around the second one.
+    const radius = spotRadiusFor(map.getZoom());
+    const gap = radius + SPOT_GAP_PX;
     let last: L.Point | null = null;
     track.forEach((p, i) => {
       const ends = i === 0 || i === track.length - 1;
       if (!ends && i % step !== 0) return;
       const at = map.latLngToLayerPoint(latlngs[i]!);
-      if (!ends && last && at.distanceTo(last) < MIN_SPOT_GAP_PX) return;
+      if (!ends && last && at.distanceTo(last) < gap) return;
       last = at;
       L.circleMarker(latlngs[i]!, {
-        radius: SPOT_RADIUS,
+        radius: ends ? SPOT_RADIUS : radius,
         color: "rgba(11, 16, 32, 0.6)",
         weight: 1.5,
         fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
@@ -242,11 +249,27 @@ export function renderMap(
   return map;
 }
 
-/** Radius of a spot, and the gap two of them need before both are worth
- * drawing. Slightly wider than a spot, so neighbours touch and overlap a
- * little rather than piling up. */
+/** Radius of a spot close in, and at the world view. Zoomed out, the flight
+ * is a shape rather than a series of readings -- nobody is aiming a cursor
+ * at a fix from 10,000 km up -- so the spots shrink and the track reads as a
+ * line with beads on it instead of a chain of discs. */
 const SPOT_RADIUS = 6;
-const MIN_SPOT_GAP_PX = 10;
+const SPOT_MIN_RADIUS = 2.5;
+
+/** Zooms the radius is interpolated between. Below the first is the whole
+ * world in the box; above the second, a fix is a place you could point at. */
+const SPOT_FULL_ZOOM = 7;
+const SPOT_SMALL_ZOOM = 2;
+
+/** Clear space a spot needs before the next one is worth drawing, on top of
+ * its own width, so neighbours touch rather than pile up. */
+const SPOT_GAP_PX = 4;
+
+function spotRadiusFor(zoom: number): number {
+  const t = Math.max(0, Math.min(1,
+    (zoom - SPOT_SMALL_ZOOM) / (SPOT_FULL_ZOOM - SPOT_SMALL_ZOOM)));
+  return SPOT_MIN_RADIUS + t * (SPOT_RADIUS - SPOT_MIN_RADIUS);
+}
 
 /** How far a wheel has to travel for one zoom level, in pixels. macOS piles
  * acceleration onto a trackpad swipe, so a brisk one is several hundred
@@ -297,6 +320,7 @@ function smoothWheelZoom(map: L.Map): void {
   let frame = 0;
   let settle = 0;
   let moving = false;
+  let startZoom = 0;
 
   const apply = () => {
     frame = 0;
@@ -311,7 +335,11 @@ function smoothWheelZoom(map: L.Map): void {
     const half = map.getSize().divideBy(2);
     const offset = anchor.subtract(half).multiplyBy(1 - 1 / scale);
     const center = map.containerPointToLatLng(half.add(offset));
-    moving = true;
+    if (!moving) {
+      moving = true;
+      startZoom = from;
+      map.fire("zoomstart");
+    }
     inner._move(center, to, { pinch: true, round: false });
   };
 
@@ -333,6 +361,11 @@ function smoothWheelZoom(map: L.Map): void {
       if (!moving) return;
       moving = false;
       inner._resetView(map.getCenter(), map.getZoom());
+      // _resetView compares the zoom it is given against the map's own, and
+      // the gesture has already moved that, so it sees no change and stays
+      // quiet. Anything waiting on zoomend -- the spot thinning, for one --
+      // would never hear that the zoom had finished changing.
+      if (map.getZoom() !== startZoom) map.fire("zoomend");
     }, WHEEL_SETTLE_MS);
   };
 
