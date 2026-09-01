@@ -158,27 +158,28 @@ export function renderMap(
    * The launch and the newest fix are always drawn. They are the two ends of
    * the story, and the newest one has the pulse ring around it.
    *
-   * `step` is the older, cruder thinning, and it stays: zoomed right in on a
-   * two-month flight the gap test would admit every one of several thousand
-   * fixes, each with a tooltip, and the map would crawl. */
-  const step = Math.max(1, Math.ceil(track.length / 900));
+   * `step` is the one thing that still drops a fix, and only past a few
+   * thousand of them: a lap of the globe is months of ten-minute reports and
+   * the canvas has to redraw every one of them on every pan. Below that
+   * ceiling -- which is every flight so far -- every fix is on the map. */
+  const step = Math.max(1, Math.ceil(track.length / SPOT_CEILING));
   const drawSpots = () => {
     spots.clearLayers();
     // The two ends keep their full size at every zoom: they are the launch
     // and the balloon, and the pulse ring is drawn around the second one.
     const radius = spotRadiusFor(map.getZoom());
-    const gap = radius + SPOT_GAP_PX;
-    let last: L.Point | null = null;
     track.forEach((p, i) => {
       const ends = i === 0 || i === track.length - 1;
       if (!ends && i % step !== 0) return;
-      const at = map.latLngToLayerPoint(latlngs[i]!);
-      if (!ends && last && at.distanceTo(last) < gap) return;
-      last = at;
       L.circleMarker(latlngs[i]!, {
         radius: ends ? SPOT_RADIUS : radius,
-        color: "rgba(11, 16, 32, 0.6)",
-        weight: 1.5,
+        // No casing. It was a translucent dark ring, and where fixes overlap
+        // each ring lands on its neighbours' fill: forty of them compound
+        // into the dark colourless mass that made a slow stretch of the
+        // flight unreadable. Opaque fills simply cover each other, so a
+        // dense run reads as a band in the metric's colours. Contrast
+        // against the basemap is the dark casing under the track line.
+        stroke: false,
         fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
         fillOpacity: 1,
       }).bindTooltip(
@@ -249,21 +250,21 @@ export function renderMap(
   return map;
 }
 
-/** Radius of a spot close in, and at the world view. Zoomed out, the flight
- * is a shape rather than a series of readings -- nobody is aiming a cursor
- * at a fix from 10,000 km up -- so the spots shrink and the track reads as a
- * line with beads on it instead of a chain of discs. */
+/** Radius of a spot close in, and at the world view, where a run of fixes
+ * merges into a band and a slightly smaller dot keeps the track reading as a
+ * track. Every fix is drawn at every zoom either way: a spot is a report
+ * that exists, and dropping one to tidy the picture is a lie about the
+ * flight. */
 const SPOT_RADIUS = 6;
-const SPOT_MIN_RADIUS = 2.5;
+const SPOT_MIN_RADIUS = 4;
 
 /** Zooms the radius is interpolated between. Below the first is the whole
  * world in the box; above the second, a fix is a place you could point at. */
 const SPOT_FULL_ZOOM = 7;
 const SPOT_SMALL_ZOOM = 2;
 
-/** Clear space a spot needs before the next one is worth drawing, on top of
- * its own width, so neighbours touch rather than pile up. */
-const SPOT_GAP_PX = 4;
+/** How many spots the canvas will carry before they start being sampled. */
+const SPOT_CEILING = 2500;
 
 function spotRadiusFor(zoom: number): number {
   const t = Math.max(0, Math.min(1,
