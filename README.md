@@ -1,28 +1,17 @@
 # kr4ogh-pico
 
-**[kr4ogh-pico.vercel.app](https://kr4ogh-pico.vercel.app)** — a live map of
-KR4OGH's pico balloon flights.
+Live tracking for KR4OGH pico balloon flights: https://kr4ogh-pico.vercel.app
 
-A pico balloon is amateur radio's smallest space program: a gram-scale solar
-tracker under a party-sized superpressure balloon, released into the jet
-stream and never recovered. It whispers 20 milliwatts of WSPR, volunteer
-stations around the world hear it, and every decode lands in
-[wspr.live](https://wspr.live/).
-
-The site queries wspr.live from the visitor's browser and decodes the U4B
-telemetry there — position, altitude, speed, voltage, temperature, how many
-stations heard it — so nothing of ours has to be awake for the page to be
-current, and there is no server, no database and no API key anywhere in it.
-Rain radar and infrared cloud tops go under the track. What is on screen
-travels in the link: units, weather layer, open panel.
+The tracker sends U4B-style WSPR telemetry. Volunteer receivers upload their
+decodes to [wspr.live](https://wspr.live/); the site queries wspr.live from
+the visitor's browser and decodes the telemetry there, so it runs with no
+server, no database and no key.
 
 - `site/` — the website. Astro, static output. See `site/README.md`.
 - `tool/` — `picolog`, the Python package that ingests and decodes the same
   telemetry into SQLite and exports the track each page ships with. Not the
   liveness path; the browser is.
-- `docs/` — `telemetry-format.md` for the wire format, `architecture.md`,
-  `decode-status.md`, and `partial-spots.md` for the known gap where only one
-  of a fix's two messages is heard.
+- `docs/` — wire format, architecture, decode status, partial spots.
 
 ## Run the tool
 
@@ -40,6 +29,5 @@ the database holds into the committed track under `site/src/data/`, so a
 short window extends a long flight rather than truncating it.
 
 `.github/workflows/ingest.yml` does both once a day and commits the result.
-That schedule is not load-bearing — the browser keeps the page current on its
-own. All the export has to do is keep the committed track fresh enough that
-the browser's three-day catch-up window still reaches it.
+Nothing depends on that schedule; it only keeps the committed track inside
+the browser's three-day catch-up window.
