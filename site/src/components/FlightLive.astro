@@ -5,10 +5,12 @@
  * The whole thing is one component so the home page and a flight's own URL
  * show exactly the same view rather than drifting apart.
  *
- * The track committed to git is rendered at build time, so the map and the
- * stat cards are in the HTML and the balloon is on screen at first paint,
- * with no round trip and no spinner. The script then asks wspr.live directly
- * for anything newer and re-renders.
+ * The stat cards are rendered at build time from the track committed to
+ * git, so the page has its numbers at first paint. The map waits one
+ * wspr.live round trip behind a "locating" state and is then drawn once,
+ * current -- drawing the bundled track first meant showing yesterday's
+ * position and yanking it under the reader a second later. If wspr.live is
+ * slow or down the bundled track draws anyway, honestly dated.
  *
  * Pressing a card selects a metric: the map's spots recolor by it and the
  * panel shows its chart and key numbers. The telemetry table and the
@@ -30,11 +32,15 @@ const last = track.at(-1);
 ---
 
 <section
-  class="fv"
+  class="fv fv-loading"
   data-flight={JSON.stringify(flight)}
   data-track={JSON.stringify(track)}
 >
-  <div class="fv-map-slot" role="region" aria-label="Flight map"></div>
+  <div class="fv-map-slot" role="region" aria-label="Flight map">
+    <div class="fv-locating">
+      <span class="fv-locating-ring"></span>Locating beacon&hellip;
+    </div>
+  </div>
 
   <header class="fv-top">
     <div class="fv-top-spacer"></div>
@@ -133,6 +139,10 @@ const last = track.at(-1);
     // Once the reader has panned or zoomed, a refresh must not yank the view
     // back to the fitted bounds under their hands.
     let userMoved = false;
+    // True until the map has been drawn for the first time, which happens
+    // when the opening wspr.live check answers (or gives up); see the
+    // component comment.
+    let firstPaint = true;
 
     function drawMap(): L.Map | null {
       // On desktop the weather switch and the color key line up in the top
@@ -164,9 +174,24 @@ const last = track.at(-1);
       return held;
     }
 
+    /** First render: clear the locating state and draw. Safe to call more
+     * than once; only the first call does anything. */
+    function drawFirst() {
+      if (!firstPaint) return;
+      firstPaint = false;
+      mapSlot.replaceChildren();
+      map = drawMap();
+      // The cards were dimmed while their bundled numbers awaited the same
+      // first answer as the map.
+      root!.classList.remove("fv-loading");
+    }
+
     /** Rebuild the map. `keepView` is forced on for a unit or metric change,
      * where the reader has not asked to move and must not be moved. */
     function drawMapAgain(keepView = userMoved) {
+      // Nothing to rebuild yet: the first draw picks up the current units
+      // and metric on its own.
+      if (firstPaint) return;
       const view = keepView && map
         ? { center: map.getCenter(), zoom: map.getZoom() }
         : null;
@@ -471,7 +496,6 @@ const last = track.at(-1);
       }
     }
 
-    map = drawMap();
     paintUnitToggle();
     // The build-time sidebar is metric; if the reader's units differ it has
     // to be redrawn before they read it.
@@ -558,14 +582,21 @@ const last = track.at(-1);
       const result = await refreshTrack(meta, track);
       refreshBtn.disabled = false;
       if (result.error) {
+        // The bundled track is all there is; show it rather than a spinner
+        // that will never resolve.
+        drawFirst();
         const last = track.at(-1);
         updatedEl.textContent = last
           ? `Can't reach wspr.live — showing up to ${last.utc} UTC`
           : "Can't reach wspr.live";
         return;
       }
-      if (result.added > 0) {
-        track = result.track;
+      track = result.track;
+      if (firstPaint) {
+        drawFirst();
+        renderSidebar();
+        renderPanel();
+      } else if (result.added > 0) {
         drawMapAgain();
         renderSidebar();
         renderPanel();
@@ -579,6 +610,9 @@ const last = track.at(-1);
     refreshBtn.addEventListener("click", update);
 
     update();
+    // If wspr.live hangs rather than failing, the bundled track appears
+    // anyway; a late answer then lands through the normal refresh path.
+    setTimeout(drawFirst, 6000);
     setInterval(update, REFRESH_MS);
     // A phone that has been asleep should catch up the moment it is looked at.
     document.addEventListener("visibilitychange", () => {

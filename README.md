@@ -5,14 +5,6 @@ U4B-style telemetry ingest, decode, storage, and display. Monorepo: `/tool`
 (Python package `picolog`), `/docs` (format spec, architecture, status),
 `/site` (the website — see `site/README.md`).
 
-The site needs no server and no database. Each page ships with the flight
-track committed to git, so the balloon is on screen on first paint, and then
-queries wspr.live directly from the browser for anything newer. Nothing of
-ours has to be running for it to be current.
-
-Trackers fly bone-stock Traquito firmware; nothing in this repo runs on a
-balloon, and nothing here is a mission dependency.
-
 ## Run
 
 ```sh
