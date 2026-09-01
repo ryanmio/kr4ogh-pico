@@ -677,6 +677,8 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
    The weather switch is appended after the legend but belongs before it. */
 .fv-ctl-slot { display: flex; align-items: center; gap: 0.6rem; }
 .fv-ctl-slot .weather-toggle { order: -1; }
+/* The flat/globe switch reads first: it names what the row controls. */
+.fv-ctl-slot .view-toggle { order: -2; }
 .fv-ctl-slot .map-legend { white-space: nowrap; }
 
 /* The top strip is the map's control panel, a fifth larger than the
@@ -885,6 +887,33 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   background: rgba(11, 16, 32, 0.75) !important;
 }
 
+/* ----- maplibre furniture, globe view only ----- */
+
+/* Space behind the sphere: darker than the flat map's ocean fill, because
+   here it reads as sky, not sea. */
+.fv-globe { background: #050a14; }
+.fv-globe .maplibregl-ctrl-top-right { top: 56px; }
+/* MapLibre's white default controls, restyled to sit with Leaflet's. */
+.fv-globe .maplibregl-ctrl-group {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+}
+.fv-globe .maplibregl-ctrl-group button { background: transparent; }
+.fv-globe .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border);
+}
+.fv-globe .maplibregl-ctrl-group button:hover { background: var(--bg-raised); }
+/* The zoom glyphs ship as dark images on light buttons; flip them. */
+.fv-globe .maplibregl-ctrl button .maplibregl-ctrl-icon { filter: invert(0.85); }
+.fv-globe .maplibregl-ctrl-attrib {
+  background: rgba(11, 16, 32, 0.75) !important;
+  color: var(--text-faint);
+  font-size: 0.58rem;
+}
+.fv-globe .maplibregl-ctrl-attrib a { color: var(--accent); }
+
 /* ----- phones and narrow windows ----- */
 
 @media (max-width: 899px) {
@@ -906,6 +935,7 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
     height: 47dvh; min-height: 300px;
   }
   .fv .leaflet-top.leaflet-right { top: 40px; }
+  .fv-globe .maplibregl-ctrl-top-right { top: 40px; }
 
   /* The aside dissolves so its children can interleave with the panel:
      cards, then the panel that a card opens, then the footer line. */

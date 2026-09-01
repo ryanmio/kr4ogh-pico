@@ -147,19 +147,42 @@ function latestRadarFrame(): Promise<RadarFrame | null> {
   return radarFramePromise;
 }
 
-async function rainLayer(): Promise<L.TileLayer | null> {
+/** A weather product as bare tiles, for whichever renderer is asking. The
+ * flat map wraps these in a Leaflet layer below; the globe hangs the same
+ * URLs on its sphere. */
+export interface WeatherTiles {
+  /** URL template with {z}, {x} and {y} placeholders. */
+  url: string;
+  attribution: string;
+  /** The product stops here; past it the renderer upscales the tile it
+   * already has rather than asking for one that does not exist. */
+  maxNativeZoom: number;
+  opacity: number;
+}
+
+export async function rainTiles(): Promise<WeatherTiles | null> {
   const frame = await latestRadarFrame();
   if (!frame) return null;
-  return L.tileLayer(`${frame.base}/{z}/{x}/{y}/${RADAR_STYLE}.png`, {
-    className: "weather-tiles weather-rain",
+  return {
+    url: `${frame.base}/{z}/{x}/{y}/${RADAR_STYLE}.png`,
     opacity: 0.85,
-    // The mosaic is built to zoom 10; past that Leaflet upscales the tile it
-    // already has rather than asking for one that does not exist.
+    // The mosaic is built to zoom 10.
     maxNativeZoom: 10,
-    maxZoom: 16,
     attribution:
       `Radar ${hhmmUtc(frame.time)} UTC &copy; ` +
       '<a href="https://www.rainviewer.com/">RainViewer</a>',
+  };
+}
+
+async function rainLayer(): Promise<L.TileLayer | null> {
+  const t = await rainTiles();
+  if (!t) return null;
+  return L.tileLayer(t.url, {
+    className: "weather-tiles weather-rain",
+    opacity: t.opacity,
+    maxNativeZoom: t.maxNativeZoom,
+    maxZoom: 16,
+    attribution: t.attribution,
   });
 }
 
@@ -412,22 +435,51 @@ const EnhancedIrLayer = L.TileLayer.extend({
   url: string, options?: L.TileLayerOptions & { satLon?: number },
 ) => L.TileLayer;
 
-function cloudLayer(sat: GeoSat): L.TileLayer {
+export interface CloudTiles extends WeatherTiles {
+  /** Sub-satellite longitude, for the disc mask. */
+  satLon: number;
+}
+
+/** The infrared product for this part of the world, or null where no
+ * geostationary satellite covers it. The tiles still need the per-pixel
+ * treatment: enhanceIrTile, which the flat map runs in a Leaflet layer and
+ * the globe runs in a tile protocol. */
+export function cloudTiles(lon: number): CloudTiles | null {
+  const sat = pickSatellite(lon);
+  if (!sat) return null;
   const time = gibsFrameTime();
-  return new EnhancedIrLayer(
-    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/" +
-    `${sat.layer}/default/${time}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`,
-    {
-      className: "weather-tiles weather-clouds",
-      satLon: sat.lon,
-      // The product itself stops at zoom 6; upscale past that.
-      maxNativeZoom: 6,
-      maxZoom: 16,
-      attribution:
-        `${sat.name} infrared ${time.slice(11, 16)} UTC &copy; ` +
-        '<a href="https://worldview.earthdata.nasa.gov/">NASA GIBS</a>',
-    },
-  );
+  return {
+    url:
+      "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/" +
+      `${sat.layer}/default/${time}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`,
+    satLon: sat.lon,
+    opacity: 1,
+    // The product itself stops at zoom 6.
+    maxNativeZoom: 6,
+    attribution:
+      `${sat.name} infrared ${time.slice(11, 16)} UTC &copy; ` +
+      '<a href="https://worldview.earthdata.nasa.gov/">NASA GIBS</a>',
+  };
+}
+
+/** The whole treatment for one epsg3857 infrared tile: per-pixel alpha from
+ * the data, then the disc mask. */
+export function enhanceIrTile(
+  px: Uint8ClampedArray, size: { x: number; y: number },
+  coords: { x: number; y: number; z: number }, satLon: number,
+): void {
+  enhance(px);
+  maskDisc(px, size, coords, satLon);
+}
+
+function cloudLayer(t: CloudTiles): L.TileLayer {
+  return new EnhancedIrLayer(t.url, {
+    className: "weather-tiles weather-clouds",
+    satLon: t.satLon,
+    maxNativeZoom: t.maxNativeZoom,
+    maxZoom: 16,
+    attribution: t.attribution,
+  });
 }
 
 // ---------- the control ----------
@@ -466,17 +518,60 @@ const BUTTONS: { id: WeatherLayer; label: string; title: string }[] = [
   },
 ];
 
+/** The three-way switch itself, plain DOM so both renderers can use it: the
+ * flat map puts it in a Leaflet corner or the top strip, the globe in its
+ * own corner. It owns its pressed state; applying the layers is the
+ * caller's half. */
+export function buildWeatherToggle(opts: {
+  cloudsAvailable: boolean;
+  initial: WeatherLayer;
+  onSelect(layer: WeatherLayer): void;
+}): HTMLElement {
+  let current = opts.initial;
+  const div = document.createElement("div");
+  div.className = "weather-toggle";
+  div.setAttribute("role", "group");
+  div.setAttribute("aria-label", "Weather");
+  const buttons = new Map<WeatherLayer, HTMLButtonElement>();
+  const paint = () => {
+    for (const [id, btn] of buttons) {
+      btn.setAttribute("aria-pressed", String(id === current));
+    }
+  };
+  for (const b of BUTTONS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = b.label;
+    // Nowhere on earth for it to draw: shown, so the reason is visible in
+    // the title, but not offered.
+    btn.title = b.id === "clouds" && !opts.cloudsAvailable
+      ? "No geostationary infrared covers this part of the world"
+      : b.title;
+    btn.disabled = b.id === "clouds" && !opts.cloudsAvailable;
+    btn.addEventListener("click", () => {
+      if (b.id === current) return;
+      current = b.id;
+      paint();
+      opts.onSelect(b.id);
+    });
+    div.appendChild(btn);
+    buttons.set(b.id, btn);
+  }
+  paint();
+  return div;
+}
+
 /** Add the weather switch to an already-drawn map.
  *
  * The tile layers go in the tile pane, under the track, so the balloon's
  * path is never buried by the weather it is flying through.
  */
 export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
-  const sat = pickSatellite(opts.lon);
+  const clouds = cloudTiles(opts.lon);
   // A remembered "clouds" is honoured only where there is a satellite to
   // show; elsewhere the map opens clean rather than blank-with-a-layer-on.
   let current: WeatherLayer =
-    opts.initial === "clouds" && !sat ? "off" : opts.initial;
+    opts.initial === "clouds" && !clouds ? "off" : opts.initial;
   let layer: L.TileLayer | null = null;
   // A tile layer arrives asynchronously. By then the reader may have
   // switched again, or the whole map may have been torn down by a refresh,
@@ -485,50 +580,25 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
   let dead = false;
   map.on("unload", () => { dead = true; });
 
-  const buttons = new Map<WeatherLayer, HTMLButtonElement>();
-
-  const buildToggle = () => {
-    const div = L.DomUtil.create("div", "weather-toggle");
-    div.setAttribute("role", "group");
-    div.setAttribute("aria-label", "Weather");
-    for (const b of BUTTONS) {
-      const btn = L.DomUtil.create("button", "", div);
-      btn.type = "button";
-      btn.textContent = b.label;
-      btn.title = b.id === "clouds" && !sat
-        ? "No geostationary infrared covers this part of the world"
-        : b.title;
-      btn.disabled = b.id === "clouds" && !sat;
-      btn.addEventListener("click", () => select(b.id));
-      buttons.set(b.id, btn);
-    }
-    // Otherwise a click on the switch also reaches the map underneath, and
-    // a double tap on it zooms.
-    L.DomEvent.disableClickPropagation(div);
-    L.DomEvent.disableScrollPropagation(div);
-    paint();
-    return div;
-  };
+  const toggle = buildWeatherToggle({
+    cloudsAvailable: !!clouds,
+    initial: current,
+    onSelect: (next) => {
+      current = next;
+      opts.onChange(next);
+      void apply();
+    },
+  });
+  // Otherwise a click on the switch also reaches the map underneath, and
+  // a double tap on it zooms.
+  L.DomEvent.disableClickPropagation(toggle);
+  L.DomEvent.disableScrollPropagation(toggle);
   if (opts.into) {
-    opts.into.appendChild(buildToggle());
+    opts.into.appendChild(toggle);
   } else {
     const control = new L.Control({ position: opts.position ?? "topright" });
-    control.onAdd = buildToggle;
+    control.onAdd = () => toggle;
     control.addTo(map);
-  }
-
-  function paint(): void {
-    for (const [id, btn] of buttons) {
-      btn.setAttribute("aria-pressed", String(id === current));
-    }
-  }
-
-  function select(next: WeatherLayer): void {
-    if (next === current) return;
-    current = next;
-    paint();
-    opts.onChange(next);
-    void apply();
   }
 
   async function apply(): Promise<void> {
@@ -538,7 +608,7 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
     if (current === "off") return;
     const built = current === "rain"
       ? await rainLayer()
-      : sat ? cloudLayer(sat) : null;
+      : clouds ? cloudLayer(clouds) : null;
     // Stale by the time it resolved, or the map is gone: drop it.
     if (!built || dead || token !== generation) return;
     built.addTo(map);

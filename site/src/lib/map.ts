@@ -4,25 +4,13 @@
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import {
+  fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
+} from "./basemap";
 import { fmtUtc } from "./format";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { altitude as fmtAltitude, speed as fmtSpeed, type Units } from "./units";
 import type { FlightMeta, TrackPoint } from "./types";
-
-// Keyless satellite basemap. The dark canvas basemap that was here first
-// made land and ocean nearly the same shade of grey, which for a balloon
-// site is the one distinction the map exists to show. Esri's imagery needs
-// no key, and coastlines, mountains and open water read at a glance; a
-// labels layer on top names the places the balloon is drifting past.
-const TILE_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/" +
-  "MapServer/tile/{z}/{y}/{x}";
-const LABEL_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/" +
-  "World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
-const TILE_ATTRIBUTION =
-  'Imagery &copy; <a href="https://www.esri.com/">Esri</a>, Maxar, ' +
-  "Earthstar Geographics";
 
 export interface MapOptions {
   units?: Units;
@@ -37,48 +25,11 @@ export interface MapOptions {
   legendInto?: HTMLElement;
 }
 
-/** Shift each longitude by ±360 as needed so consecutive points never jump
- * more than 180°. */
-function unwrapLons(track: TrackPoint[]): number[] {
-  const lons: number[] = [];
-  let offset = 0;
-  for (let i = 0; i < track.length; i++) {
-    const lon = track[i]!.lon;
-    if (i > 0) {
-      const prev = track[i - 1]!.lon;
-      if (lon - prev > 180) offset -= 360;
-      if (lon - prev < -180) offset += 360;
-    }
-    lons.push(lon + offset);
-  }
-  return lons;
-}
-
-// Fraction of the track's span added as breathing room around it.
-const FIT_PAD = 0.06;
-
-/** Room kept clear on every side of the current position, as a fraction of
- * the track's own span, capped at something like the width of a weather
- * system.
- *
- * Fitting the track alone puts the balloon hard against the frame, because
- * the newest fix is by definition the far end of the line. What is in front
- * of it is then off the map entirely -- which is exactly the half a reader
- * wants, and with the weather layer on it means the storm being flown into
- * is the one thing not on screen. The whole flight still fits; there is just
- * air around the balloon. */
-const POS_ROOM = 0.25;
-const POS_ROOM_MAX_DEG = 12;
-
-/** The view: the whole track, plus room around where the balloon is now. */
+/** The view: the whole track, plus room around where the balloon is now.
+ * The numbers live in basemap.ts so the globe opens on the same framing. */
 function fitBoundsFor(latlngs: L.LatLng[]): L.LatLngBounds {
-  const b = L.latLngBounds(latlngs).pad(FIT_PAD);
-  const here = latlngs[latlngs.length - 1]!;
-  const span = Math.max(b.getEast() - b.getWest(), b.getNorth() - b.getSouth());
-  const r = Math.min(POS_ROOM * span, POS_ROOM_MAX_DEG);
-  return b
-    .extend(L.latLng(here.lat - r, here.lng - r))
-    .extend(L.latLng(here.lat + r, here.lng + r));
+  const r = fitRegion(latlngs.map((p) => p.lat), latlngs.map((p) => p.lng));
+  return L.latLngBounds(L.latLng(r.south, r.west), L.latLng(r.north, r.east));
 }
 
 /** Phones get a square map at most.
@@ -272,4 +223,19 @@ function coverBoxWithWorld(
   el.style.height = `${Math.round(Math.max(worldPx, 260))}px`;
   map.invalidateSize({ animate: false });
   map.setView([0, fitted.getCenter().lng], map.getZoom(), { animate: false });
+}
+
+/** Put a caller-built control (the flat/globe switch) in a map corner, with
+ * the map's own gestures under it disabled the way Leaflet's controls do:
+ * otherwise a click on it also pans-or-zooms whatever is beneath. */
+export function addCornerControl(
+  map: L.Map, el: HTMLElement, position: L.ControlPosition,
+): void {
+  const control = new L.Control({ position });
+  control.onAdd = () => {
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+    return el;
+  };
+  control.addTo(map);
 }

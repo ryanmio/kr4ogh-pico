@@ -83,6 +83,8 @@ const last = track.at(-1);
   import type L from "leaflet";
   import { renderChart } from "../lib/charts";
   import { renderMapInto } from "../lib/flightview";
+  import { addCornerControl } from "../lib/map";
+  import type { GlobeHandle } from "../lib/globe";
   import {
     bearingDeg, compassPoint, fmtDuration, fmtInt, haversineKm, parseUtc,
     trackStats,
@@ -104,6 +106,9 @@ const last = track.at(-1);
     addWeatherControl, resolveWeather, saveWeather, urlWithWeather,
     type WeatherLayer,
   } from "../lib/weather";
+  import {
+    resolveView, saveView, urlWithView, type ViewMode,
+  } from "../lib/viewmode";
 
   const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
@@ -120,6 +125,10 @@ const last = track.at(-1);
     // link outranks the browser's memory, like `?u=` does, so a link sent
     // because of the weather arrives with the weather on.
     let weather: WeatherLayer = resolveWeather(location.search);
+    // Flat map or globe. Either renderer draws from the same state; the
+    // globe's renderer itself is lazy-loaded so the flat map never pays
+    // maplibre's weight.
+    let view: ViewMode = resolveView(location.search);
     // Which panel is open, if any. A `?p=speed` link arrives with that
     // panel already open, so a link shows what its sender was looking at.
     let panel: PanelKind | null = panelFromSearch(location.search);
@@ -140,6 +149,8 @@ const last = track.at(-1);
     const REFRESH_MS = 2 * 60 * 1000;
 
     let map: L.Map | null = null;
+    let globe: GlobeHandle | null = null;
+    let globeMod: typeof import("../lib/globe") | null = null;
     // Once the reader has panned or zoomed, a refresh must not yank the view
     // back to the fitted bounds under their hands.
     let userMoved = false;
@@ -148,43 +159,125 @@ const last = track.at(-1);
     // component comment.
     let firstPaint = true;
 
-    function drawMap(): L.Map | null {
-      // On desktop the weather switch and the color key line up in the top
-      // bar beside the unit toggle, leaving the right edge to the zoom
-      // control alone; on a phone both sit along the bottom of the map.
+    /** The globe renderer, loaded the first time it is asked for and kept.
+     * Null when the chunk cannot be fetched, in which case the flat map is
+     * the answer everywhere. */
+    async function ensureGlobeMod() {
+      if (!globeMod) {
+        try {
+          globeMod = await import("../lib/globe");
+        } catch {
+          /* offline or the chunk failed; the flat map still works */
+        }
+      }
+      return globeMod;
+    }
+    // A `?v=g` arrival will need maplibre; fetch it during the opening
+    // wspr.live wait instead of after it.
+    if (view === "globe") void ensureGlobeMod();
+
+    /** Flat map or globe. Rendered fresh with each map, like the weather
+     * switch, so `view` is held out here and painted back in. */
+    function buildViewToggle(): HTMLElement {
+      const div = document.createElement("div");
+      div.className = "weather-toggle view-toggle";
+      div.setAttribute("role", "group");
+      div.setAttribute("aria-label", "Map view");
+      const options: { id: ViewMode; label: string; title: string }[] = [
+        { id: "flat", label: "Flat",
+          title: "The flat map, with every report's detail" },
+        { id: "globe", label: "Globe",
+          title: "The whole flight on a globe" },
+      ];
+      for (const o of options) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = o.label;
+        b.title = o.title;
+        b.setAttribute("aria-pressed", String(view === o.id));
+        b.addEventListener("click", () => void selectView(o.id));
+        div.appendChild(b);
+      }
+      return div;
+    }
+
+    async function selectView(next: ViewMode) {
+      if (next === view) return;
+      if (next === "globe" && !(await ensureGlobeMod())) return;
+      view = next;
+      saveView(next);
+      pinInUrl(urlWithView(location.href, next));
+      // Each renderer opens on its own best framing: a mercator camera
+      // carried onto the sphere (or back) lands nowhere useful.
+      userMoved = false;
+      drawMapAgain(false);
+    }
+
+    function drawMap(): void {
+      // On desktop the map controls line up in the top bar beside the unit
+      // toggle, leaving the right edge to the zoom control alone; on a
+      // phone they sit along the bottom of the map.
       const wide = window.matchMedia("(min-width: 900px)").matches;
-      const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, sizing: "fill",
-        ...(wide ? { legendInto: ctlSlot } : {}),
-      });
-      if (!held) return null;
-      const onInteract = () => { userMoved = true; };
-      held.on("dragstart", onInteract);
-      mapSlot.addEventListener("wheel", onInteract, { passive: true });
-      held.getContainer().addEventListener("dblclick", onInteract);
-      held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
+      const lon = track.at(-1)?.lon ?? meta.launch_lon ?? 0;
+      const viewToggle = buildViewToggle();
       // Weather is offered for a live flight only: an archived track is
-      // months old, and today's clouds over it would be a picture that lies.
-      addWeatherControl(held, {
-        lon: track.at(-1)?.lon ?? meta.launch_lon ?? 0,
-        ...(wide ? { into: ctlSlot } : { position: "bottomleft" as const }),
+      // months old, and today's clouds over it would be a picture that
+      // lies. Both renderers share the choice, so switching views keeps
+      // the weather on.
+      const weatherOpts = {
         initial: weather,
-        onChange: (next) => {
+        onChange: (next: WeatherLayer) => {
           weather = next;
           saveWeather(next);
           pinInUrl(urlWithWeather(location.href, next));
         },
+      };
+      const onInteract = () => { userMoved = true; };
+      if (view === "globe" && globeMod) {
+        try {
+          globe = globeMod.renderGlobe(mapSlot, meta, track, {
+            overlaid: wide && mapSlot.clientWidth >= 900,
+            weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
+          });
+          globe.onInteract(onInteract);
+          if (wide) ctlSlot.appendChild(viewToggle);
+          else globe.addCorner(viewToggle);
+          return;
+        } catch {
+          // WebGL said no; the flat map works everywhere.
+          view = "flat";
+        }
+      }
+      const held = renderMapInto(mapSlot, meta, track, {
+        units, metric, sizing: "fill",
+        ...(wide ? { legendInto: ctlSlot } : {}),
       });
-      return held;
+      if (!held) return;
+      map = held;
+      held.on("dragstart", onInteract);
+      mapSlot.addEventListener("wheel", onInteract, { passive: true });
+      held.getContainer().addEventListener("dblclick", onInteract);
+      held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
+      addWeatherControl(held, {
+        lon,
+        ...(wide ? { into: ctlSlot } : { position: "bottomleft" as const }),
+        ...weatherOpts,
+      });
+      if (wide) ctlSlot.appendChild(viewToggle);
+      else addCornerControl(held, viewToggle, "bottomleft");
     }
 
     /** First render: clear the locating state and draw. Safe to call more
      * than once; only the first call does anything. */
-    function drawFirst() {
+    async function drawFirst() {
       if (!firstPaint) return;
+      // The globe renderer arrives over the network; if it cannot, the
+      // flat map draws instead of nothing.
+      if (view === "globe" && !(await ensureGlobeMod())) view = "flat";
+      if (!firstPaint) return; // drawn by a parallel caller while awaiting
       firstPaint = false;
       mapSlot.replaceChildren();
-      map = drawMap();
+      drawMap();
       // The cards were dimmed while their bundled numbers awaited the same
       // first answer as the map.
       root!.classList.remove("fv-loading");
@@ -196,20 +289,30 @@ const last = track.at(-1);
       // Nothing to rebuild yet: the first draw picks up the current units
       // and metric on its own.
       if (firstPaint) return;
-      const view = keepView && map
+      const flatView = keepView && map
         ? { center: map.getCenter(), zoom: map.getZoom() }
         : null;
+      const cam = keepView && globe ? globe.getCamera() : null;
       // Leaflet refuses to initialise the same container twice, so the old
       // map has to be disposed rather than merely emptied.
       map?.remove();
       map = null;
+      globe?.remove();
+      globe = null;
       mapSlot.replaceChildren();
-      // The legend and weather switch live outside the map, in the top bar,
+      // The legend and the switches live outside the map, in the top bar,
       // so the teardown has to sweep them too.
       ctlSlot.replaceChildren();
       mapSlot.classList.remove("fv-map-fill");
-      map = drawMap();
-      if (view && map) map.setView(view.center, view.zoom, { animate: false });
+      drawMap();
+      // drawMap assigns map/globe through the closure, which narrowing
+      // cannot see past the nulling above; the casts widen them back.
+      const m = map as L.Map | null;
+      const g = globe as GlobeHandle | null;
+      if (flatView && m) {
+        m.setView(flatView.center, flatView.zoom, { animate: false });
+      }
+      if (cam && g) g.setCamera(cam);
     }
 
     /** The card whose panel is open; the highlight promises details below,
@@ -543,8 +646,9 @@ const last = track.at(-1);
       if (key !== metric) {
         metric = key;
         // Recoloring is a redraw; the reader asked for new colors, not a
-        // new view, so the camera holds still.
-        drawMapAgain(true);
+        // new view, so the camera holds still. The globe has no metric
+        // colors, so it is left alone; switching back picks up the choice.
+        if (view === "flat") drawMapAgain(true);
       }
       openPanel(key);
     });
@@ -575,10 +679,10 @@ const last = track.at(-1);
         saveUnits(units);
         pinInUrl(urlWithUnits(location.href, units));
         paintUnitToggle();
-        // The map's legend and tooltips carry units too, so it is redrawn as
-        // well -- holding the reader's exact view, since they asked to
-        // change units, not to move.
-        drawMapAgain(true);
+        // The map's legend and tooltips carry units too, so it is redrawn
+        // as well -- holding the reader's exact view, since they asked to
+        // change units, not to move. The globe shows no numbers at all.
+        if (view === "flat") drawMapAgain(true);
         renderSidebar();
         renderPanel();
       });
@@ -603,7 +707,7 @@ const last = track.at(-1);
       if (result.error) {
         // The bundled track is all there is; show it rather than a spinner
         // that will never resolve.
-        drawFirst();
+        void drawFirst();
         const last = track.at(-1);
         updatedEl.textContent = last
           ? `Can't reach wspr.live — showing up to ${last.utc} UTC`
@@ -612,7 +716,7 @@ const last = track.at(-1);
       }
       track = result.track;
       if (firstPaint) {
-        drawFirst();
+        await drawFirst();
         renderSidebar();
         renderPanel();
       } else if (result.added > 0) {
@@ -631,7 +735,7 @@ const last = track.at(-1);
     update();
     // If wspr.live hangs rather than failing, the bundled track appears
     // anyway; a late answer then lands through the normal refresh path.
-    setTimeout(drawFirst, 6000);
+    setTimeout(() => void drawFirst(), 6000);
     setInterval(update, REFRESH_MS);
     // A phone that has been asleep should catch up the moment it is looked at.
     document.addEventListener("visibilitychange", () => {

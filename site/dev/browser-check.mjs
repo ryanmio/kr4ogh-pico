@@ -105,15 +105,16 @@ await page.evaluate(() => document.getElementById("panel-close").click());
 // in or a refresh quietly switches it off under the reader.
 const setWeather = async (label) => {
   await page.evaluate((l) => {
-    [...document.querySelectorAll(".weather-toggle button")]
+    [...document.querySelectorAll(".weather-toggle:not(.view-toggle) button")]
       .find((b) => b.textContent === l)?.click();
   }, label);
   await page.waitForTimeout(4000);
 };
 const weatherProbe = async (label) => {
   const r = await page.evaluate(() => ({
-    on: document.querySelector('.weather-toggle button[aria-pressed="true"]')?.textContent,
-    buttons: document.querySelectorAll(".weather-toggle button").length,
+    // :not(.view-toggle): the flat/globe switch wears the same pill class.
+    on: document.querySelector('.weather-toggle:not(.view-toggle) button[aria-pressed="true"]')?.textContent,
+    buttons: document.querySelectorAll(".weather-toggle:not(.view-toggle) button").length,
     tiles: document.querySelectorAll(".weather-tiles .leaflet-tile-loaded").length,
   }));
   console.log(`${label}: on=${r.on} buttons=${r.buttons} weatherTiles=${r.tiles}`);
@@ -133,6 +134,42 @@ const weatherOk =
 await setWeather("Off");
 
 await page.screenshot({ path: "dev/browser-check.png", fullPage: false });
+
+// The globe is the other renderer entirely: maplibre, lazy-loaded on first
+// use. Switching must swap Leaflet's panes for a canvas, survive the same
+// refresh rebuild as everything else (the view choice is held outside the
+// map), keep the weather switch on offer, and switch back cleanly.
+const setView = async (label) => {
+  await page.evaluate((l) => {
+    [...document.querySelectorAll(".view-toggle button")]
+      .find((b) => b.textContent === l)?.click();
+  }, label);
+  await page.waitForTimeout(4000);
+};
+const viewProbe = async (label) => {
+  const r = await page.evaluate(() => ({
+    on: document.querySelector('.view-toggle button[aria-pressed="true"]')?.textContent,
+    canvas: !!document.querySelector(".maplibregl-canvas"),
+    leaflet: !!document.querySelector(".leaflet-map-pane"),
+    weatherButtons: document.querySelectorAll(".weather-toggle:not(.view-toggle) button").length,
+    search: location.search,
+  }));
+  console.log(`${label}: on=${r.on} canvas=${r.canvas} leaflet=${r.leaflet} ` +
+    `weatherButtons=${r.weatherButtons} search=${r.search || "(none)"}`);
+  return r;
+};
+await setView("Globe");
+const gOn = await viewProbe("globe on         ");
+await page.screenshot({ path: "dev/browser-check-globe.png", fullPage: false });
+await page.evaluate(() => document.getElementById("refresh").click());
+await page.waitForTimeout(4000);
+const gAfter = await viewProbe("globe, refresh   ");
+await setView("Flat");
+const gOff = await viewProbe("flat again       ");
+const globeOk =
+  gOn.canvas && !gOn.leaflet && gOn.on === "Globe" && gOn.weatherButtons === 3 &&
+  gAfter.canvas && gAfter.on === "Globe" &&
+  gOff.leaflet && !gOff.canvas && gOff.on === "Flat";
 
 // A link is the last piece of shared state: `?p=speed` has to arrive with
 // the speed panel open and the map colored by it, without rewriting the URL
@@ -161,9 +198,10 @@ const linkOk =
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
   && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 7
-  && panelOk && trackerOk && weatherOk && linkOk && errors.length === 0;
+  && panelOk && trackerOk && weatherOk && globeOk && linkOk
+  && errors.length === 0;
 console.log(ok
-  ? "\nRESULT: map, panel and weather layer survive refreshes; links share the panel"
+  ? "\nRESULT: map, panel, weather and globe survive refreshes; links share the panel"
   : "\nRESULT: STILL BROKEN");
 await browser.close();
 process.exit(ok ? 0 : 1);
