@@ -168,25 +168,39 @@ export function renderMap(
     // The two ends keep their full size at every zoom: they are the launch
     // and the balloon, and the pulse ring is drawn around the second one.
     const radius = spotRadiusFor(map.getZoom());
-    track.forEach((p, i) => {
-      const ends = i === 0 || i === track.length - 1;
-      if (!ends && i % step !== 0) return;
-      L.circleMarker(latlngs[i]!, {
-        radius: ends ? SPOT_RADIUS : radius,
-        // No casing. It was a translucent dark ring, and where fixes overlap
-        // each ring lands on its neighbours' fill: forty of them compound
-        // into the dark colourless mass that made a slow stretch of the
-        // flight unreadable. Opaque fills simply cover each other, so a
-        // dense run reads as a band in the metric's colours. Contrast
-        // against the basemap is the dark casing under the track line.
+    const shown = track.filter((_, i) =>
+      i === 0 || i === track.length - 1 || i % step === 0);
+    const sizeOf = (p: TrackPoint) =>
+      p === shown[0] || p === shown[shown.length - 1] ? SPOT_RADIUS : radius;
+
+    // Outlines first, all of them, then the fills. Drawn per spot instead,
+    // each outline lands on its neighbours' fill wherever fixes overlap, and
+    // forty of them compound into the dark colourless mass that made a slow
+    // stretch of the flight unreadable. In two passes the outlines merge
+    // into one silhouette around the run and the fills cover the inside of
+    // it, so an outline is only ever seen where there is something to
+    // outline: around the group, and around a spot standing on its own.
+    for (const p of shown) {
+      L.circleMarker([p.lat, p.lon], {
+        radius: sizeOf(p) + SPOT_OUTLINE_PX,
         stroke: false,
-        fillColor: rampColor(metric.ramp, hi > lo ? (raws[i]! - lo) / (hi - lo) : 0.5),
+        fillColor: SPOT_OUTLINE,
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(spots);
+    }
+    for (const p of shown) {
+      const raw = metric.raw(p);
+      L.circleMarker([p.lat, p.lon], {
+        radius: sizeOf(p),
+        stroke: false,
+        fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
         fillOpacity: 1,
       }).bindTooltip(
         `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
         ` · ${fmtSpeed(p.speed_kt, units).text} · ${p.voltage_v.toFixed(2)} V`,
       ).addTo(spots);
-    });
+    }
   };
 
   // The most recent position gets a pulsing ring (a DOM icon, since the
@@ -263,8 +277,14 @@ const SPOT_MIN_RADIUS = 4;
 const SPOT_FULL_ZOOM = 7;
 const SPOT_SMALL_ZOOM = 2;
 
-/** How many spots the canvas will carry before they start being sampled. */
-const SPOT_CEILING = 2500;
+/** Width of a spot's outline, and its colour. Opaque, because the outlines
+ * are drawn as a pass of their own and overlap each other. */
+const SPOT_OUTLINE_PX = 1.5;
+const SPOT_OUTLINE = "#0b1020";
+
+/** How many spots the canvas will carry before they start being sampled.
+ * Each one is two circles, an outline and a fill. */
+const SPOT_CEILING = 2000;
 
 function spotRadiusFor(zoom: number): number {
   const t = Math.max(0, Math.min(1,
