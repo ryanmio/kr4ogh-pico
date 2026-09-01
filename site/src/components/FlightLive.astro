@@ -405,18 +405,20 @@ const last = track.at(-1);
         const details = panelBody.querySelector("details");
         if (details) details.open = true;
       } else {
-        panelTitle.textContent = "About this flight";
+        panelTitle.textContent = "About";
         panelBody.innerHTML = `<div class="fv-about prose">
-          <p>This is a pico balloon: a party-balloon-sized solar-powered
-          tracker riding the winds, launched by amateur radio station
-          KR4OGH. It carries no batteries worth the name and weighs less
-          than a slice of bread.</p>
-          <p>Positions come from volunteer receiving stations around the
-          world via <a href="https://wspr.live/">wspr.live</a> and are
-          decoded right here in your browser. The tracker reports once every
-          10 minutes, so the newest position is normally a few minutes old.
-          It runs on solar power alone, which means it goes quiet overnight
-          and calls back in at sunrise.</p>
+          <p>Pico ballooning is amateur radio's smallest space program: a
+          gram-scale solar tracker under a party-sized superpressure
+          balloon, released into the jet stream and never recovered. The
+          envelope settles at one altitude instead of bursting, so a good
+          flight lasts weeks and the great chase is a full lap of the
+          globe. This site follows the flights of KR4OGH.</p>
+          <p>The tracker whispers 20 milliwatts of WSPR; volunteer stations
+          around the world hear it and upload every decode to
+          <a href="https://wspr.live/">wspr.live</a>, and this page queries
+          that database and decodes the telemetry right in your browser —
+          no server of ours in the loop. It checks for new reports every
+          couple of minutes.</p>
           <p class="fv-about-links">
             <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
             <a href="https://wspr.live/">Spots: wspr.live</a>

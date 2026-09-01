@@ -672,7 +672,7 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   width: 100%; text-align: left;
   font: inherit; color: var(--text); cursor: pointer;
   background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: 14px; padding: 0.7rem 0.9rem;
+  border-radius: 14px; padding: 0.55rem 0.7rem;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   transition: border-color 120ms ease, transform 120ms ease;
 }
@@ -684,14 +684,16 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 .fv-status-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .fv-status .fv-card-chevron { margin-left: 0; }
 .fv-status-main { font-weight: 600; font-size: 0.95rem; }
-.fv-status-main::before {
-  content: ""; display: inline-block; width: 8px; height: 8px;
-  margin-right: 0.5rem; border-radius: 50%; background: var(--live);
+/* Same tile as the metric icons; the "icon" is a live dot, still pulsing. */
+.fv-status-dot {
+  display: block; width: 10px; height: 10px;
+  border-radius: 50%; background: currentColor;
   animation: pulse 1.8s ease-out infinite;
 }
 .fv-status-sub {
   font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint);
   margin-top: 0.15rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 .fv-hint {

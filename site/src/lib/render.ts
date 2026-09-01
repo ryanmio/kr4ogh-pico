@@ -207,6 +207,7 @@ export function sidebarHtml(
 
   const status = `<button type="button" class="fv-status" data-panel="status"
     aria-pressed="${active === "status"}">
+    <span class="fv-card-icon" style="color:#34d399"><span class="fv-status-dot"></span></span>
     <span class="fv-status-text">
       <span class="fv-status-main">Last heard ${esc(fmtRelative(s.lastUtc))}</span>
       <span class="fv-status-sub">flying for ${esc(fmtDuration(aloftMs))}
