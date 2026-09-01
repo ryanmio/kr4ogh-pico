@@ -212,40 +212,71 @@ export function renderMap(
   return map;
 }
 
-/** How far a wheel has to travel for one zoom level, in pixels. Sized for a
- * trackpad: a comfortable two-finger swipe is a couple of hundred pixels of
- * delta, which should be worth a couple of zoom levels. */
-const WHEEL_PX_PER_LEVEL = 55;
+/** How far a wheel has to travel for one zoom level, in pixels. macOS piles
+ * acceleration onto a trackpad swipe, so a brisk one is several hundred
+ * pixels of delta and this is what keeps that worth a couple of levels
+ * rather than a dozen. */
+const WHEEL_PX_PER_LEVEL = 200;
 
 /** Pinching a trackpad arrives as ctrl+wheel. It is a deliberate zoom rather
  * than a scroll that happens to be over the map, so it moves further. */
-const PINCH_GAIN = 2.5;
+const PINCH_GAIN = 2;
+
+/** How long after the last wheel event the map settles and loads its tiles. */
+const WHEEL_SETTLE_MS = 120;
+
+/** The two Leaflet internals the smooth path needs. Neither is public, and
+ * neither has a public equivalent: `setView` is the only exposed way to
+ * change zoom and it resets the view every call. These are the same pair
+ * Leaflet's own touch pinch handler uses, so they move with that code rather
+ * than being a private corner of it. */
+interface ZoomInternals {
+  _move(
+    center: L.LatLng, zoom: number,
+    data?: { pinch?: boolean; round?: boolean },
+  ): void;
+  _resetView(center: L.LatLng, zoom: number): void;
+}
 
 /** Continuous wheel zoom, in place of Leaflet's own.
  *
  * Leaflet buffers 40 ms of wheel events, runs the total through a sigmoid and
  * applies it in one jump. That is right for a notched mouse wheel and wrong
- * for a trackpad, which sends a stream of few-pixel deltas: a full two-finger
- * swipe came to about one zoom level, delivered in visible stair-steps.
+ * for a trackpad, which sends a stream of small deltas: a two-finger swipe
+ * came to about one zoom level, delivered in visible stair-steps.
  *
- * This zooms on every event, folded into one frame, anchored under the
- * pointer. The per-event clamp is what lets a single rule serve both devices
- * -- a mouse notch of ~100 px lands on a whole level, while a trackpad's
- * small deltas accumulate smoothly -- so nothing has to guess which one is
- * in the reader's hand. */
+ * The zoom itself goes through `_move` with `pinch`, which is the same path
+ * Leaflet's own touch pinch uses: tile layers respond by transforming what is
+ * already on screen instead of reloading. Zooming with `setView` per frame
+ * instead re-runs the whole view reset every frame, and each one aborts the
+ * tile requests the last one started, so nothing ever finishes loading and
+ * the map goes black under the gesture. The settle at the end is the single
+ * reset that does load tiles, once, at the zoom the reader stopped on.
+ */
 function smoothWheelZoom(map: L.Map): void {
+  const inner = map as L.Map & ZoomInternals;
   const el = map.getContainer();
   let pending = 0;
   let anchor: L.Point | null = null;
   let frame = 0;
+  let settle = 0;
+  let moving = false;
 
   const apply = () => {
     frame = 0;
     const delta = pending;
     pending = 0;
     if (!delta || !anchor) return;
-    // Leaflet clamps to the map's own min and max zoom on the way through.
-    map.setZoomAround(anchor, map.getZoom() + delta, { animate: false });
+    const from = map.getZoom();
+    const to = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), from + delta));
+    if (to === from) return;
+    // Hold the point under the pointer still, the way setZoomAround does.
+    const scale = map.getZoomScale(to, from);
+    const half = map.getSize().divideBy(2);
+    const offset = anchor.subtract(half).multiplyBy(1 - 1 / scale);
+    const center = map.containerPointToLatLng(half.add(offset));
+    moving = true;
+    inner._move(center, to, { pinch: true, round: false });
   };
 
   const onWheel = (ev: WheelEvent) => {
@@ -255,10 +286,18 @@ function smoothWheelZoom(map: L.Map): void {
     const px = ev.deltaMode === 1 ? ev.deltaY * 20
       : ev.deltaMode === 2 ? ev.deltaY * 60
         : ev.deltaY;
+    // Clamped per event so one flick of a notched wheel cannot leap the
+    // width of the flight.
     const step = Math.max(-1, Math.min(1, -px / WHEEL_PX_PER_LEVEL));
     pending += ev.ctrlKey ? step * PINCH_GAIN : step;
     anchor = map.mouseEventToContainerPoint(ev);
     if (!frame) frame = requestAnimationFrame(apply);
+    clearTimeout(settle);
+    settle = window.setTimeout(() => {
+      if (!moving) return;
+      moving = false;
+      inner._resetView(map.getCenter(), map.getZoom());
+    }, WHEEL_SETTLE_MS);
   };
 
   el.addEventListener("wheel", onWheel, { passive: false });
@@ -269,6 +308,7 @@ function smoothWheelZoom(map: L.Map): void {
   map.on("unload", () => {
     el.removeEventListener("wheel", onWheel);
     if (frame) cancelAnimationFrame(frame);
+    clearTimeout(settle);
   });
 }
 

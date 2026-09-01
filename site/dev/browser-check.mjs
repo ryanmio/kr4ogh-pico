@@ -186,27 +186,37 @@ const zoomNow = () => page.evaluate(() => {
 });
 const swipe = async (deltaY, count) => {
   const before = await zoomNow();
-  await page.evaluate(async ({ deltaY, count }) => {
+  // Sample the loaded-tile count *during* the gesture. Zooming with setView
+  // per frame aborts each frame's tile requests, so the map goes black under
+  // the reader's fingers; the pinch path transforms what is on screen and
+  // this stays healthy throughout.
+  const min = await page.evaluate(async ({ deltaY, count }) => {
     const el = document.querySelector(".leaflet-container");
     const r = el.getBoundingClientRect();
+    let lowest = Infinity;
     for (let i = 0; i < count; i++) {
       el.dispatchEvent(new WheelEvent("wheel", {
         deltaY, deltaMode: 0, bubbles: true, cancelable: true,
         clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
       }));
       await new Promise((done) => setTimeout(done, 16));
+      lowest = Math.min(lowest, document.querySelectorAll(".leaflet-tile-loaded").length);
     }
+    return lowest;
   }, { deltaY, count });
-  await page.waitForTimeout(300);
-  return (await zoomNow()) - before;
+  await page.waitForTimeout(400);
+  return { moved: (await zoomNow()) - before, tilesDuring: min };
 };
-const swipeIn = await swipe(-4.2, 30);
-const notch = await swipe(-100, 1);
-console.log(`wheel zoom       : trackpad swipe=${swipeIn.toFixed(2)} levels ` +
-  `mouse notch=${notch.toFixed(2)} levels`);
-// A swipe has to be worth real travel, and a notch has to stay near one
-// level or a mouse user overshoots the flight on every scroll.
-const wheelOk = swipeIn > 1.5 && notch > 0.8 && notch < 1.3;
+const inSwipe = await swipe(-4.2, 40);
+const outSwipe = await swipe(4.2, 40);
+console.log(`wheel zoom       : in=${inSwipe.moved.toFixed(2)} out=${outSwipe.moved.toFixed(2)} levels ` +
+  `tiles during gesture>=${Math.min(inSwipe.tilesDuring, outSwipe.tilesDuring)}`);
+// The map must move, come back to where it started, and never blank out on
+// the way. The exact rate is a matter of taste and lives in map.ts.
+const wheelOk =
+  inSwipe.moved > 0.4 && outSwipe.moved < -0.4 &&
+  Math.abs(inSwipe.moved + outSwipe.moved) < 0.05 &&
+  inSwipe.tilesDuring > 0 && outSwipe.tilesDuring > 0;
 
 // A link is the last piece of shared state: `?p=speed` has to arrive with
 // the speed panel open and the map colored by it, without rewriting the URL
