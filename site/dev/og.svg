@@ -1,0 +1,14 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="1200" height="630" fill="#0B1220"/>
+
+  <text x="106" y="226" font-family="'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif"
+        font-size="69" fill="#F5F3EE">KR4OGH pico balloon</text>
+  <text x="110" y="293" font-family="ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, monospace"
+        font-size="34" letter-spacing="6" fill="#8AA0BE">LIVE TELEMETRY TRACKING</text>
+
+  <path d="M117 480 C 374 452, 639 417, 886 385 S 1055 362, 1091 355"
+        fill="none" stroke="#33496B" stroke-width="4" stroke-dasharray="8 14"/>
+  <circle cx="117" cy="480" r="10" fill="#7F96B4"/>
+  <circle cx="1091" cy="355" r="26" fill="#E8B84B" opacity="0.15"/>
+  <circle cx="1091" cy="355" r="11" fill="#E8B84B"/>
+</svg>
