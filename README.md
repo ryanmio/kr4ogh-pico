@@ -33,11 +33,9 @@ site depended on a cache.
 
 ## Where the data goes
 
-- **SQLite** (the `--db` file) — the authoritative flight record: raw spots
-  (append-only), query coverage, decoded telemetry. Keep it.
-- **git** — frozen channel table, test vectors, the site's committed flight
-  data under `site/src/data/`, and (per `docs/architecture.md`) archived
-  tracks of closed flights under `site/flights/`, rendered statically forever.
+git holds the frozen channel table, test vectors, the site's committed flight
+data under `site/src/data/`, and (per `docs/architecture.md`) archived tracks
+of closed flights under `site/flights/`, rendered statically forever.
 
 See `docs/telemetry-format.md` for the wire format and sources,
 `docs/decode-status.md` for validation status, and

@@ -7,9 +7,8 @@ server and no database.
 
 1. **Bundled track, instant.** `src/data/flights.json` and
    `src/data/tracks/<flight_id>.json` are committed to git and imported at
-   build time, so the map, stats and table are in the HTML. The balloon is on
-   screen on first paint, with no network round trip and no spinner. The stats
-   and table render even with JavaScript off.
+   build time, so the stats are in the HTML and the page has its numbers
+   before any network round trip.
 2. **Live tail, about a second later.** The page then queries
    [wspr.live](https://wspr.live/) directly from the browser for anything
    newer than the bundled track, decodes it in place, and merges. wspr.live
