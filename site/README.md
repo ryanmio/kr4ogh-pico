@@ -58,6 +58,17 @@ frame — the newest fix is by definition the end of the line — which leaves
 whatever it is flying into off the map. That is the half a reader wants, and
 with the weather layer on it is the storm ahead.
 
+What is on screen travels in the link. `?u=i` pins imperial, `?w=c` the
+cloud layer, and `?p=speed` the open panel — a card's own name (`journey`,
+`altitude`, `speed`, `voltage`, `temperature`, `receivers`), or `status`
+(also `signal`), `tracker`, `data`, `about`. Opening a metric's panel colors
+the map by it, so the link reproduces both. A link with no `p` opens
+nothing, which is what closing a panel leaves behind: an open panel is where
+the reader is right now, not a preference, so unlike the units and the
+weather layer it is never remembered per browser and never written into the
+URL as an explicit emptiness. `?p=none` is accepted anyway, for a link typed
+by hand. All three compose: `?u=i&w=c&p=speed`.
+
 Archived flights are separate and unchanged: `flights/<flight_id>/`
 (`flight.mdx` + `track.json`), read at build time, fully static forever.
 

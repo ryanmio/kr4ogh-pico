@@ -133,12 +133,37 @@ const weatherOk =
 await setWeather("Off");
 
 await page.screenshot({ path: "dev/browser-check.png", fullPage: false });
+
+// A link is the last piece of shared state: `?p=speed` has to arrive with
+// the speed panel open and the map colored by it, without rewriting the URL
+// that asked for it, and closing a panel has to take the parameter back out
+// so the next copy of the URL shares the empty view it shows.
+const linkProbe = async (label) => {
+  const r = await page.evaluate(() => ({
+    search: location.search,
+    open: !document.getElementById("panel").hidden,
+    title: document.getElementById("panel-title")?.textContent?.trim(),
+    legend: document.querySelector(".map-legend-name")?.textContent?.trim(),
+  }));
+  console.log(`${label}: search=${r.search || "(none)"} open=${r.open} ` +
+    `title=${r.title} legend=${r.legend}`);
+  return r;
+};
+await page.goto("http://localhost:4321/live/F1B/?p=speed", { waitUntil: "networkidle" });
+await page.waitForSelector(".map-legend-name", { timeout: 10000 }).catch(() => {});
+const linked = await linkProbe("link ?p=speed    ");
+await page.evaluate(() => document.getElementById("panel-close").click());
+const linkClosed = await linkProbe("link, closed     ");
+const linkOk =
+  linked.search === "?p=speed" && linked.open &&
+  linked.title === "Ground speed" && linked.legend === "Ground speed" &&
+  !linkClosed.open && linkClosed.search === "";
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
   && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 7
-  && panelOk && trackerOk && weatherOk && errors.length === 0;
+  && panelOk && trackerOk && weatherOk && linkOk && errors.length === 0;
 console.log(ok
-  ? "\nRESULT: map, panel and weather layer survive refreshes"
+  ? "\nRESULT: map, panel and weather layer survive refreshes; links share the panel"
   : "\nRESULT: STILL BROKEN");
 await browser.close();
 process.exit(ok ? 0 : 1);

@@ -92,6 +92,9 @@ const last = track.at(-1);
   import { sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type { FlightMeta, TrackPoint } from "../lib/types";
+  import {
+    panelFromSearch, urlWithPanel, type PanelKind,
+  } from "../lib/panel";
   import { filterRange, RANGE_MIN_SPAN_MS, spanMs, type Range } from "../lib/range";
   import * as u from "../lib/units";
   import {
@@ -101,8 +104,6 @@ const last = track.at(-1);
     addWeatherControl, resolveWeather, saveWeather, urlWithWeather,
     type WeatherLayer,
   } from "../lib/weather";
-
-  type PanelKind = MetricKey | "status" | "tracker" | "data" | "about";
 
   const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
@@ -119,10 +120,13 @@ const last = track.at(-1);
     // link outranks the browser's memory, like `?u=` does, so a link sent
     // because of the weather arrives with the weather on.
     let weather: WeatherLayer = resolveWeather(location.search);
-    // What the spots are colored by; matches the build-time render.
-    let metric: MetricKey = "altitude";
-    // Which panel is open, if any.
-    let panel: PanelKind | null = null;
+    // Which panel is open, if any. A `?p=speed` link arrives with that
+    // panel already open, so a link shows what its sender was looking at.
+    let panel: PanelKind | null = panelFromSearch(location.search);
+    // What the spots are colored by; the build-time render says altitude,
+    // and a link that opens a metric's panel colors by it too, because
+    // pressing that card is what a reader would have done to get there.
+    let metric: MetricKey = panel && isMetricKey(panel) ? panel : "altitude";
 
     const mapSlot = root.querySelector<HTMLElement>(".fv-map-slot")!;
     const ctlSlot = root.querySelector<HTMLElement>(".fv-ctl-slot")!;
@@ -454,12 +458,20 @@ const last = track.at(-1);
       }
     }
 
-    function openPanel(kind: PanelKind) {
+    /** Put a panel on screen. Separate from `openPanel` because opening one
+     * from a link must not scroll the page out from under the reader before
+     * they have seen it, nor rewrite the URL that just asked for it. */
+    function showPanel(kind: PanelKind) {
       panel = kind;
       renderPanel();
       paintCards();
       panelEl.hidden = false;
       root!.classList.add("panel-open");
+    }
+
+    function openPanel(kind: PanelKind) {
+      showPanel(kind);
+      pinInUrl(urlWithPanel(location.href, kind));
       // On a phone the panel is below the cards, off screen: bring it up.
       if (window.matchMedia("(max-width: 899px)").matches) {
         panelEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -471,6 +483,9 @@ const last = track.at(-1);
       panelEl.hidden = true;
       root!.classList.remove("panel-open");
       paintCards();
+      // Nothing open is the page's own default, so the parameter comes back
+      // out rather than being set to a value meaning "none".
+      pinInUrl(urlWithPanel(location.href, null));
     }
 
     // ---------- wiring ----------
@@ -497,9 +512,13 @@ const last = track.at(-1);
     }
 
     paintUnitToggle();
-    // The build-time sidebar is metric; if the reader's units differ it has
-    // to be redrawn before they read it.
-    if (units !== "metric") renderSidebar();
+    // The build-time sidebar is metric, and its cards show none active; if
+    // the reader's units differ, or a link opened a panel, it has to be
+    // redrawn before they read it.
+    if (units !== "metric" || panel) renderSidebar();
+    // A `?p=` link opens its panel now, on the bundled track, rather than
+    // waiting on wspr.live; the first refresh re-renders it either way.
+    if (panel) showPanel(panel);
 
     // Cards re-render on refresh, so listen on the slot, not the buttons.
     cardsSlot.addEventListener("click", (ev) => {
