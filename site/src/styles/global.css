@@ -626,7 +626,13 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 
 .fv { position: relative; flex: 1; height: 100dvh; overflow: hidden; }
 
-.fv-map-slot { position: absolute; inset: 0; background: #0c1524; }
+/* Two classes on purpose, not one: maplibre's own stylesheet puts
+   `position: relative` on this same element (it stamps .maplibregl-map on
+   its container), at single-class specificity, and the build is free to
+   emit that stylesheet after this one -- it has, and the map collapsed to
+   a 0-tall strip on desktop. The extra .fv wins the fight by specificity,
+   which no link order can take away. */
+.fv .fv-map-slot { position: absolute; inset: 0; background: #0c1524; }
 
 /* Shown until the first wspr.live check answers, so the first track drawn
    is the current one instead of yesterday's bundle jumping under the
@@ -930,7 +936,8 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   .fv-top .unit-toggle button { font-size: 0.72rem; padding: 0.28rem 0.6rem; }
   .fv-ctl-slot { display: none; }
 
-  .fv-map-slot {
+  /* .fv doubled to keep outranking the desktop rule above. */
+  .fv .fv-map-slot {
     position: relative; inset: auto; order: 1;
     height: 47dvh; min-height: 300px;
   }
