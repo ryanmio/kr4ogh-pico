@@ -72,6 +72,16 @@ local provenance ids):
       ]
     }
 
+`speed_kt` is what the tracker sent and nothing else. The field saturates at
+82 kt (see docs/telemetry-format.md), so on a fast flight it is a floor
+rather than a reading, and the site derives the real speed from the distance
+flown around each saturated fix. That derivation is deliberately not in this
+file: it depends on the fixes either side of a point, and the newest fix — the
+one anyone is actually watching — has none after it yet. Storing it would
+freeze the worst version of it. `site/src/lib/speed.ts` recomputes it over
+the whole track every time the track changes, in the browser and at build
+time alike.
+
 `flight.mdx` carries the narrative: outcome classification (Pass / Fail /
 Wounded / Closed per the scoring definitions), dates, distance, and anything
 the operator wants to say. Frontmatter references `track.json` so the site can

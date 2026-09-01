@@ -54,7 +54,12 @@ class GridPowerTelemetry:
     recorded in docs/telemetry-format.md.
     """
     voltage_v: float  # 3.00 to 4.95 V in 0.05 V steps (Traquito window)
-    speed_knots: int  # 0 to 82 in 2 kt steps, clamped by Traquito
+    # 0 to 82 in 2 kt steps, clamped by Traquito. 82 is the top of the field,
+    # so it means "82 or faster" -- a pico in the jet stream sits there for
+    # days. Reported as transmitted here on purpose; the site derives the real
+    # speed from distance flown (site/src/lib/speed.ts), which needs the fixes
+    # either side of a point and so cannot be done in a per-message decoder.
+    speed_knots: int
     gps_valid: bool  # always True from a Jetpack; a lock is required to send
     hdr_type: int  # 1 = standard Basic Telemetry; anything else is not
 

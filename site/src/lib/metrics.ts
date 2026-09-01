@@ -8,6 +8,7 @@
  * a track. */
 
 import { fmtUtcShort, parseUtc } from "./format";
+import { groundSpeedKt } from "./speed";
 import * as u from "./units";
 import type { Units } from "./units";
 import type { TrackPoint } from "./types";
@@ -51,7 +52,7 @@ export const METRICS: Record<MetricKey, Metric> = {
     label: "Ground speed",
     ramp: ["#a78bfa", "#f472b6", "#fb923c"],
     color: "#f472b6",
-    raw: (p) => p.speed_kt,
+    raw: (p) => groundSpeedKt(p),
     fmt: (raw, units) => u.speed(raw, units).text,
   },
   voltage: {

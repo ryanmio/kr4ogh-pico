@@ -9,7 +9,17 @@ export interface TrackPoint {
   lat: number;
   lon: number;
   altitude_m: number;
+  /** Ground speed exactly as the tracker sent it. The field tops out at 82
+   * knots and Traquito clamps there, so 82 means "82 or faster"; see
+   * lib/speed.ts, which is where anything displaying a speed should go. */
   speed_kt: number;
+  /** Ground speed derived from distance flown, present only on the fixes
+   * where `speed_kt` saturated. Never stored: lib/speed.ts recomputes it
+   * over the whole track whenever the track changes. */
+  speed_kt_est?: number;
+  /** How `speed_kt_est` was arrived at: measured from the track, or held at
+   * the field's ceiling because no baseline was usable. */
+  speed_source?: "derived" | "floor";
   voltage_v: number;
   temperature_c: number;
   gps_valid: boolean;

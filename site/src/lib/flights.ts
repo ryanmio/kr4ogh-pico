@@ -8,6 +8,7 @@
  * Nothing here touches a database or a network. A missing or empty data
  * directory is a valid state: the site builds, and the pages say so.
  */
+import { resolveTrackSpeeds } from "./speed";
 import type { FlightMeta, TrackPoint } from "./types";
 import flightsData from "../data/flights.json";
 
@@ -33,6 +34,11 @@ export function liveFlights(): FlightMeta[] {
     .sort((a, b) => (b.launch_utc ?? "").localeCompare(a.launch_utc ?? ""));
 }
 
+/** The committed track for a flight, with speeds above the telemetry
+ * ceiling filled in (lib/speed.ts). The estimate is derived here rather than
+ * exported into the JSON because it depends on the fixes around each point,
+ * and the browser keeps adding those; the same pass runs again on every live
+ * refresh. */
 export function trackFor(flightId: string): TrackPoint[] {
-  return tracksById.get(flightId) ?? [];
+  return resolveTrackSpeeds(tracksById.get(flightId) ?? []);
 }

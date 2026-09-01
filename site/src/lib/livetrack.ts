@@ -9,6 +9,7 @@
  * or blocked, the bundled track still renders and the caller shows when it
  * was last updated. Nothing here can leave the page emptier than it started.
  */
+import { resolveTrackSpeeds } from "./speed";
 import { fetchTrack, mergeTrack, type FlightSpec } from "./wspr/track";
 import type { TrackPoint } from "./types";
 
@@ -57,7 +58,10 @@ export async function refreshTrack(
     const fresh = await fetchTrack(flight, from, new Date(now.getTime() + 60_000), signal);
     const known = new Set(bundled.map((p) => p.utc));
     return {
-      track: mergeTrack(bundled, fresh),
+      // Re-derived over the whole merged track, not just the tail: a
+      // saturated fix at the old end had no fixes after it to measure
+      // against, and now it does. See lib/speed.ts.
+      track: resolveTrackSpeeds(mergeTrack(bundled, fresh)),
       added: fresh.filter((p) => !known.has(p.utc)).length,
       error: null,
     };

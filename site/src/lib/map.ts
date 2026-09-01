@@ -9,7 +9,8 @@ import {
 } from "./basemap";
 import { fmtUtc } from "./format";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
-import { altitude as fmtAltitude, speed as fmtSpeed, type Units } from "./units";
+import { speedText } from "./speed";
+import { altitude as fmtAltitude, type Units } from "./units";
 import type { FlightMeta, TrackPoint } from "./types";
 
 export interface MapOptions {
@@ -198,7 +199,7 @@ export function renderMap(
         fillOpacity: 1,
       }).bindTooltip(
         `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
-        ` · ${fmtSpeed(p.speed_kt, units).text} · ${p.voltage_v.toFixed(2)} V`,
+        ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V`,
       ).addTo(spots);
     }
   };

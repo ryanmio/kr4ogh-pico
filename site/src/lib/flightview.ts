@@ -8,6 +8,7 @@ import { renderChart } from "./charts";
 import { parseUtc } from "./format";
 import { convert, unitLabels, type Units } from "./units";
 import { renderMap, type MapOptions } from "./map";
+import { groundSpeedKt } from "./speed";
 import type { FlightMeta, TrackPoint } from "./types";
 
 /** Returns the Leaflet map, or null when there was nothing to draw. Callers
@@ -45,7 +46,7 @@ export function renderChartsInto(
     },
     {
       label: "Ground speed", unit: labels.speed, color: "#a78bfa",
-      values: series((p) => convert.speed(p.speed_kt, units)), decimals: 0,
+      values: series((p) => convert.speed(groundSpeedKt(p), units)), decimals: 0,
     },
     {
       label: "Battery", unit: "V", color: "#34d399",

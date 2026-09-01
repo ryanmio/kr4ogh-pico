@@ -173,6 +173,14 @@ From https://traquito.github.io/pro/telemetry/basic/:
   `volts = 2.0 + index * 0.05`.
 - **IsGpsValid is always true.** Traquito requires a GPS lock before sending Basic
   Telemetry and does not implement IsGpsValid=false.
+- **Speed saturates at 82 knots.** Clamping applies to speed like every other
+  field, and 82 kt (94 mph) is the top of the 42-value range. A pico in the jet
+  stream regularly exceeds it, so a reported 82 means "82 or faster" and cannot
+  be read as a measurement. The decoders here report the transmitted value
+  unchanged — that is what was sent, and the stored record says what was sent.
+  Recovering the real speed is a track-level job, done from the distance flown
+  between fixes in `site/src/lib/speed.ts`; it is measured against the tracker's
+  own GPS speed on a real flight in `site/dev/speed-check.ts`.
 - **Temperature is the RP2040 die sensor** ("Traquito uses the onboard RP2040 temperature
   sensor for this measurement"), not external air temperature.
 

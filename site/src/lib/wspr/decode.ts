@@ -39,7 +39,11 @@ export interface GridPowerTelemetry {
   /** RP2040 die temperature, -50 to +39 C. NOT external air temperature. */
   temperatureC: number;
   voltageV: number; // 3.00 to 4.95 V in 0.05 V steps (Traquito window)
-  speedKnots: number; // 0 to 82 in 2 kt steps, clamped by Traquito
+  // 0 to 82 in 2 kt steps, clamped by Traquito. 82 is the top of the field
+  // and means "82 or faster"; ../speed.ts recovers the real number from the
+  // distance flown, which needs the fixes either side and so cannot happen
+  // in a per-message decoder.
+  speedKnots: number;
   gpsValid: boolean; // always true from a Jetpack; a lock is required to send
   hdrType: number; // 1 = standard Basic Telemetry; anything else is not
 }

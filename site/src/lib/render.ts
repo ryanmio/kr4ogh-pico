@@ -7,6 +7,9 @@ import {
   trackStats,
 } from "./format";
 import { METRICS, type MetricKey } from "./metrics";
+import {
+  groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
+} from "./speed";
 import type { FlightMeta } from "./types";
 import * as u from "./units";
 import type { Units } from "./units";
@@ -73,7 +76,7 @@ export function statsHtml(
       `since ${s.firstUtc.slice(11, 16)} UTC`,
     ),
     statCard("Altitude", alt(s.last.altitude_m), `highest ${alt(s.maxAltitudeM)}`),
-    statCard("Ground speed", spd(s.last.speed_kt), `fastest ${spd(s.maxSpeedKt)}`),
+    statCard("Ground speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`),
     statCard(
       "Heading",
       heading === null ? "--" : compassPoint(heading),
@@ -227,7 +230,7 @@ export function sidebarHtml(
       active,
     ),
     metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active),
-    metricCard("speed", spd(s.last.speed_kt), `fastest ${spd(s.maxSpeedKt)}`, active),
+    metricCard("speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`, active),
     metricCard(
       "voltage",
       `${s.last.voltage_v.toFixed(2)} V`,
@@ -250,6 +253,17 @@ export function sidebarHtml(
   return tracker + status + cards.join("");
 }
 
+/** The speed column. A fix under the field's ceiling prints the integer the
+ * tracker sent. At the ceiling the tracker only proved a lower bound, so the
+ * cell prints either "82+" or the tilde-marked estimate the track measured,
+ * never a bare 82 that would read as a measurement. */
+function speedCell(p: TrackPoint): string {
+  if (!isSpeedFloor(p) && p.speed_kt_est === undefined) return `${p.speed_kt}`;
+  return isSpeedFloor(p)
+    ? `${p.speed_kt}+`
+    : `~${Math.round(groundSpeedKt(p))}`;
+}
+
 /** Telemetry table, newest first. Long flights are capped so a two-month
  * archive page stays a reasonable download; the full track is always in the
  * flight's JSON. */
@@ -262,7 +276,7 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
     <td class="mono num">${p.lat.toFixed(4)}</td>
     <td class="mono num">${p.lon.toFixed(4)}</td>
     <td class="mono num">${fmtInt(p.altitude_m)}</td>
-    <td class="mono num">${p.speed_kt}</td>
+    <td class="mono num">${speedCell(p)}</td>
     <td class="mono num">${p.voltage_v.toFixed(2)}</td>
     <td class="mono num">${p.temperature_c}</td>
     <td class="mono num">${p.rx_station_count}</td>
@@ -271,8 +285,17 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
     ? `Telemetry table · latest ${fmtInt(maxRows)} of ${fmtInt(track.length)}` +
       " records (full track in the JSON download)"
     : `Telemetry table · ${fmtInt(track.length)} records`;
+  // Only worth the line on a flight that actually hit the ceiling, which is
+  // the only flight where the column needs explaining.
+  const ceilingNote = hasSaturatedSpeed(track)
+    ? `<p class="fv-panel-note">The speed field stops at
+      ${SPEED_CEILING_KT} kt, so "${SPEED_CEILING_KT}+" is the tracker saying
+      "at least this". A "~" speed is measured from the distance flown either
+      side of the fix instead.</p>`
+    : "";
   return `<details class="telemetry-table">
     <summary>${label}</summary>
+    ${ceilingNote}
     <div class="table-scroll"><table>
       <thead><tr>
         <th>UTC</th><th>Grid</th><th>Lat</th><th>Lon</th>

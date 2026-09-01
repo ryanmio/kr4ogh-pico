@@ -149,6 +149,35 @@ never hand-edited:
 npm run gen:channels  # regenerate from tool/picolog/channels_20m.csv
 ```
 
+## Speeds above 94 mph
+
+The telemetry speed field tops out at 82 knots — 94 mph — and the tracker
+clamps rather than rolling over, so a balloon in the jet stream transmits 82
+and stays there. That is a floor, not a reading, and taken literally it
+flattens the fastest part of every flight into a straight line.
+
+`src/lib/speed.ts` fills those fixes in from the one thing the track knows
+that the tracker could not say: where the balloon actually was. It measures
+the distance flown over a window centred on each saturated fix, wide enough
+(40 minutes) that grid-square quantisation averages out. Below the ceiling
+nothing is touched — the tracker's own GPS speed is far better than anything
+positions this coarse can give.
+
+Speeds are derived, never stored: the newest fix is the one people are
+watching, it arrives with nothing after it to measure against, and its
+estimate sharpens as the next reports land. So `track.json` keeps what the
+tracker sent and the pass re-runs over the whole track on every refresh.
+
+```sh
+npm run speed-check   # accuracy, invariants, and the estimator vs real GPS
+```
+
+That flies synthetic balloons at known speeds through the real grid6
+quantisation and checks the recovered speed (worst case 6.1 kt at every
+bearing), then runs the same estimator over the committed F1B track — which
+never saturated, so every fix carries the tracker's own GPS speed as ground
+truth. It agrees to 3.5 kt RMS over 86 fixes.
+
 ## Run
 
 ```sh
@@ -156,6 +185,7 @@ npm install
 npm run dev            # http://localhost:4321
 npm run build          # static output in dist/
 npm run live-check     # fetch + decode the live flight in the terminal
+npm run speed-check    # derived speeds above the telemetry ceiling
 npm run browser-check  # drive the page in Chrome: map draws, survives refresh
 ```
 

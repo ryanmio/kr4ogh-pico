@@ -105,7 +105,10 @@ export function trackStats(track: TrackPoint[]): TrackStats | null {
   for (let i = 0; i < track.length; i++) {
     const p = track[i]!;
     maxAltitudeM = Math.max(maxAltitudeM, p.altitude_m);
-    maxSpeedKt = Math.max(maxSpeedKt, p.speed_kt);
+    // Inlined rather than imported from lib/speed.ts, which imports this
+    // module: the fallback is the whole of groundSpeedKt and a cycle
+    // between the two is not worth one expression.
+    maxSpeedKt = Math.max(maxSpeedKt, p.speed_kt_est ?? p.speed_kt);
     if (i > 0) {
       const q = track[i - 1]!;
       distanceKm += haversineKm(q.lat, q.lon, p.lat, p.lon);

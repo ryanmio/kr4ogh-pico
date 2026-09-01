@@ -11,6 +11,9 @@ const trackModules = import.meta.glob<{ default: FlightArchive }>(
 );
 
 const tracksById = new Map<string, FlightArchive>();
+// Held exactly as committed: /flights/<id>/track.json is served from these
+// bytes and must stay the record of what the tracker sent. Derived speeds
+// (lib/speed.ts) are added by the page that displays a track, not here.
 for (const mod of Object.values(trackModules)) {
   tracksById.set(mod.default.flight_id, mod.default);
 }

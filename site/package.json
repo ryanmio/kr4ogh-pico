@@ -9,6 +9,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "verify": "tsx dev/verify-port.ts",
+    "speed-check": "tsx dev/speed-check.ts",
     "gen:channels": "node dev/gen-channels.mjs",
     "live-check": "tsx dev/live-check.ts",
     "browser-check": "node dev/browser-check.mjs"

@@ -92,6 +92,9 @@ const last = track.at(-1);
   import { refreshTrack } from "../lib/livetrack";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
   import { sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
+  import {
+    groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
+  } from "../lib/speed";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type { FlightMeta, TrackPoint } from "../lib/types";
   import {
@@ -372,7 +375,7 @@ const last = track.at(-1);
       }
       const get: Record<string, (p: TrackPoint) => number> = {
         altitude: (p) => convert.altitude(p.altitude_m, units),
-        speed: (p) => convert.speed(p.speed_kt, units),
+        speed: (p) => convert.speed(groundSpeedKt(p), units),
         voltage: (p) => p.voltage_v,
         temperature: (p) => convert.temperature(p.temperature_c, units),
         receivers: (p) => p.rx_station_count,
@@ -393,7 +396,7 @@ const last = track.at(-1);
       const volts = track.map((p) => p.voltage_v);
       const temps = track.map((p) => p.temperature_c);
       const alts = track.map((p) => p.altitude_m);
-      const speeds = track.map((p) => p.speed_kt);
+      const speeds = track.map(groundSpeedKt);
       const alt = (m: number) => u.altitude(m, units).text;
       const spd = (kt: number) => u.speed(kt, units).text;
       const tmp = (c: number) => u.temperature(c, units).text;
@@ -424,7 +427,7 @@ const last = track.at(-1);
       if (key === "speed") {
         const avg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
         return [
-          mini("Now", spd(s.last.speed_kt)),
+          mini("Now", speedText(s.last, units)),
           mini("Fastest", spd(s.maxSpeedKt)),
           mini("Average", spd(avg)),
         ].join("");
@@ -502,8 +505,17 @@ const last = track.at(-1);
           panelBody.innerHTML = '<p class="empty-note">No decoded telemetry yet.</p>';
           return;
         }
+        // Only the speed panel, and only on a flight that has actually
+        // outrun its own telemetry: the reader is looking at a number the
+        // tracker could not send and deserves to know where it came from.
+        const note = key === "speed" && hasSaturatedSpeed(track)
+          ? `<p class="fv-panel-note">The tracker cannot encode more than
+              ${u.speed(SPEED_CEILING_KT, units).text}. Above that, speed is
+              measured from the distance flown either side of each
+              report.</p>`
+          : "";
         panelBody.innerHTML =
-          `<div class="fv-minis">${metricMinis(key)}</div>` +
+          `<div class="fv-minis">${metricMinis(key)}</div>` + note +
           '<div class="fv-panel-chart"></div>';
         const pts = filterRange(track, range);
         if (pts.length >= 2) {
