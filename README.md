@@ -1,43 +1,45 @@
 # kr4ogh-pico
 
-Telemetry data layer and public site for KR4OGH pico balloon flights: WSPR
-U4B-style telemetry ingest, decode, storage, and display. Monorepo: `/tool`
-(Python package `picolog`), `/docs` (format spec, architecture, status),
-`/site` (the website — see `site/README.md`).
+**[kr4ogh-pico.vercel.app](https://kr4ogh-pico.vercel.app)** — a live map of
+KR4OGH's pico balloon flights.
 
-## Run
+A pico balloon is amateur radio's smallest space program: a gram-scale solar
+tracker under a party-sized superpressure balloon, released into the jet
+stream and never recovered. It whispers 20 milliwatts of WSPR, volunteer
+stations around the world hear it, and every decode lands in
+[wspr.live](https://wspr.live/).
+
+The site queries wspr.live from the visitor's browser and decodes the U4B
+telemetry there — position, altitude, speed, voltage, temperature, how many
+stations heard it — so nothing of ours has to be awake for the page to be
+current, and there is no server, no database and no API key anywhere in it.
+Rain radar and infrared cloud tops go under the track. What is on screen
+travels in the link: units, weather layer, open panel.
+
+- `site/` — the website. Astro, static output. See `site/README.md`.
+- `tool/` — `picolog`, the Python package that ingests and decodes the same
+  telemetry into SQLite and exports the track each page ships with. Not the
+  liveness path; the browser is.
+- `docs/` — `telemetry-format.md` for the wire format, `architecture.md`,
+  `decode-status.md`, and `partial-spots.md` for the known gap where only one
+  of a fix's two messages is heard.
+
+## Run the tool
 
 ```sh
 cd tool
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest                       # no network needed
 .venv/bin/python -m picolog.run --flights flights.toml --db picolog.db
-```
-
-The runner pulls the last hour (`--window-hours` to change) of spots for every
-active flight in `flights.toml` from wspr.live and decodes them.
-`picolog.export_site` then writes the site's committed flight data:
-
-```sh
 .venv/bin/python -m picolog.export_site --flights flights.toml --db picolog.db --site ../site
 ```
 
-A scheduled workflow (`.github/workflows/ingest.yml`) runs both once a day
-and commits the result. That schedule is not load-bearing: the site stays
-current regardless, because the visitor's browser queries wspr.live itself
-and decodes the telemetry in place, with its own TypeScript port of the
-decoder in `site/src/lib/wspr/`. All the export has to do is keep the
-committed track fresh enough that the browser's catch-up window still
-reaches it, which is a question of days. It ran every 30 minutes when the
-site depended on a cache.
+`run` pulls the last hour (`--window-hours` to change) of spots for every
+active flight in `flights.toml` and decodes them. `export_site` merges what
+the database holds into the committed track under `site/src/data/`, so a
+short window extends a long flight rather than truncating it.
 
-## Where the data goes
-
-git holds the frozen channel table, test vectors, the site's committed flight
-data under `site/src/data/`, and (per `docs/architecture.md`) archived tracks
-of closed flights under `site/flights/`, rendered statically forever.
-
-See `docs/telemetry-format.md` for the wire format and sources,
-`docs/decode-status.md` for validation status, and
-`docs/partial-spots.md` for the known gap where only one of a fix's two
-messages is heard.
+`.github/workflows/ingest.yml` does both once a day and commits the result.
+That schedule is not load-bearing — the browser keeps the page current on its
+own. All the export has to do is keep the committed track fresh enough that
+the browser's three-day catch-up window still reaches it.

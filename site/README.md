@@ -178,12 +178,12 @@ python -m picolog.export_site --flights flights.toml --db picolog.db --site ../s
 
 The export **merges** into the committed track, so running it from a
 short-window database extends a long flight rather than truncating it.
-`.github/workflows/ingest.yml` does exactly this every 30 minutes and commits
-the result.
+`.github/workflows/ingest.yml` does exactly this once a day and commits the
+result.
 
 ## Deploy
 
-`.github/workflows/site.yml` builds and deploys to GitHub Pages on push to
-`main` once Pages is enabled (source: GitHub Actions). `SITE_URL` /
-`SITE_BASE` are derived from the Pages configuration. No other configuration
-is required.
+Vercel builds `site/` on push to `main` and serves it at
+[kr4ogh-pico.vercel.app](https://kr4ogh-pico.vercel.app). Static output, no
+configuration, no secrets. `SITE_URL` / `SITE_BASE` exist for a deploy under
+a subpath and default to root.
