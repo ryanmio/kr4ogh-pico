@@ -70,9 +70,11 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
         </div>
       </footer>
     )}
-    <!-- Vercel Web Analytics. It no-ops off Vercel, so dev and any other
-         host stay untouched; every page renders through this layout, so
-         one mount covers the site. -->
+    <!-- Vercel Web Analytics: one mount, since every page renders through
+         this layout. Vercel's docs put this in <head>, but <vercel-analytics>
+         is an unknown element, so the parser ends <head> at it and drags the
+         stylesheets after it into <body>. Here the beacon behaves the same
+         and the stylesheets stay put. -->
     <Analytics />
   </body>
 </html>
