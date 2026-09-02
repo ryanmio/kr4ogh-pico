@@ -1,0 +1,19 @@
+---
+/** The home page is the flight. While something is up, that is all anyone
+ * comes here for, so there is nothing to click through to.
+ */
+import FlightLive from "../components/FlightLive.astro";
+import Base from "../layouts/Base.astro";
+import { liveFlights, trackFor } from "../lib/flights";
+
+const flight = liveFlights()[0];
+const track = flight ? trackFor(flight.flight_id) : [];
+---
+
+{flight
+  ? <Base title="KR4OGH — live balloon telemetry" chrome={false}>
+      <FlightLive flight={flight} track={track} />
+    </Base>
+  : <Base title="KR4OGH — live balloon telemetry">
+      <div class="notice notice-accent">Nothing in the air right now.</div>
+    </Base>}

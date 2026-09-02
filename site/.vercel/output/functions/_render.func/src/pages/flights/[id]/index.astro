@@ -1,0 +1,74 @@
+---
+import { render } from "astro:content";
+import Base from "../../../layouts/Base.astro";
+import { archivedFlights } from "../../../lib/archive";
+import { withBase } from "../../../lib/base";
+import { outcomeBadgeClass, statsHtml, tableHtml } from "../../../lib/render";
+import { resolveTrackSpeeds } from "../../../lib/speed";
+
+export async function getStaticPaths() {
+  return (await archivedFlights()).map((flight) => ({
+    params: { id: flight.archive.flight_id },
+    props: { flight },
+  }));
+}
+
+const { flight } = Astro.props;
+const { entry, archive } = flight;
+const { Content } = await render(entry);
+const trackUrl = withBase(`/flights/${archive.flight_id}/track.json`);
+
+// Stats and table are rendered at build time: an archived flight is static
+// data in git, and its page carries the numbers even before any script runs.
+// Speeds above what the telemetry field can hold are measured from the
+// track here rather than stored in it; see lib/speed.ts. The download and
+// /flights/<id>/track.json stay the raw record.
+const track = resolveTrackSpeeds(archive.track);
+const stats = statsHtml(track, false);
+const table = tableHtml(track);
+---
+
+<Base
+  title={`${entry.data.title} — KR4OGH`}
+  description={entry.data.summary}
+>
+  <div class="flight-title-row">
+    <h1>{entry.data.title}</h1>
+    <span class:list={["badge", outcomeBadgeClass(entry.data.outcome)]}>
+      {entry.data.outcome}
+    </span>
+  </div>
+  <p class="flight-subtitle">
+    {archive.callsign} · {archive.band} · channel {archive.channel} · {entry.data.period}
+  </p>
+
+  <div id="map" data-track-url={trackUrl}></div>
+  <div class="fv-stats" set:html={stats} />
+  <div id="charts"></div>
+  <Fragment set:html={table} />
+
+  <div class="flight-notes prose">
+    <Content />
+  </div>
+
+  <p class="toolbar">
+    <a class="button" href={trackUrl} download={`${archive.flight_id}.json`}
+      >Download track.json</a
+    >
+  </p>
+</Base>
+
+<script>
+  import { renderChartsInto, renderMapInto } from "../../../lib/flightview";
+  import { resolveTrackSpeeds } from "../../../lib/speed";
+  import type { FlightArchive } from "../../../lib/types";
+
+  const mapEl = document.getElementById("map")!;
+  const archive: FlightArchive =
+    await (await fetch(mapEl.dataset.trackUrl!)).json();
+  // track.json is the raw record; speeds above the telemetry ceiling are
+  // derived on the way in, exactly as the build-time render did.
+  const track = resolveTrackSpeeds(archive.track);
+  renderMapInto(mapEl, archive, track);
+  renderChartsInto(document.getElementById("charts")!, track);
+</script>

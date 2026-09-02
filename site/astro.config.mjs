@@ -1,5 +1,6 @@
 // @ts-check
 import mdx from "@astrojs/mdx";
+import vercel from "@astrojs/vercel/serverless";
 import { defineConfig } from "astro/config";
 
 // `site` has to be the real host: og:image and canonical are absolute URLs,
@@ -9,6 +10,10 @@ import { defineConfig } from "astro/config";
 export default defineConfig({
   site: process.env.SITE_URL || "https://kr4ogh-pico.vercel.app",
   base: process.env.SITE_BASE || "/",
+  output: "server",
+  adapter: vercel({
+    webAnalytics: { enabled: true },
+  }),
   integrations: [mdx()],
   vite: {
     // maplibre is only ever loaded through a dynamic import (the globe

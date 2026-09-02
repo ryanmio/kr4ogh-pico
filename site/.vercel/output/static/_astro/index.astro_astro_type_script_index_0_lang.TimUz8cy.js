@@ -1,0 +1,1 @@
+import{r,y as c,B as n}from"./flightview.LdyHSQ0z.js";const t=document.getElementById("map"),a=await(await fetch(t.dataset.trackUrl)).json(),e=r(a.track);c(t,a,e);n(document.getElementById("charts"),e);
