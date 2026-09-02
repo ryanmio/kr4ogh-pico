@@ -1,4 +1,5 @@
 ---
+import Analytics from "@vercel/analytics/astro";
 import { withBase } from "../lib/base";
 import "../styles/global.css";
 
@@ -69,5 +70,9 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
         </div>
       </footer>
     )}
+    <!-- Vercel Web Analytics. It no-ops off Vercel, so dev and any other
+         host stay untouched; every page renders through this layout, so
+         one mount covers the site. -->
+    <Analytics />
   </body>
 </html>
