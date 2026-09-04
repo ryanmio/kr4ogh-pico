@@ -1,14 +1,17 @@
-# site
+# The site
 
-The public website for KR4OGH pico balloon flights. Astro, static output, no
-server and no database.
+The public website for a callsign's pico balloon flights. Astro, static
+output, no server and no database. These are the design notes; README.md is
+where to start, and "Fly your own" there is how to run it for another
+callsign.
 
 ## How a live flight reaches the page
 
-1. **Bundled track, instant.** `src/data/flights.json` and
-   `src/data/tracks/<flight_id>.json` are committed to git and imported at
-   build time, so the stats are in the HTML and the page has its numbers
-   before any network round trip.
+1. **Bundled track, instant.** `flights.toml` names the flights and
+   `src/data/tracks/<flight_id>.json` holds each one's track; both are in
+   git and read at build time (`src/lib/config.ts`, `src/lib/flights.ts`),
+   so the stats are in the HTML and the page has its numbers before any
+   network round trip.
 2. **Live tail, about a second later.** The page then queries
    [wspr.live](https://wspr.live/) directly from the browser for anything
    newer than the bundled track, decodes it in place, and merges. wspr.live
@@ -198,22 +201,25 @@ nothing to configure and no local services to start.
 
 ## Refreshing the committed data
 
-From the repo root, against the authoritative SQLite record:
+From the repo root, against the authoritative SQLite record (the tool
+installed per README.md, "Development"):
 
 ```sh
-cd tool
-python -m picolog.run         --flights flights.toml --db picolog.db --window-hours 1
-python -m picolog.export_site --flights flights.toml --db picolog.db --site ../site
+python -m picolog.run         --db tool/picolog.db --window-hours 1
+python -m picolog.export_site --db tool/picolog.db
 ```
 
-The export **merges** into the committed track, so running it from a
-short-window database extends a long flight rather than truncating it.
-`.github/workflows/ingest.yml` does exactly this once a day and commits the
-result.
+Both read `flights.toml` at the root by default. The export **merges** into
+the committed track, so running it from a short-window database extends a
+long flight rather than truncating it. `.github/workflows/ingest.yml` does
+exactly this once a day and commits the result, and runs `--from-launch`
+whenever `flights.toml` changes, which is what seeds a fresh instance's
+track.
 
 ## Deploy
 
-Vercel builds `site/` on push to `main` and serves it at
-[kr4ogh-pico.vercel.app](https://kr4ogh-pico.vercel.app). Static output, no
-configuration, no secrets. `SITE_URL` / `SITE_BASE` exist for a deploy under
-a subpath and default to root.
+Vercel builds the repository root on push to `main`: Astro is detected,
+nothing to configure, no secrets. The absolute origin the share cards need
+comes from `[site].url` in `flights.toml`, else `SITE_URL`, else the
+production host Vercel names for every build (`VERCEL_PROJECT_PRODUCTION_URL`).
+`SITE_BASE` exists for a deploy under a subpath and defaults to root.

@@ -19,9 +19,10 @@ Why three stores rather than one:
   that distinction.
 - **git is the archive** because a closed flight should render forever without
   any database. That is the flight-archive export below. It also holds
-  `src/data/`, written by `picolog.export_site`: the flight list and each
-  flight's decoded track, which the site bundles into the page so a visitor
-  sees the balloon on first paint with no round trip.
+  `flights.toml`, the flight list the site and the tool both read, and
+  `src/data/tracks/`, written by `picolog.export_site`: each flight's decoded
+  track, which the site bundles into the page so a visitor sees the balloon
+  on first paint with no round trip.
 - **wspr.live is the live source** because a live tracker must not depend on
   anything of ours being awake. The page queries it directly from the
   browser (it sends `access-control-allow-origin: *`) and decodes in place,

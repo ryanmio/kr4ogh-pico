@@ -5,11 +5,17 @@
  *
  * Run:  npx tsx dev/live-check.ts [hours]
  */
+import { configuredFlights } from "../src/lib/config";
 import { channel20m } from "../src/lib/wspr/channels";
 import { fetchTrack } from "../src/lib/wspr/track";
 
 const hours = Number(process.argv[2] ?? 6);
-const flight = { callsign: "KR4OGH", band: "20m", channel: 348 };
+// The newest live flight in flights.toml, as the home page picks it.
+const flight = configuredFlights
+  .filter((f) => f.active !== false && f.status === "live")
+  .sort((a, b) => (b.launch_utc ?? "").localeCompare(a.launch_utc ?? ""))[0];
+if (!flight) throw new Error("flights.toml has no live flight");
+console.log(`${flight.callsign} ${flight.flight_id}`);
 const end = new Date();
 const start = new Date(end.getTime() - hours * 3600 * 1000);
 
@@ -29,4 +35,4 @@ for (const p of track.slice(-5)) {
 }
 console.log(`\nJSON for comparison:`);
 console.log(JSON.stringify(track.map((p) => [p.utc, p.grid6, p.altitude_m,
-  p.speed_knots, p.voltage_v, p.temperature_c, p.rx_station_count])));
+  p.speed_kt, p.voltage_v, p.temperature_c, p.rx_station_count])));
