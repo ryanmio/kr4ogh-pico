@@ -1,6 +1,6 @@
 /** Emits each git flight archive as a static /flights/<id>/track.json asset,
  * fetched by the archived page's map/chart script and offered as a download.
- * Same bytes as site/flights/<id>/track.json in the repo. */
+ * Same bytes as flights/<id>/track.json in the repo. */
 
 import type { APIRoute } from "astro";
 import { archivedFlights } from "../../../lib/archive";

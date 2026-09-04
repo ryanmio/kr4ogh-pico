@@ -179,8 +179,8 @@ From https://traquito.github.io/pro/telemetry/basic/:
   be read as a measurement. The decoders here report the transmitted value
   unchanged — that is what was sent, and the stored record says what was sent.
   Recovering the real speed is a track-level job, done from the distance flown
-  between fixes in `site/src/lib/speed.ts`; it is measured against the tracker's
-  own GPS speed on a real flight in `site/dev/speed-check.ts`.
+  between fixes in `src/lib/speed.ts`; it is measured against the tracker's
+  own GPS speed on a real flight in `dev/speed-check.ts`.
 - **Temperature is the RP2040 die sensor** ("Traquito uses the onboard RP2040 temperature
   sensor for this measurement"), not external air temperature.
 

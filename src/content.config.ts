@@ -1,7 +1,7 @@
 import { glob } from "astro/loaders";
 import { defineCollection, z } from "astro:content";
 
-// One directory per archived flight under site/flights/ (see
+// One directory per archived flight under flights/ (see
 // docs/architecture.md "Flight-archive export"): flight.mdx is the
 // human-written outcome page, track.json the full decoded track. Both are
 // committed to git; archived pages never touch a database.

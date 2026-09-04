@@ -12,9 +12,9 @@ A U4B fix is two WSPR transmissions two minutes apart:
 - **Telemetry** (slot 1) — grid5, grid6, altitude, speed, voltage,
   temperature, GPS-valid.
 
-`tool/picolog/match.py` and its port `site/src/lib/wspr/match.ts` require
+`tool/picolog/match.py` and its port `src/lib/wspr/match.ts` require
 both, from the same receiving station, within 5 Hz. Everything downstream --
-the SQLite `telemetry` table, the committed `site/src/data/tracks/*.json`,
+the SQLite `telemetry` table, the committed `src/data/tracks/*.json`,
 the map, the stats, the charts -- is built from full fixes only. A slot where
 only one message was heard produces nothing and leaves no trace on the site.
 
@@ -92,24 +92,24 @@ US-Eastern browser is 21:34 UTC.
 Mirror the Traquito model. It is the reference the site is checked against,
 and disagreeing with it silently is a bug by definition.
 
-- `site/src/lib/types.ts` -- `TrackPoint` gains `source: "BT" | "RT1"`;
+- `src/lib/types.ts` -- `TrackPoint` gains `source: "BT" | "RT1"`;
   `altitude_m`, `speed_kt`, `voltage_v`, `temperature_c`, `gps_valid` become
   nullable.
-- `site/src/lib/map.ts` -- `RT1` points render as a hollow grey marker with a
+- `src/lib/map.ts` -- `RT1` points render as a hollow grey marker with a
   translucent ~80 km circle, not an altitude-coloured dot: a plain dot claims
   a precision the data does not have. `altLo`/`altHi` must skip nulls.
-- `site/src/lib/render.ts` -- **the fiddly part.** `statsHtml` reads
+- `src/lib/render.ts` -- **the fiddly part.** `statsHtml` reads
   `s.last.altitude_m`, `.speed_kt`, `.voltage_v`, `.temperature_c` off the
   final point. "Last" has to become "last point carrying telemetry", or the
   stat strip blanks out exactly when the balloon goes quiet, which is when it
   is being watched hardest. `tableHtml` needs em-dash cells and a source
   column.
-- `site/src/lib/format.ts` -- `trackStats` min/max/last skip nulls; distance
+- `src/lib/format.ts` -- `trackStats` min/max/last skip nulls; distance
   may use every point.
-- `site/src/lib/charts.ts` -- skip nulls rather than plotting zero.
+- `src/lib/charts.ts` -- skip nulls rather than plotting zero.
 - `tool/picolog/pipeline.py`, `store.py`, `export_site.py` -- emit and store
   `RT1` records; the `telemetry` table currently holds full records only.
-- `site/dev/verify-port.ts` -- keep the Python and TypeScript decoders
+- `dev/verify-port.ts` -- keep the Python and TypeScript decoders
   row-for-row comparable across the new shape.
 
 Roughly eight files, all mechanical apart from the `statsHtml` question.

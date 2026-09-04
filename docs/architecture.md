@@ -19,14 +19,14 @@ Why three stores rather than one:
   that distinction.
 - **git is the archive** because a closed flight should render forever without
   any database. That is the flight-archive export below. It also holds
-  `site/src/data/`, written by `picolog.export_site`: the flight list and each
+  `src/data/`, written by `picolog.export_site`: the flight list and each
   flight's decoded track, which the site bundles into the page so a visitor
   sees the balloon on first paint with no round trip.
 - **wspr.live is the live source** because a live tracker must not depend on
   anything of ours being awake. The page queries it directly from the
   browser (it sends `access-control-allow-origin: *`) and decodes in place,
   using a TypeScript port of the same decoder, validated row-for-row against
-  the same frozen vector (`site/dev/verify-port.ts`, `npm run verify`). A
+  the same frozen vector (`dev/verify-port.ts`, `npm run verify`). A
   visitor therefore sees the newest fix that exists anywhere, whether or not
   the operator's machine is on and whether or not the scheduled export ran.
 
@@ -42,7 +42,7 @@ credentials have been removed: nothing in this repo now holds a secret.
 On flight close (operator action, after `status` flips to `closed`), the tool
 writes the full decoded track plus an outcome summary to the site tree:
 
-    /site/flights/<flight_id>/
+    /flights/<flight_id>/
         track.json     # full decoded telemetry track
         flight.mdx     # outcome summary page, human-written + generated header
 
@@ -78,7 +78,7 @@ rather than a reading, and the site derives the real speed from the distance
 flown around each saturated fix. That derivation is deliberately not in this
 file: it depends on the fixes either side of a point, and the newest fix — the
 one anyone is actually watching — has none after it yet. Storing it would
-freeze the worst version of it. `site/src/lib/speed.ts` recomputes it over
+freeze the worst version of it. `src/lib/speed.ts` recomputes it over
 the whole track every time the track changes, in the browser and at build
 time alike.
 

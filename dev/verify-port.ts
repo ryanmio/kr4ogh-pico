@@ -19,7 +19,7 @@ import type { Spot } from "../src/lib/wspr/query";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const vector = JSON.parse(
-  readFileSync(join(here, "../../tool/tests/vectors/basic_telemetry.json"), "utf8"),
+  readFileSync(join(here, "../tool/tests/vectors/basic_telemetry.json"), "utf8"),
 );
 
 const ch = channel20m(vector.flight.channel);

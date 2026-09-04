@@ -1,6 +1,6 @@
 name: ingest
 
-# Refresh the flight data committed under site/src/data/, which the site
+# Refresh the flight data committed under src/data/, which the site
 # bundles into each page so a visitor sees the balloon on first paint.
 #
 # This job is deliberately NOT on the critical path for liveness. The page
@@ -62,17 +62,17 @@ jobs:
           python -m picolog.export_site
           --flights tool/flights.toml
           --db "$RUNNER_TEMP/ingest.db"
-          --site site
+          --site .
 
       - name: Commit any change
         run: |
-          if git diff --quiet -- site/src/data; then
+          if git diff --quiet -- src/data; then
             echo "no new telemetry"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site/src/data
+          git add src/data
           # No [skip ci]: the deploy is the point -- it is what refreshes the
           # track bundled into the deployed page.
           git commit -m "flight data: refresh committed track"

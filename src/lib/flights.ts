@@ -1,6 +1,6 @@
 /** Build-time access to the committed flight data.
  *
- * site/src/data/ is written by `python -m picolog.export_site` and committed
+ * src/data/ is written by `python -m picolog.export_site` and committed
  * to git (see tool/picolog/export_site.py). Reading it at build time is what
  * lets a flight page ship with its track already in it, so the map is drawn
  * on first paint rather than after a round trip.

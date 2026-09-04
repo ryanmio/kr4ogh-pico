@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const csv = readFileSync(join(here, "../../tool/picolog/channels_20m.csv"), "utf8");
+const csv = readFileSync(join(here, "../tool/picolog/channels_20m.csv"), "utf8");
 const [header, ...lines] = csv.trim().split(/\r?\n/);
 const cols = header.split(",").map((c) => c.trim());
 

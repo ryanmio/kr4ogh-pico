@@ -2,8 +2,8 @@
 
 The public site reads two things at build time:
 
-  site/src/data/flights.json        the flights to show, in flight_id order
-  site/src/data/tracks/<id>.json    each flight's decoded track, oldest first
+  src/data/flights.json        the flights to show, in flight_id order
+  src/data/tracks/<id>.json    each flight's decoded track, oldest first
 
 Both are committed to git, and the site bundles them into the page so a
 visitor sees the balloon on first paint with no network round trip. The page
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from .config import Flight, load_flights
 
-# The site's TrackPoint shape (site/src/lib/types.ts). `speed_knots` is
+# The site's TrackPoint shape (src/lib/types.ts). `speed_knots` is
 # `speed_kt` here, which is what the site has always called it.
 _TRACK_FIELDS = (
     ("utc", "utc"),
@@ -119,7 +119,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--flights", required=True, help="flights.toml path")
     parser.add_argument("--db", required=True, help="SQLite file path")
-    parser.add_argument("--site", default="site", help="path to the site directory")
+    parser.add_argument("--site", default=".", help="path to the site (repo root)")
     args = parser.parse_args()
     export(args.flights, args.db, args.site)
 

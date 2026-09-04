@@ -1,4 +1,4 @@
-/** Build-time access to the git flight archives (site/flights/<id>/).
+/** Build-time access to the git flight archives (flights/<id>/).
  * These are static files committed to the repo; pages built from them have
  * no runtime dependency on any database. */
 
