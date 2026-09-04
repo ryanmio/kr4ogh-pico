@@ -1,7 +1,6 @@
 # kr4ogh-pico
 
-A tracking site for pico balloon flights, one site per callsign. This one is
-KR4OGH's: **https://kr4ogh-pico.vercel.app**
+A forkable tracking site for pico balloon flights: **https://kr4ogh-pico.vercel.app**
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fryanmio%2Fkr4ogh-pico&project-name=my-pico-balloon&repository-name=my-pico-balloon)
 
@@ -12,12 +11,11 @@ telemetry in place. There is no server, no database and no API key in the
 serving path. The page is current because the visitor's browser asks the
 source, whether or not anything of yours is switched on.
 
-It is built to be handed to people who are not radio people: one URL, the
-balloon on a map, and the numbers that matter. Follow my balloon here.
+It is built to be handed to people who are not radio people.
 
 ## Fly your own
 
-Ten minutes, no terminal. You need a GitHub account and a Vercel account
+Ten minute setup with no terminal. You need a GitHub account and a Vercel account
 (free; sign in to Vercel with GitHub).
 
 ### The fast way: the deploy button
@@ -35,9 +33,6 @@ Ten minutes, no terminal. You need a GitHub account and a Vercel account
    two; a long flight takes a few more). Vercel rebuilds. Your site is live
    at `https://<project>.vercel.app`, and your balloon is on it.
 
-A mistake in `flights.toml` fails the build with a message that names the
-field. Fix it and commit again.
-
 ### The other way: fork
 
 A fork keeps a link back to this repository, so when it improves, the
@@ -51,12 +46,19 @@ the deploy button has no such button. The price is two more clicks:
 4. Go to [vercel.com/new](https://vercel.com/new), import your fork and
    press **Deploy**. Nothing to configure.
 
-### Afterwards
+### Afterwards, either way
+
+Both ways end in the same place: a repository of your own on GitHub with
+`flights.toml` in it, and a Vercel site that rebuilds whenever that
+repository changes. From here on there is no difference, and everything
+below is done the same way as step 2 above: open `flights.toml` on GitHub,
+press the pencil, commit.
 
 - **A new flight** is a new `[[flights]]` entry. Set `active = false` on the
-  old one, or `status = "closed"` once it is over for good. The home page
-  shows the newest live flight; every flight also has its own address at
-  `/live/<flight_id>/`.
+  old one, or `status = "closed"` once it is over for good. Committing the
+  edit is all it takes: the history is fetched and the site rebuilds on
+  their own, as they did the first time. The home page shows the newest live
+  flight; every flight also has its own address at `/live/<flight_id>/`.
 - **The track stays fresh by itself.** A daily workflow refreshes the
   committed track; the browser fetches anything newer on every visit. If
   the workflow ever stops (GitHub pauses scheduled workflows in a repository
