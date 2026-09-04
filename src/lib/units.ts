@@ -79,7 +79,7 @@ export const convert = {
   temperature: (c: number, u: Units) => (u === "imperial" ? c * 9 / 5 + 32 : c),
 };
 
-const STORAGE_KEY = "kr4ogh-units";
+const STORAGE_KEY = "pico-units";
 
 /** The query parameter that pins units for one link: `?u=i`, `?u=m`. The
  * long forms are accepted too, so a hand-typed `?u=imperial` works. */

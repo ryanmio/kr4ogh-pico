@@ -34,12 +34,12 @@ import {
 } from "./weather";
 import type { FlightMeta, TrackPoint } from "./types";
 
-/** Infrared tiles come through this scheme: `kr4ogh-ir://<satLon>|<url>`.
+/** Infrared tiles come through this scheme: `pico-ir://<satLon>|<url>`.
  * MapLibre substitutes {z}/{y}/{x} into the whole template before the
  * request reaches the handler, so the handler reads the tile coordinates
  * back off the end of the real URL, fetches it, runs the same per-pixel
  * work as the flat map's Leaflet layer, and hands back a PNG. */
-const IR_PROTOCOL = "kr4ogh-ir";
+const IR_PROTOCOL = "pico-ir";
 
 /** A blank tile, for where GIBS has none. Tiles wholly off the disc are
  * simply absent from the product (a 404, not an empty image), which the

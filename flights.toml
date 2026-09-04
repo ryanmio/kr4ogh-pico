@@ -1,0 +1,70 @@
+# flights.toml -- this site and its flights, in one file.
+#
+# This is the only file to edit to run the site for your own callsign: see
+# README.md, "Fly your own". The site reads it at build time and the ingest
+# tool reads it too, so the two never disagree about what is flying. A
+# mistake here fails the build with a message that names the field.
+
+[site]
+# Shown in the header, page titles and share cards. Nothing else about the
+# site is named after a callsign.
+callsign = "KR4OGH"
+# Optional: where the site is served, e.g. "https://n0call-pico.vercel.app".
+# Vercel fills this in by itself, so it is only needed for a deploy
+# elsewhere. Share cards need it: og:image and canonical are absolute URLs.
+# url = ""
+# Optional: the "Source & data" link. Vercel fills this in from the repo it
+# is deploying, so set it only to point somewhere else.
+# repo = ""
+
+# One [[flights]] entry per flight. Fields:
+#
+#   flight_id   short id, unique here, used in the URL: /live/<flight_id>/
+#   callsign    the callsign the tracker transmits
+#   band        "20m" (the only band supported so far)
+#   channel     the Traquito channel the tracker is configured for, 0-599
+#   active      true while the flight is up; false hides it from the site
+#   launch_utc  "YYYY-MM-DD HH:MM:SS", UTC. When the balloon was first heard.
+#               The site shows it, and the ingest tool's --from-launch run
+#               fetches history back to it. Fill it in after launch, not
+#               before: the site is not the place to announce one.
+#   launch_lat, launch_lon   optional, draws the launch point on the map
+#   status      "live" (default) or "closed" once the flight is over
+#   close_reason   optional note on why it closed
+#
+# An optional [flights.tracker] table right after a flight holds build
+# details for the Tracker panel: any labels you like, in the order written.
+
+# Launched 2026-08-29, heard 18:40-20:20 UTC, then silent. Left inactive so
+# it stays off the site; flip active on only if it is heard again.
+[[flights]]
+flight_id = "F1A"
+callsign = "KR4OGH"
+band = "20m"
+channel = 206
+active = false
+launch_utc = "2026-08-29 18:40:00"
+
+# In the air. First heard 2026-08-30 12:44 UTC.
+[[flights]]
+flight_id = "F1B"
+callsign = "KR4OGH"
+band = "20m"
+channel = 348
+active = true
+launch_utc = "2026-08-30 12:44:00"
+
+[flights.tracker]
+"Hardware" = "Traquito Jetpack (RP2040)"
+"Mass as flown" = "17.73 g"
+"Power" = "solar only — no battery"
+"Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″ superpressure"
+"Free lift" = "5.97 g of helium"
+"Float" = "10,660 m ± 60 m"
+"Launched" = "2026-08-30 12:51 UTC · Summit Point, WV"
+"Mode" = "WSPR + U4B telemetry"
+"Frequency" = "14.097060 MHz (20 m)"
+"Channel" = "348"
+"Schedule" = "every 10 min from :04"

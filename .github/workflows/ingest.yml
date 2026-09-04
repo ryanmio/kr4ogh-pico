@@ -50,7 +50,7 @@ jobs:
       - name: Pull the last hour of spots
         run: >
           python -m picolog.run
-          --flights tool/flights.toml
+          --flights flights.toml
           --db "$RUNNER_TEMP/ingest.db"
           --window-hours 26
 
@@ -60,7 +60,7 @@ jobs:
       - name: Export the site's flight data
         run: >
           python -m picolog.export_site
-          --flights tool/flights.toml
+          --flights flights.toml
           --db "$RUNNER_TEMP/ingest.db"
           --site .
 

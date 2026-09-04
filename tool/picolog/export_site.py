@@ -1,13 +1,13 @@
 """Export the site's static flight data from the local record.
 
-The public site reads two things at build time:
+The public site reads its flight list from flights.toml and each flight's
+decoded track from
 
-  src/data/flights.json        the flights to show, in flight_id order
-  src/data/tracks/<id>.json    each flight's decoded track, oldest first
+  src/data/tracks/<flight_id>.json    oldest fix first
 
-Both are committed to git, and the site bundles them into the page so a
-visitor sees the balloon on first paint with no network round trip. The page
-then queries wspr.live directly for anything newer, so these files being
+The tracks are committed to git, and the site bundles them into the page so
+a visitor sees the balloon on first paint with no network round trip. The
+page then queries wspr.live directly for anything newer, so a track being
 stale is a cosmetic issue, never a correctness one: a visitor always ends up
 with the newest fixes either way.
 
@@ -28,7 +28,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .config import Flight, load_flights
+from .config import DEFAULT_PATH, Flight, load_flights
 
 # The site's TrackPoint shape (src/lib/types.ts). `speed_knots` is
 # `speed_kt` here, which is what the site has always called it.
@@ -49,19 +49,6 @@ _TRACK_FIELDS = (
 def _shown(flight: Flight) -> bool:
     return flight.active or flight.status == "closed"
 
-
-def _flight_row(flight: Flight) -> dict:
-    return {
-        "flight_id": flight.flight_id,
-        "callsign": flight.callsign,
-        "band": flight.band,
-        "channel": flight.channel,
-        "launch_utc": flight.launch_utc,
-        "launch_lat": flight.launch_lat,
-        "launch_lon": flight.launch_lon,
-        "status": flight.status,
-        "close_reason": flight.close_reason,
-    }
 
 
 def _track_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
@@ -96,13 +83,7 @@ def _write_if_changed(path: Path, payload) -> bool:
 
 def export(flights_path: str, db_path: str, site_dir: str) -> None:
     flights = [f for f in load_flights(flights_path) if _shown(f)]
-    data_dir = Path(site_dir) / "src" / "data"
-    tracks_dir = data_dir / "tracks"
-
-    changed = _write_if_changed(data_dir / "flights.json",
-                                [_flight_row(f) for f in flights])
-    print(f"flights.json: {len(flights)} flights"
-          f"{' (updated)' if changed else ' (unchanged)'}")
+    tracks_dir = Path(site_dir) / "src" / "data" / "tracks"
 
     with sqlite3.connect(db_path) as conn:
         for flight in flights:
@@ -117,7 +98,7 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--flights", required=True, help="flights.toml path")
+    parser.add_argument("--flights", default=DEFAULT_PATH, help="flights.toml path")
     parser.add_argument("--db", required=True, help="SQLite file path")
     parser.add_argument("--site", default=".", help="path to the site (repo root)")
     args = parser.parse_args()

@@ -1,13 +1,13 @@
-// @ts-check
 import mdx from "@astrojs/mdx";
 import { defineConfig } from "astro/config";
+import { siteConfig } from "./src/lib/config";
 
 // `site` has to be the real host: og:image and canonical are absolute URLs,
-// and a card pointing at localhost shows nothing. Vercel serves this domain,
-// so it is the default rather than an env var nothing sets; SITE_URL /
-// SITE_BASE still override for a deploy somewhere else, under a subpath.
+// and a card pointing at localhost shows nothing. flights.toml can name it;
+// otherwise SITE_URL, then the production host Vercel names for every build
+// (lib/config.ts). SITE_BASE is for a deploy under a subpath.
 export default defineConfig({
-  site: process.env.SITE_URL || "https://kr4ogh-pico.vercel.app",
+  site: siteConfig.url ?? "http://localhost:4321",
   base: process.env.SITE_BASE || "/",
   integrations: [mdx()],
   vite: {

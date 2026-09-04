@@ -3,6 +3,7 @@ import { render } from "astro:content";
 import Base from "../../../layouts/Base.astro";
 import { archivedFlights } from "../../../lib/archive";
 import { withBase } from "../../../lib/base";
+import { siteConfig } from "../../../lib/config";
 import { outcomeBadgeClass, statsHtml, tableHtml } from "../../../lib/render";
 import { resolveTrackSpeeds } from "../../../lib/speed";
 
@@ -29,7 +30,7 @@ const table = tableHtml(track);
 ---
 
 <Base
-  title={`${entry.data.title} — KR4OGH`}
+  title={`${entry.data.title} — ${siteConfig.callsign}`}
   description={entry.data.summary}
 >
   <div class="flight-title-row">

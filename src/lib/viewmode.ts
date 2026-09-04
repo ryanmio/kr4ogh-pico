@@ -8,7 +8,7 @@
 
 export type ViewMode = "flat" | "globe";
 
-const STORAGE_KEY = "kr4ogh-view";
+const STORAGE_KEY = "pico-view";
 
 export function isViewMode(v: unknown): v is ViewMode {
   return v === "flat" || v === "globe";

@@ -21,7 +21,7 @@ import L from "leaflet";
 
 export type WeatherLayer = "off" | "rain" | "clouds";
 
-const STORAGE_KEY = "kr4ogh-weather";
+const STORAGE_KEY = "pico-weather";
 
 export function isWeatherLayer(v: unknown): v is WeatherLayer {
   return v === "off" || v === "rain" || v === "clouds";

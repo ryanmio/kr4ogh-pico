@@ -31,11 +31,28 @@ export interface FlightMeta {
   callsign: string;
   band: string;
   channel: number;
+  /** false parks a flight: off the site, not pulled. Absent in an archive,
+   * which is a closed flight by definition. */
+  active?: boolean;
   launch_utc: string | null;
   launch_lat: number | null;
   launch_lon: number | null;
   status: "live" | "closed";
   close_reason: string | null;
+  /** Build details for the Tracker panel, label -> value, in the order
+   * written in flights.toml. */
+  tracker?: Record<string, string>;
+}
+
+/** The [site] table of flights.toml, with the deploy-time fallbacks
+ * resolved (lib/config.ts). */
+export interface SiteConfig {
+  callsign: string;
+  /** Absolute origin the site is served from, or null when nothing knows
+   * it; share cards need it. */
+  url: string | null;
+  /** The "Source & data" link. */
+  repo: string;
 }
 
 /** The whole track.json object. */

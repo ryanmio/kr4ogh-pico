@@ -13,7 +13,7 @@ nothing downstream needs credentials. See docs/architecture.md.
 import argparse
 from datetime import datetime, timedelta, timezone
 
-from .config import load_flights
+from .config import DEFAULT_PATH, load_flights
 from .pipeline import pull_flight_window, rebuild_flight_telemetry
 from .store import Store
 
@@ -38,7 +38,7 @@ def run(flights_path: str, db_path: str, window_hours: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--flights", required=True, help="flights.toml path")
+    parser.add_argument("--flights", default=DEFAULT_PATH, help="flights.toml path")
     parser.add_argument("--db", required=True, help="SQLite file path")
     parser.add_argument("--window-hours", type=float, default=1.0,
                         help="how far back to pull (default: 1)")

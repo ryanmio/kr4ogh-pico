@@ -1,16 +1,17 @@
-/** Build-time access to the committed flight data.
+/** Build-time access to the flights and their committed tracks.
  *
- * src/data/ is written by `python -m picolog.export_site` and committed
- * to git (see tool/picolog/export_site.py). Reading it at build time is what
- * lets a flight page ship with its track already in it, so the map is drawn
- * on first paint rather than after a round trip.
+ * The flight list is flights.toml (lib/config.ts). Each track under
+ * src/data/tracks/ is written by `python -m picolog.export_site` and
+ * committed to git (see tool/picolog/export_site.py); reading it at build
+ * time is what lets a flight page ship with its track already in it, so the
+ * map is drawn on first paint rather than after a round trip.
  *
- * Nothing here touches a database or a network. A missing or empty data
+ * Nothing here touches a database or a network. A missing or empty tracks
  * directory is a valid state: the site builds, and the pages say so.
  */
+import { configuredFlights } from "./config";
 import { resolveTrackSpeeds } from "./speed";
 import type { FlightMeta, TrackPoint } from "./types";
-import flightsData from "../data/flights.json";
 
 const trackModules = import.meta.glob<{ default: TrackPoint[] }>(
   "../data/tracks/*.json",
@@ -24,13 +25,13 @@ for (const [path, mod] of Object.entries(trackModules)) {
 }
 
 export function allFlights(): FlightMeta[] {
-  return flightsData as FlightMeta[];
+  return configuredFlights;
 }
 
-/** Flights still in the air, newest launch first. */
+/** Flights in the air: active and not closed, newest launch first. */
 export function liveFlights(): FlightMeta[] {
   return allFlights()
-    .filter((f) => f.status === "live")
+    .filter((f) => f.active !== false && f.status === "live")
     .sort((a, b) => (b.launch_utc ?? "").localeCompare(a.launch_utc ?? ""));
 }
 

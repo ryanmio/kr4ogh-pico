@@ -16,6 +16,7 @@
  * panel shows its chart and key numbers. The telemetry table and the
  * explanation live in their own panels, behind the Data and About buttons.
  */
+import { siteConfig, UPSTREAM_REPO } from "../lib/config";
 import { sidebarHtml } from "../lib/render";
 import type { FlightMeta, TrackPoint } from "../lib/types";
 
@@ -29,12 +30,16 @@ const { flight, track } = Astro.props;
 // remembered choice on load, which cannot be known here.
 const sidebar = sidebarHtml(flight, track, "metric", null);
 const last = track.at(-1);
+// What the About panel needs to say about this instance: whose site, where
+// its source lives, and where the project it is an instance of lives.
+const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 ---
 
 <section
   class="fv fv-loading"
   data-flight={JSON.stringify(flight)}
   data-track={JSON.stringify(track)}
+  data-site={JSON.stringify(site)}
 >
   <div class="fv-map-slot" role="region" aria-label="Flight map">
     <div class="fv-locating">
@@ -96,7 +101,7 @@ const last = track.at(-1);
     groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
-  import type { FlightMeta, TrackPoint } from "../lib/types";
+  import type { FlightMeta, SiteConfig, TrackPoint } from "../lib/types";
   import {
     panelFromSearch, urlWithPanel, type PanelKind,
   } from "../lib/panel";
@@ -116,6 +121,7 @@ const last = track.at(-1);
   const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
     const meta = JSON.parse(root.dataset.flight!) as FlightMeta;
+    const site = JSON.parse(root.dataset.site!) as SiteConfig & { upstream: string };
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
     // A `?u=i` link outranks the browser's remembered choice, so a shared
     // link shows the sender's units.
@@ -538,7 +544,7 @@ const last = track.at(-1);
         statusPanelBody();
       } else if (panel === "tracker") {
         panelTitle.textContent = `The tracker · ${meta.callsign} ${meta.flight_id}`;
-        panelBody.innerHTML = trackerDetailsHtml(meta.flight_id);
+        panelBody.innerHTML = trackerDetailsHtml(meta.tracker);
       } else if (panel === "data") {
         panelTitle.textContent = "Telemetry data";
         panelBody.innerHTML =
@@ -550,13 +556,23 @@ const last = track.at(-1);
         if (details) details.open = true;
       } else {
         panelTitle.textContent = "About";
+        // Traquito's own dashboard for this flight, from launch day to
+        // tomorrow, so the link is never stale.
+        const day = (d: Date) => d.toISOString().slice(0, 10);
+        const since = meta.launch_utc
+          ? meta.launch_utc.slice(0, 10)
+          : day(new Date(Date.now() - 30 * 86_400_000));
+        const until = day(new Date(Date.now() + 86_400_000));
+        const traquito = "https://traquito.github.io/search/spots/dashboard/?band="
+          + `${encodeURIComponent(meta.band)}&channel=${meta.channel}`
+          + `&callsign=${encodeURIComponent(meta.callsign)}&dtGte=${since}&dtLte=${until}`;
         panelBody.innerHTML = `<div class="fv-about prose">
           <p>Pico ballooning is amateur radio's smallest space program: a
           gram-scale solar tracker under a party-sized superpressure
           balloon, released into the jet stream and never recovered. The
           envelope settles at one altitude instead of bursting, so a good
           flight lasts weeks and the great chase is a full lap of the
-          globe. This site follows the flights of KR4OGH.</p>
+          globe. This site follows the flights of ${escText(site.callsign)}.</p>
           <p>The tracker whispers 20 milliwatts of WSPR; volunteer stations
           around the world hear it and upload every decode to
           <a href="https://wspr.live/">wspr.live</a>, and this page queries
@@ -564,13 +580,21 @@ const last = track.at(-1);
           no server of ours in the loop. It checks for new reports every
           couple of minutes.</p>
           <p class="fv-about-links">
-            <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
+            <a href="${escAttr(site.repo)}">Source &amp; data</a>
             <a href="https://wspr.live/">Spots: wspr.live</a>
             <a href="https://traquito.github.io/">Trackers: Traquito</a>
-            <a href="https://traquito.github.io/search/spots/dashboard/?band=20m&channel=348&callsign=KR4OGH&dtGte=2026-08-30&dtLte=2026-09-30">Traquito dashboard</a>
+            <a href="${escAttr(traquito)}">Traquito dashboard</a>
+            <a href="${escAttr(site.upstream)}#fly-your-own">Make one for your callsign</a>
           </p>
         </div>`;
       }
+    }
+
+    function escText(s: string): string {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function escAttr(s: string): string {
+      return escText(s).replace(/"/g, "&quot;");
     }
 
     /** Put a panel on screen. Separate from `openPanel` because opening one

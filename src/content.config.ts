@@ -11,7 +11,7 @@ const flights = defineCollection({
     flight_id: z.string(),
     title: z.string(),
     // Pass / Fail / Wounded / Closed are the program's scoring definitions;
-    // Sample marks archives that are not scored KR4OGH flights.
+    // Sample marks archives that are not scored flights of this site's program.
     outcome: z.enum(["Pass", "Fail", "Wounded", "Closed", "Sample"]),
     summary: z.string(),
     // Human-readable date or date range for the archive card.

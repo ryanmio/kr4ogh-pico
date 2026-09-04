@@ -1,5 +1,5 @@
 {
-  "name": "kr4ogh-pico-site",
+  "name": "pico-balloon-site",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,6 +11,7 @@
     "verify": "tsx dev/verify-port.ts",
     "speed-check": "tsx dev/speed-check.ts",
     "gen:channels": "node dev/gen-channels.mjs",
+    "gen:og": "node dev/gen-og.mjs",
     "live-check": "tsx dev/live-check.ts",
     "browser-check": "node dev/browser-check.mjs"
   },
@@ -19,7 +20,8 @@
     "@vercel/analytics": "^2.0.1",
     "astro": "^5.17.1",
     "leaflet": "^1.9.4",
-    "maplibre-gl": "^6.6.0"
+    "maplibre-gl": "^6.6.0",
+    "smol-toml": "^1.8.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",

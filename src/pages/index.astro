@@ -4,16 +4,18 @@
  */
 import FlightLive from "../components/FlightLive.astro";
 import Base from "../layouts/Base.astro";
+import { siteConfig } from "../lib/config";
 import { liveFlights, trackFor } from "../lib/flights";
 
 const flight = liveFlights()[0];
 const track = flight ? trackFor(flight.flight_id) : [];
+const title = `${siteConfig.callsign} — live balloon telemetry`;
 ---
 
 {flight
-  ? <Base title="KR4OGH — live balloon telemetry" chrome={false}>
+  ? <Base title={title} chrome={false}>
       <FlightLive flight={flight} track={track} />
     </Base>
-  : <Base title="KR4OGH — live balloon telemetry">
+  : <Base title={title}>
       <div class="notice notice-accent">Nothing in the air right now.</div>
     </Base>}

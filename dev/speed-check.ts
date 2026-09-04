@@ -144,7 +144,7 @@ check("a fix across an 8-hour silence falls back to the floor",
 // ---------- 2. the committed F1B track ----------
 
 const track: TrackPoint[] = JSON.parse(
-  readFileSync(join(here, "../src/data/tracks/F1B.json"), "utf8"));
+  readFileSync(process.argv[2] ?? join(here, "../src/data/tracks/F1B.json"), "utf8"));
 const resolved = resolveTrackSpeeds(track);
 const saturated = resolved.filter((p) => p.speed_kt >= SPEED_CEILING_KT);
 

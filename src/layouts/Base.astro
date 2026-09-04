@@ -1,6 +1,7 @@
 ---
 import Analytics from "@vercel/analytics/astro";
 import { withBase } from "../lib/base";
+import { siteConfig } from "../lib/config";
 import "../styles/global.css";
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
 
 const {
   title,
-  description = "KR4OGH pico balloon flights: live WSPR telemetry and archived tracks.",
+  description = `${siteConfig.callsign} pico balloon flights: live WSPR telemetry and archived tracks.`,
   chrome = true,
 } = Astro.props;
 
@@ -43,7 +44,7 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="KR4OGH pico balloon, live telemetry tracking: a dashed track climbing from a grey launch dot to a lit balloon."
+      content="Pico balloon, live telemetry tracking: a dashed track climbing from a grey launch dot to a lit balloon."
     />
     <meta name="twitter:card" content="summary_large_image" />
   </head>
@@ -52,7 +53,7 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
       <header class="site-header">
         <div class="container">
           <a class="site-title" href={withBase("/")}
-            >KR4OGH<span class="tld">.balloon</span></a
+            >{siteConfig.callsign}<span class="tld">.balloon</span></a
           >
         </div>
       </header>
@@ -63,8 +64,8 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
     {chrome && (
       <footer class="site-footer">
         <div class="container">
-          <span>KR4OGH pico balloon program</span>
-          <a href="https://github.com/ryanmio/kr4ogh-pico">Source &amp; data</a>
+          <span>{siteConfig.callsign} pico balloon program</span>
+          <a href={siteConfig.repo}>Source &amp; data</a>
           <a href="https://wspr.live/">Spots: wspr.live</a>
           <a href="https://traquito.github.io/">Trackers: Traquito</a>
         </div>
