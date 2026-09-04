@@ -8,7 +8,7 @@ import { siteConfig } from "../lib/config";
 import { liveFlights, trackFor } from "../lib/flights";
 
 const flight = liveFlights()[0];
-const track = flight ? trackFor(flight.flight_id) : [];
+const track = flight ? trackFor(flight) : [];
 const title = `${siteConfig.callsign} — live balloon telemetry`;
 ---
 

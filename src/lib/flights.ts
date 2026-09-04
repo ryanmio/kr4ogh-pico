@@ -1,10 +1,11 @@
 /** Build-time access to the flights and their committed tracks.
  *
  * The flight list is flights.toml (lib/config.ts). Each track under
- * src/data/tracks/ is written by `python -m picolog.export_site` and
- * committed to git (see tool/picolog/export_site.py); reading it at build
- * time is what lets a flight page ship with its track already in it, so the
- * map is drawn on first paint rather than after a round trip.
+ * src/data/tracks/<callsign>-<flight_id>.json is written by `python -m
+ * picolog.export_site` and committed to git (see tool/picolog/export_site.py,
+ * which also says why the callsign is in the name); reading it at build time
+ * is what lets a flight page ship with its track already in it, so the map
+ * is drawn on first paint rather than after a round trip.
  *
  * Nothing here touches a database or a network. A missing or empty tracks
  * directory is a valid state: the site builds, and the pages say so.
@@ -18,10 +19,14 @@ const trackModules = import.meta.glob<{ default: TrackPoint[] }>(
   { eager: true },
 );
 
-const tracksById = new Map<string, TrackPoint[]>();
+const tracksByFile = new Map<string, TrackPoint[]>();
 for (const [path, mod] of Object.entries(trackModules)) {
-  const id = path.split("/").pop()!.replace(/\.json$/, "");
-  tracksById.set(id, mod.default);
+  tracksByFile.set(path.split("/").pop()!, mod.default);
+}
+
+/** Mirrors tool/picolog/export_site.py. */
+function trackFilename(flight: FlightMeta): string {
+  return `${flight.callsign}-${flight.flight_id}.json`;
 }
 
 export function allFlights(): FlightMeta[] {
@@ -40,6 +45,6 @@ export function liveFlights(): FlightMeta[] {
  * exported into the JSON because it depends on the fixes around each point,
  * and the browser keeps adding those; the same pass runs again on every live
  * refresh. */
-export function trackFor(flightId: string): TrackPoint[] {
-  return resolveTrackSpeeds(tracksById.get(flightId) ?? []);
+export function trackFor(flight: FlightMeta): TrackPoint[] {
+  return resolveTrackSpeeds(tracksByFile.get(trackFilename(flight)) ?? []);
 }

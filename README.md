@@ -74,7 +74,7 @@ If you get stuck, open an issue here with your callsign and channel.
 
 - `flights.toml` names the flights. The site reads it at build time, the
   ingest tool reads the same file, and both reject the same mistakes.
-- `src/data/tracks/<flight_id>.json` is each flight's decoded track,
+- `src/data/tracks/<callsign>-<flight_id>.json` is each flight's decoded track,
   committed to git by the workflow so the page has its numbers before any
   network round trip.
 - The page then asks wspr.live for everything since the last committed fix,

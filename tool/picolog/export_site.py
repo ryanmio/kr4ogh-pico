@@ -3,7 +3,14 @@
 The public site reads its flight list from flights.toml and each flight's
 decoded track from
 
-  src/data/tracks/<flight_id>.json    oldest fix first
+  src/data/tracks/<callsign>-<flight_id>.json    oldest fix first
+
+The callsign is in the name because a copy of this repository made for
+another callsign keeps whatever tracks were committed here; a flight of
+theirs named like one of ours must not be merged into it. Tracks of flights
+no longer shown are removed for the same reason, and because the site would
+otherwise carry them forever: the record is the operator's SQLite file, and
+an export can always be run again.
 
 The tracks are committed to git, and the site bundles them into the page so
 a visitor sees the balloon on first paint with no network round trip. The
@@ -50,6 +57,11 @@ def _shown(flight: Flight) -> bool:
     return flight.active or flight.status == "closed"
 
 
+def track_filename(flight: Flight) -> str:
+    """Mirrors src/lib/flights.ts."""
+    return f"{flight.callsign}-{flight.flight_id}.json"
+
+
 
 def _track_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
     cols = ", ".join(src for _, src in _TRACK_FIELDS)
@@ -85,9 +97,15 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
     flights = [f for f in load_flights(flights_path) if _shown(f)]
     tracks_dir = Path(site_dir) / "src" / "data" / "tracks"
 
+    keep = {track_filename(f) for f in flights}
+    for stale in sorted(tracks_dir.glob("*.json")) if tracks_dir.is_dir() else []:
+        if stale.name not in keep:
+            stale.unlink()
+            print(f"{stale.name}: removed, no such flight is shown")
+
     with sqlite3.connect(db_path) as conn:
         for flight in flights:
-            path = tracks_dir / f"{flight.flight_id}.json"
+            path = tracks_dir / track_filename(flight)
             existing = json.loads(path.read_text()) if path.exists() else []
             merged = _merge(existing, _track_from_db(conn, flight.flight_id))
             changed = _write_if_changed(path, merged)

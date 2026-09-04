@@ -10,7 +10,7 @@ import type { FlightMeta, TrackPoint } from "../../lib/types";
 export async function getStaticPaths() {
   return liveFlights().map((flight) => ({
     params: { id: flight.flight_id },
-    props: { flight, track: trackFor(flight.flight_id) },
+    props: { flight, track: trackFor(flight) },
   }));
 }
 
