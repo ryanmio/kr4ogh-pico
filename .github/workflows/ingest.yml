@@ -1,6 +1,6 @@
 name: ingest
 
-# Refresh the flight data committed under src/data/, which the site
+# Refresh the flight tracks committed under src/data/tracks/, which the site
 # bundles into each page so a visitor sees the balloon on first paint.
 #
 # This job is deliberately NOT on the critical path for liveness. The page
@@ -9,6 +9,9 @@ name: ingest
 # all, the site is still current -- it just takes one extra second to get
 # there. That is why a daily cron is enough and why nothing here holds a
 # secret: the export reads a public data source and writes a public file.
+#
+# On a fork, GitHub leaves workflows switched off until someone opens the
+# Actions tab and enables them. README.md, "Fly your own", says so.
 
 on:
   schedule:
@@ -23,7 +26,18 @@ on:
     # github-actions[bot], so they never counted toward anyone's contribution
     # graph, but the history is the operator's to read.)
     - cron: "17 5 * * *"
+  # Editing flights.toml is how a flight starts, so it seeds the track: the
+  # run walks back to each flight's launch_utc. A fresh fork gets its whole
+  # flight on the first push, and Vercel deploys the result.
+  push:
+    branches: [main]
+    paths: [flights.toml]
   workflow_dispatch:
+    inputs:
+      from_launch:
+        description: "Fetch each flight's history back to its launch_utc"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -35,7 +49,8 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # A seeding run walks a long flight a week at a time, politely.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -46,17 +61,19 @@ jobs:
       - run: pip install --quiet ./tool
 
       # Throwaway database: this run only refreshes the committed export. The
-      # authoritative record is the operator's local SQLite file.
-      - name: Pull the last hour of spots
+      # authoritative record is the operator's local SQLite file. A day's
+      # window matches the cron; from launch when the flight list changed.
+      - name: Pull spots
         run: >
           python -m picolog.run
           --flights flights.toml
           --db "$RUNNER_TEMP/ingest.db"
           --window-hours 26
+          ${{ (github.event_name == 'push' || inputs.from_launch) && '--from-launch' || '' }}
 
-      # A day's window, matching the cron. The export MERGES into the
-      # committed track, so this database extends a long flight rather than
-      # truncating it to what one run happened to see.
+      # The export MERGES into the committed track, so this database extends
+      # a long flight rather than truncating it to what one run happened to
+      # see.
       - name: Export the site's flight data
         run: >
           python -m picolog.export_site
