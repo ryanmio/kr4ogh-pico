@@ -33,7 +33,7 @@ Ten minute setup with no terminal. You need a GitHub account and a Vercel accoun
    two; a long flight takes a few more). Vercel rebuilds. Your site is live
    at `https://<project>.vercel.app`, and your balloon is on it.
 
-### The other way: fork
+### Alternative method: fork
 
 A fork keeps a link back to this repository, so when it improves, the
 **Sync fork** button on GitHub brings your copy up to date; a copy made by
