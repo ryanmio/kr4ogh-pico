@@ -54,11 +54,20 @@ repository changes. From here on there is no difference, and everything
 below is done the same way as step 2 above: open `flights.toml` on GitHub,
 press the pencil, commit.
 
-- **A new flight** is a new `[[flights]]` entry. Set `active = false` on the
-  old one, or `status = "closed"` once it is over for good. Committing the
-  edit is all it takes: the history is fetched and the site rebuilds on
-  their own, as they did the first time. The home page shows the newest live
-  flight; every flight also has its own address at `/live/<flight_id>/`.
+- **A new flight** is a new `[[flights]]` entry. Committing the edit is all
+  it takes: the history is fetched and the site rebuilds on their own, as
+  they did the first time.
+- **An old flight** gets `status = "closed"` and an `end_utc`, the time it
+  was last heard. It keeps its page and its track, reads as ended, and is
+  no longer polled. The end matters most when the next flight reuses the
+  channel: to wspr.live the two are one signal, and the end is what keeps
+  the new one's telemetry off the old one's track. A launch that failed
+  gets `active = false` instead, which takes it off the site.
+- **Several flights at once** are several entries. The home page shows one
+  of them: `featured = "F2B"` in the `[site]` table picks it, otherwise the
+  live flight that launched first. `/?feature=<flight_id>` shows another,
+  the **Next flight** button walks them, and every flight also has its own
+  address at `/live/<flight_id>/`.
 - **The track stays fresh by itself.** A daily workflow refreshes the
   committed track; the browser fetches anything newer on every visit. If
   the workflow ever stops (GitHub pauses scheduled workflows in a repository

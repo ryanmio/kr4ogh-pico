@@ -35,6 +35,10 @@ export interface FlightMeta {
    * which is a closed flight by definition. */
   active?: boolean;
   launch_utc: string | null;
+  /** When the flight was last heard, or declared over. Nothing after it
+   * belongs to this flight: it is what keeps two flights on one channel
+   * apart. Null while the flight is open-ended. */
+  end_utc: string | null;
   launch_lat: number | null;
   launch_lon: number | null;
   status: "live" | "closed";
@@ -48,6 +52,9 @@ export interface FlightMeta {
  * resolved (lib/config.ts). */
 export interface SiteConfig {
   callsign: string;
+  /** The flight_id the home page shows when the address names none, or
+   * null to let lib/flights.ts choose. */
+  featured: string | null;
   /** Absolute origin the site is served from, or null when nothing knows
    * it; share cards need it. */
   url: string | null;

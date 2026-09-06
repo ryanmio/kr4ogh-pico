@@ -9,6 +9,11 @@
 # Shown in the header, page titles and share cards. Nothing else about the
 # site is named after a callsign.
 callsign = "KR4OGH"
+# Optional: the flight the home page shows. Any flight on the site can be
+# reached at /?feature=<flight_id>; this is the one shown when the address
+# names none. Left out, the home page shows the live flight that launched
+# first.
+featured = "F2B"
 # Optional: where the site is served, e.g. "https://n0call-pico.vercel.app".
 # Vercel fills this in by itself, so it is only needed for a deploy
 # elsewhere. Share cards need it: og:image and canonical are absolute URLs.
@@ -29,7 +34,15 @@ callsign = "KR4OGH"
 #               fetches history back to it. Fill it in after launch, not
 #               before: the site is not the place to announce one.
 #   launch_lat, launch_lon   optional, draws the launch point on the map
-#   status      "live" (default) or "closed" once the flight is over
+#   end_utc     same form, optional. When the flight was last heard, or
+#               when you declared it over. Nothing heard after it is
+#               attributed to this flight. Needed when a later flight
+#               reuses the channel: without it the two are the same
+#               callsign on the same channel, and telemetry from the new
+#               one would be added to the old one's track.
+#   status      "live" (default) or "closed" once the flight is over. A
+#               closed flight keeps its page and its track, stops being
+#               polled, and reads as ended.
 #   close_reason   optional note on why it closed
 #
 # An optional [flights.tracker] table right after a flight holds build
@@ -45,14 +58,18 @@ channel = 206
 active = false
 launch_utc = "2026-08-29 18:40:00"
 
-# In the air. First heard 2026-08-30 12:44 UTC.
+# First heard 2026-08-30 12:44 UTC, last heard 2026-09-01 11:04 UTC. Closed
+# with an end so that F2B, on the same channel, is its own flight.
 [[flights]]
 flight_id = "F1B"
 callsign = "KR4OGH"
 band = "20m"
 channel = 348
-active = true
+active = false
 launch_utc = "2026-08-30 12:44:00"
+end_utc = "2026-09-01 12:00:00"
+status = "closed"
+close_reason = "Silent since 2026-09-01 11:04 UTC"
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040)"
@@ -68,3 +85,52 @@ launch_utc = "2026-08-30 12:44:00"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "348"
 "Schedule" = "every 10 min from :04"
+
+# In the air. First heard 2026-09-06 14:20 UTC.
+[[flights]]
+flight_id = "F2A"
+callsign = "KR4OGH"
+band = "20m"
+channel = 206
+active = true
+launch_utc = "2026-09-06 14:20:00"
+launch_lat = 39.2645
+launch_lon = -77.9759
+
+[flights.tracker]
+"Hardware" = "Traquito Jetpack (RP2040) · JP-03"
+"Mass as flown" = "18 g"
+"Power" = "solar only — no battery"
+"Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″ clear 4D sphere"
+"Free lift" = "5.7 g"
+"Launched" = "2026-09-06 14:14 UTC · Summit Point, WV (180 m)"
+"Mode" = "WSPR + U4B telemetry"
+"Frequency" = "14.097060 MHz (20 m)"
+"Channel" = "206"
+
+# In the air. First heard 2026-09-06 14:44 UTC. Same channel as F1B, which
+# is why F1B carries an end_utc.
+[[flights]]
+flight_id = "F2B"
+callsign = "KR4OGH"
+band = "20m"
+channel = 348
+active = true
+launch_utc = "2026-09-06 14:44:00"
+launch_lat = 39.2645
+launch_lon = -77.9759
+
+[flights.tracker]
+"Hardware" = "Traquito Jetpack (RP2040) · JP-04"
+"Mass as flown" = "15.53 g"
+"Power" = "solar only, PowerFilm — no battery"
+"Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″ clear 4D sphere"
+"Free lift" = "5.7 g"
+"Launched" = "2026-09-06 14:27 UTC · Summit Point, WV (180 m)"
+"Mode" = "WSPR + U4B telemetry"
+"Frequency" = "14.097060 MHz (20 m)"
+"Channel" = "348"

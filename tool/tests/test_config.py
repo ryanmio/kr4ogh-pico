@@ -115,3 +115,61 @@ def test_maidenhead_centers():
     assert lon6 == pytest.approx(-2.0 + 2.5 / 60, abs=1e-4)
     with pytest.raises(ValueError):
         maidenhead_to_latlon("IO9")
+
+
+def test_end_utc_bounds_the_flight(tmp_path):
+    p = write(tmp_path, SITE + """
+[[flights]]
+flight_id = "T1"
+callsign = "N0CALL"
+band = "20m"
+channel = 42
+launch_utc = "2026-08-30 12:44:00"
+end_utc = "2026-09-01 12:00:00"
+status = "closed"
+""")
+    f = load_flights(p)[0]
+    assert f.end.isoformat() == "2026-09-01T12:00:00"
+    from datetime import datetime
+    # The clip is the overlap of the asked-for window and the flight's span.
+    assert f.clip(datetime(2026, 8, 1), datetime(2026, 9, 6)) == \
+        (datetime(2026, 8, 30, 12, 44), datetime(2026, 9, 1, 12))
+    start, end = f.clip(datetime(2026, 9, 5), datetime(2026, 9, 6))
+    assert end <= start  # nothing of this flight lies in that window
+
+
+def test_end_before_launch_rejected(tmp_path):
+    p = write(tmp_path, SITE + """
+[[flights]]
+flight_id = "T1"
+callsign = "N0CALL"
+band = "20m"
+channel = 42
+launch_utc = "2026-08-30 12:44:00"
+end_utc = "2026-08-30 12:44:00"
+""")
+    with pytest.raises(ConfigError, match=r"T1\.end_utc.*not after"):
+        load_flights(p)
+
+
+def test_featured_must_name_a_shown_flight(tmp_path):
+    flights = """
+[[flights]]
+flight_id = "T1"
+callsign = "N0CALL"
+band = "20m"
+channel = 42
+
+[[flights]]
+flight_id = "T0"
+callsign = "N0CALL"
+band = "20m"
+channel = 41
+active = false
+"""
+    assert load_site(write(tmp_path, SITE + 'featured = "T1"\n' + flights)).featured == "T1"
+    assert load_site(write(tmp_path, SITE + flights)).featured is None
+    with pytest.raises(ConfigError, match=r"\[site\]\.featured.*T9"):
+        load_site(write(tmp_path, SITE + 'featured = "T9"\n' + flights))
+    with pytest.raises(ConfigError, match=r"\[site\]\.featured.*active = false"):
+        load_site(write(tmp_path, SITE + 'featured = "T0"\n' + flights))

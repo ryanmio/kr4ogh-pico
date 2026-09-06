@@ -5,16 +5,15 @@
  *
  * Run:  npx tsx dev/live-check.ts [hours]
  */
-import { configuredFlights } from "../src/lib/config";
+import { featuredFlight } from "../src/lib/flights";
 import { channel20m } from "../src/lib/wspr/channels";
 import { fetchTrack } from "../src/lib/wspr/track";
 
 const hours = Number(process.argv[2] ?? 6);
-// The newest live flight in flights.toml, as the home page picks it.
-const flight = configuredFlights
-  .filter((f) => f.active !== false && f.status === "live")
-  .sort((a, b) => (b.launch_utc ?? "").localeCompare(a.launch_utc ?? ""))[0];
-if (!flight) throw new Error("flights.toml has no live flight");
+// The flight the home page shows.
+const flight = featuredFlight();
+if (!flight) throw new Error("flights.toml has no flight to show");
+if (flight.status === "closed") throw new Error(`${flight.flight_id} is closed`);
 console.log(`${flight.callsign} ${flight.flight_id}`);
 const end = new Date();
 const start = new Date(end.getTime() - hours * 3600 * 1000);

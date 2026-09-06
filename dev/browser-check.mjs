@@ -22,7 +22,9 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text()}`); });
 
-await page.goto("http://localhost:4321/live/F1B/", { waitUntil: "networkidle" });
+// The home page: the featured flight, which has to be a live one for the
+// refresh and weather steps below to have anything to do.
+await page.goto("http://localhost:4321/", { waitUntil: "networkidle" });
 
 const probe = async (label) => {
   const r = await page.evaluate(() => {

@@ -1,20 +1,27 @@
 ---
 /** The home page is the flight. While something is up, that is all anyone
  * comes here for, so there is nothing to click through to.
+ *
+ * With more than one flight on the site, the page is built around the
+ * featured one (flights.toml, else lib/flights.ts chooses) and switches to
+ * another in place when the address says `?feature=<flight_id>`; the
+ * "Next flight" button walks them. Every shown flight also has its own
+ * address at /live/<flight_id>/.
  */
 import FlightLive from "../components/FlightLive.astro";
 import Base from "../layouts/Base.astro";
 import { siteConfig } from "../lib/config";
-import { liveFlights, trackFor } from "../lib/flights";
+import { featuredFlight, shownFlights, trackFor } from "../lib/flights";
 
-const flight = liveFlights()[0];
+const flights = shownFlights();
+const flight = featuredFlight();
 const track = flight ? trackFor(flight) : [];
 const title = `${siteConfig.callsign} — live balloon telemetry`;
 ---
 
 {flight
   ? <Base title={title} chrome={false}>
-      <FlightLive flight={flight} track={track} />
+      <FlightLive flight={flight} track={track} flights={flights} mode="home" />
     </Base>
   : <Base title={title}>
       <div class="notice notice-accent">Nothing in the air right now.</div>

@@ -10,7 +10,7 @@
  * Nothing here touches a database or a network. A missing or empty tracks
  * directory is a valid state: the site builds, and the pages say so.
  */
-import { configuredFlights } from "./config";
+import { configuredFlights, siteConfig } from "./config";
 import { resolveTrackSpeeds } from "./speed";
 import type { FlightMeta, TrackPoint } from "./types";
 
@@ -33,11 +33,30 @@ export function allFlights(): FlightMeta[] {
   return configuredFlights;
 }
 
-/** Flights in the air: active and not closed, newest launch first. */
-export function liveFlights(): FlightMeta[] {
+/** Flights on the site: active, or closed and kept. Earliest launch first,
+ * then by id, which is also the order the "Next flight" button walks.
+ * Mirrors tool/picolog/export_site.py, which keeps the same tracks. */
+export function shownFlights(): FlightMeta[] {
   return allFlights()
-    .filter((f) => f.active !== false && f.status === "live")
-    .sort((a, b) => (b.launch_utc ?? "").localeCompare(a.launch_utc ?? ""));
+    .filter((f) => f.active !== false || f.status === "closed")
+    .sort((a, b) =>
+      (a.launch_utc ?? "").localeCompare(b.launch_utc ?? "")
+      || a.flight_id.localeCompare(b.flight_id));
+}
+
+/** Flights in the air: shown and not closed. */
+export function liveFlights(): FlightMeta[] {
+  return shownFlights().filter((f) => f.status === "live");
+}
+
+/** The flight the home page shows when the address names none: the one
+ * flights.toml features, else the live flight that launched first, else
+ * the first shown flight, else nothing. */
+export function featuredFlight(): FlightMeta | undefined {
+  const shown = shownFlights();
+  return shown.find((f) => f.flight_id === siteConfig.featured)
+    ?? liveFlights()[0]
+    ?? shown[0];
 }
 
 /** The committed track for a flight, with speeds above the telemetry
@@ -46,5 +65,11 @@ export function liveFlights(): FlightMeta[] {
  * and the browser keeps adding those; the same pass runs again on every live
  * refresh. */
 export function trackFor(flight: FlightMeta): TrackPoint[] {
-  return resolveTrackSpeeds(tracksByFile.get(trackFilename(flight)) ?? []);
+  return resolveTrackSpeeds(rawTrackFor(flight));
+}
+
+/** The committed track exactly as exported, for /live/<id>/track.json: the
+ * record of what the tracker sent, without the derived speeds. */
+export function rawTrackFor(flight: FlightMeta): TrackPoint[] {
+  return tracksByFile.get(trackFilename(flight)) ?? [];
 }

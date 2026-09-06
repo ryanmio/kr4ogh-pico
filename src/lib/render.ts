@@ -171,21 +171,32 @@ function metricCard(
  * the reader asks. The map's coloring is named by its own legend. */
 export function sidebarHtml(
   meta: FlightMeta, track: TrackPoint[], units: Units, active: ActiveCard,
+  opts: { pending?: boolean } = {},
 ): string {
+  const ended = meta.status === "closed";
   // The tracker card leads: it is what the header used to say (who this
   // is), shaped like every other card, and pressing it opens the build
   // details panel.
+  const when = meta.launch_utc
+    ? ended && meta.end_utc
+      ? ` · flew ${esc(meta.launch_utc.slice(5, 10))} to ${esc(meta.end_utc.slice(5, 10))}`
+      : ` · up since ${esc(meta.launch_utc.slice(5, 10))}`
+    : "";
   const tracker = `<button type="button" class="fv-card fv-card-wide"
     data-panel="tracker" aria-pressed="${active === "tracker"}">
     <span class="fv-card-icon" style="color:#e2e8f0">${TRACKER_ICON}</span>
     <span class="fv-card-text">
       <span class="fv-card-label">Tracker</span>
       <span class="fv-card-value">${esc(meta.callsign)} · ${esc(meta.flight_id)}</span>
-      <span class="fv-card-sub">${esc(meta.band)} ch ${meta.channel}${
-        meta.launch_utc ? " · up since " + esc(meta.launch_utc.slice(5, 10)) : ""}</span>
+      <span class="fv-card-sub">${esc(meta.band)} ch ${meta.channel}${when}</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
   </button>`;
+  // The home page switching to another flight: its track is on the way.
+  if (opts.pending) {
+    return tracker + `<div class="fv-status"><p class="empty-note">Loading the
+      track&hellip;</p></div>`;
+  }
   const s = trackStats(track);
   if (!s) {
     return tracker + `<div class="fv-status"><p class="empty-note">No decoded
@@ -208,12 +219,17 @@ export function sidebarHtml(
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
+  // A closed flight's "last heard" is history, not a heartbeat: the dot
+  // stops pulsing and the card says when, not how long ago.
   const status = `<button type="button" class="fv-status" data-panel="status"
     aria-pressed="${active === "status"}">
-    <span class="fv-card-icon" style="color:#34d399"><span class="fv-status-dot"></span></span>
+    <span class="fv-card-icon" style="color:${ended ? "#94a3b8" : "#34d399"}"><span
+      class="fv-status-dot${ended ? " fv-status-dot-ended" : ""}"></span></span>
     <span class="fv-status-text">
-      <span class="fv-status-main">Last heard ${esc(fmtRelative(s.lastUtc))}</span>
-      <span class="fv-status-sub">flying for ${esc(fmtDuration(aloftMs))}
+      <span class="fv-status-main">${ended
+        ? `Flight ended · last heard ${esc(s.lastUtc.slice(5, 16))} UTC`
+        : `Last heard ${esc(fmtRelative(s.lastUtc))}`}</span>
+      <span class="fv-status-sub">${ended ? "flew" : "flying"} for ${esc(fmtDuration(aloftMs))}
         · ${fmtInt(s.points)} reports</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>

@@ -13,6 +13,12 @@ wspr.live asks for bounded queries and allows 20 a minute, so a long window
 is walked in chunks with a pause between them; a year-long flight is a few
 minutes' work, once.
 
+A flight is pulled while it is active and live. Its window is clipped to
+the span it flew, launch_utc to end_utc: two flights can share a callsign
+and a channel (a tracker reused, or a second one set up like the first), and
+to wspr.live they are the same signal. The clip is what keeps a new flight
+from being appended to an old one's track.
+
 There is no push step and no sink: the public site reads the track committed
 to git and queries wspr.live directly from the browser for anything newer, so
 nothing downstream needs credentials. See docs/architecture.md.
@@ -46,7 +52,8 @@ def chunks(start: datetime, end: datetime,
 
 def run(flights_path: str, db_path: str, window_hours: float,
         from_launch: bool = False) -> None:
-    flights = [f for f in load_flights(flights_path) if f.active]
+    flights = [f for f in load_flights(flights_path)
+               if f.active and f.status == "live"]
     if not flights:
         print("no active flights")
         return
@@ -63,7 +70,12 @@ def run(flights_path: str, db_path: str, window_hours: float,
                           f"looking back {window_hours:g} h instead")
                 else:
                     start = min(start, flight.launch)
-            windows = list(chunks(start, now))
+            start, end = flight.clip(start, now)
+            if end <= start:
+                print(f"{flight.flight_id}: nothing to pull, the window is "
+                      "outside the flight")
+                continue
+            windows = list(chunks(start, end))
             new_spots = 0
             for i, (a, b) in enumerate(windows):
                 if i:

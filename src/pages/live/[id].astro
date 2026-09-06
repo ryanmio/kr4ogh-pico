@@ -1,26 +1,27 @@
 ---
 /** A flight at its own URL. Same view as the home page, by the same
- * component; the home page shows whichever flight is up, this is the
- * permalink for a particular one. */
+ * component; the home page shows the featured flight, this is the
+ * permalink for a particular one, closed flights included. */
 import FlightLive from "../../components/FlightLive.astro";
 import Base from "../../layouts/Base.astro";
-import { liveFlights, trackFor } from "../../lib/flights";
+import { shownFlights, trackFor } from "../../lib/flights";
 import type { FlightMeta, TrackPoint } from "../../lib/types";
 
 export async function getStaticPaths() {
-  return liveFlights().map((flight) => ({
+  return shownFlights().map((flight) => ({
     params: { id: flight.flight_id },
     props: { flight, track: trackFor(flight) },
   }));
 }
 
 const { flight, track } = Astro.props as { flight: FlightMeta; track: TrackPoint[] };
+const what = flight.status === "closed" ? "balloon flight" : "live balloon telemetry";
 ---
 
 <Base
-  title={`${flight.callsign} ${flight.flight_id} — live balloon telemetry`}
-  description={`Live telemetry for ${flight.callsign} flight ${flight.flight_id}.`}
+  title={`${flight.callsign} ${flight.flight_id} — ${what}`}
+  description={`Telemetry for ${flight.callsign} flight ${flight.flight_id}.`}
   chrome={false}
 >
-  <FlightLive flight={flight} track={track} />
+  <FlightLive flight={flight} track={track} flights={shownFlights()} mode="permalink" />
 </Base>

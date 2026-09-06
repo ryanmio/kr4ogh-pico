@@ -9,9 +9,19 @@
  * or blocked, the bundled track still renders and the caller shows when it
  * was last updated. Nothing here can leave the page emptier than it started.
  */
+import { parseUtc } from "./format";
 import { resolveTrackSpeeds } from "./speed";
 import { fetchTrack, mergeTrack, type FlightSpec } from "./wspr/track";
 import type { TrackPoint } from "./types";
+
+/** What the refresh needs to know about a flight: the channel to query,
+ * and the window it flew in. The window matters when two flights share a
+ * callsign and a channel, which is the same signal to wspr.live: the only
+ * thing that tells them apart is when they were up. */
+export type LiveFlight = FlightSpec & {
+  launch_utc?: string | null;
+  end_utc?: string | null;
+};
 
 /** How far back to look when the bundled track is empty or ancient.
  *
@@ -43,19 +53,25 @@ export interface LiveTrackResult {
 }
 
 export async function refreshTrack(
-  flight: FlightSpec, bundled: TrackPoint[], signal?: AbortSignal,
+  flight: LiveFlight, bundled: TrackPoint[], signal?: AbortSignal,
 ): Promise<LiveTrackResult> {
   const now = new Date();
   const last = bundled.at(-1);
   const lastMs = last ? Date.parse(last.utc.replace(" ", "T") + "Z") : NaN;
-  const from = Number.isFinite(lastMs)
-    ? new Date(Math.max(lastMs - OVERLAP_MS, now.getTime() - MAX_LOOKBACK_MS))
-    : new Date(now.getTime() - MAX_LOOKBACK_MS);
+  let fromMs = Number.isFinite(lastMs)
+    ? Math.max(lastMs - OVERLAP_MS, now.getTime() - MAX_LOOKBACK_MS)
+    : now.getTime() - MAX_LOOKBACK_MS;
+  // A window ending slightly in the future costs nothing and avoids losing
+  // a fix to clock skew between this browser and wspr.live.
+  let toMs = now.getTime() + 60_000;
+  // Never before the launch nor after the end: on a reused channel, what
+  // lies outside is another flight.
+  if (flight.launch_utc) fromMs = Math.max(fromMs, parseUtc(flight.launch_utc).getTime());
+  if (flight.end_utc) toMs = Math.min(toMs, parseUtc(flight.end_utc).getTime());
+  if (toMs <= fromMs) return { track: bundled, added: 0, error: null };
 
   try {
-    // A window ending slightly in the future costs nothing and avoids losing
-    // a fix to clock skew between this browser and wspr.live.
-    const fresh = await fetchTrack(flight, from, new Date(now.getTime() + 60_000), signal);
+    const fresh = await fetchTrack(flight, new Date(fromMs), new Date(toMs), signal);
     const known = new Set(bundled.map((p) => p.utc));
     return {
       // Re-derived over the whole merged track, not just the tail: a

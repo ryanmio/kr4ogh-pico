@@ -26,7 +26,7 @@ _FLIGHT_ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 _CALLSIGN = re.compile(r"^[A-Z0-9/]{3,10}$")
 _LAUNCH_UTC = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 _FLIGHT_FIELDS = {
-    "flight_id", "callsign", "band", "channel", "active", "launch_utc",
+    "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
     "launch_lat", "launch_lon", "status", "close_reason", "tracker",
 }
 
@@ -40,6 +40,8 @@ class Site:
     callsign: str
     url: str | None = None
     repo: str | None = None
+    # The flight_id the home page shows; the site chooses when None.
+    featured: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,9 @@ class Flight:
     channel: int
     active: bool = True
     launch_utc: str | None = None
+    # When the flight was last heard, or declared over. Nothing after it is
+    # this flight's: it is what keeps two flights on one channel apart.
+    end_utc: str | None = None
     launch_lat: float | None = None
     launch_lon: float | None = None
     status: str = "live"
@@ -66,9 +71,27 @@ class Flight:
     def launch(self) -> datetime | None:
         """launch_utc as a naive UTC datetime, the convention wspr.live
         stores and this tool queries with."""
-        if self.launch_utc is None:
-            return None
-        return datetime.strptime(self.launch_utc, "%Y-%m-%d %H:%M:%S")
+        return _parse_utc(self.launch_utc)
+
+    @property
+    def end(self) -> datetime | None:
+        """end_utc as a naive UTC datetime, or None while open-ended."""
+        return _parse_utc(self.end_utc)
+
+    def clip(self, start: datetime, end: datetime) -> tuple[datetime, datetime]:
+        """The part of [start, end) that lies within this flight: after its
+        launch and before its end. Empty (end <= start) when none does."""
+        if self.launch is not None:
+            start = max(start, self.launch)
+        if self.end is not None:
+            end = min(end, self.end)
+        return start, end
+
+
+def _parse_utc(text: str | None) -> datetime | None:
+    if text is None:
+        return None
+    return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
 
 
 def _read(path: str | Path) -> dict:
@@ -92,6 +115,21 @@ def _optional_str(entry: dict, where: str, key: str) -> str | None:
         return None
     if not isinstance(value, str):
         _fail(f"{where}.{key}", "must be text in quotes")
+    return value
+
+
+def _utc_str(entry: dict, where: str, key: str) -> str | None:
+    """A "YYYY-MM-DD HH:MM:SS" UTC timestamp, or None when absent. The form
+    is fixed so that two of them compare as text."""
+    value = _optional_str(entry, where, key)
+    if value is None:
+        return None
+    if not _LAUNCH_UTC.match(value):
+        _fail(f"{where}.{key}", 'must look like "2026-08-30 12:44:00" (UTC, in quotes)')
+    try:
+        datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        _fail(f"{where}.{key}", f'"{value}" is not a real date and time')
     return value
 
 
@@ -138,14 +176,10 @@ def _flight(entry: object, index: int) -> Flight:
     if not isinstance(active, bool):
         _fail(f"{where}.active", "must be true or false")
 
-    launch_utc = _optional_str(entry, where, "launch_utc")
-    if launch_utc is not None:
-        if not _LAUNCH_UTC.match(launch_utc):
-            _fail(f"{where}.launch_utc", 'must look like "2026-08-30 12:44:00" (UTC, in quotes)')
-        try:
-            datetime.strptime(launch_utc, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            _fail(f"{where}.launch_utc", f'"{launch_utc}" is not a real date and time')
+    launch_utc = _utc_str(entry, where, "launch_utc")
+    end_utc = _utc_str(entry, where, "end_utc")
+    if launch_utc is not None and end_utc is not None and end_utc <= launch_utc:
+        _fail(f"{where}.end_utc", f'"{end_utc}" is not after launch_utc "{launch_utc}"')
 
     status = entry.get("status", "live")
     if status not in ("live", "closed"):
@@ -164,6 +198,7 @@ def _flight(entry: object, index: int) -> Flight:
         channel=channel,
         active=active,
         launch_utc=launch_utc,
+        end_utc=end_utc,
         launch_lat=_optional_num(entry, where, "launch_lat"),
         launch_lon=_optional_num(entry, where, "launch_lon"),
         status=status,
@@ -196,8 +231,20 @@ def load_site(path: str | Path = DEFAULT_PATH) -> Site:
     callsign = site.get("callsign")
     if not isinstance(callsign, str) or not _CALLSIGN.match(callsign.strip().upper()):
         _fail("[site].callsign", 'required, e.g. "N0CALL"')
+    featured = _optional_str(site, "[site]", "featured")
+    if featured is not None:
+        # Mirrors src/lib/config.ts: the featured flight has to be on the
+        # site, which export_site.py defines as active or closed.
+        flights = {f.flight_id: f for f in load_flights(path)}
+        f = flights.get(featured)
+        if f is None:
+            _fail("[site].featured",
+                  f'"{featured}" is not the flight_id of any [[flights]] entry')
+        if not f.active and f.status != "closed":
+            _fail("[site].featured", f"{featured} has active = false, so it is not on the site")
     return Site(
         callsign=callsign.strip().upper(),
         url=_optional_str(site, "[site]", "url"),
         repo=_optional_str(site, "[site]", "repo"),
+        featured=featured,
     )

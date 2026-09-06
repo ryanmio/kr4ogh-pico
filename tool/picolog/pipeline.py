@@ -6,7 +6,7 @@ local store, matches, decodes, and overwrites derived records. The derived
 side never touches the network and can be re-run at any time.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .channels import channel_table_20m
 from .config import Flight
@@ -48,19 +48,28 @@ def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
     derived records. Returns the number of records written."""
     channel = channel_table_20m()[flight.channel]
 
+    # Only spots from the flight's own span, launch_utc to end_utc: the store
+    # holds every flight's spots, and two flights on one channel with one
+    # callsign are told apart by when they flew and nothing else. The
+    # Telemetry message follows the Regular by two minutes, so its bound
+    # sits two minutes later, or the last fix before the end would lose
+    # its second half.
+    reg_where, reg_params = _span_clause(flight, timedelta(0))
+    tel_where, tel_params = _span_clause(flight, timedelta(minutes=2))
+
     # The Regular pull is by callsign only: the same callsign can fly several
     # channels at once, so restrict to this channel's start minute here.
     regulars = _spot_rows(store,
                           "tx_sign = ? AND band = ? AND "
-                          "CAST(strftime('%M', time) AS INTEGER) % 10 = ?",
+                          "CAST(strftime('%M', time) AS INTEGER) % 10 = ?" + reg_where,
                           (flight.callsign, flight.band_code,
-                           channel.start_minute))
+                           channel.start_minute, *reg_params))
     candidates = _spot_rows(store,
                             "substr(tx_sign, 1, 1) = ? AND substr(tx_sign, 3, 1) = ? "
                             "AND length(tx_sign) = 6 AND band = ? AND "
-                            "CAST(strftime('%M', time) AS INTEGER) % 10 = ?",
+                            "CAST(strftime('%M', time) AS INTEGER) % 10 = ?" + tel_where,
                             (channel.id13[0], channel.id13[1],
-                             flight.band_code, channel.telemetry_minute))
+                             flight.band_code, channel.telemetry_minute, *tel_params))
 
     records = []
     for m in fingerprint_match(regulars, candidates):
@@ -104,6 +113,19 @@ def _decode_match(flight: Flight, m: Match) -> dict | None:
         "matcher_name": MATCHER_NAME,
         "matcher_version": MATCHER_VERSION,
     }
+
+
+def _span_clause(flight: Flight, shift: timedelta) -> tuple[str, tuple]:
+    """SQL restricting `time` to the flight's span, both ends moved by
+    `shift`; empty when the flight is open at both ends."""
+    where, params = "", []
+    if flight.launch is not None:
+        where += " AND time >= ?"
+        params.append((flight.launch + shift).strftime("%Y-%m-%d %H:%M:%S"))
+    if flight.end is not None:
+        where += " AND time < ?"
+        params.append((flight.end + shift).strftime("%Y-%m-%d %H:%M:%S"))
+    return where, tuple(params)
 
 
 def _spot_rows(store: Store, where: str, params: tuple) -> list[dict]:

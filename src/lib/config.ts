@@ -24,7 +24,7 @@ const FLIGHT_ID = /^[A-Za-z0-9_-]{1,32}$/;
 const CALLSIGN = /^[A-Z0-9/]{3,10}$/;
 const LAUNCH_UTC = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const FLIGHT_FIELDS = new Set([
-  "flight_id", "callsign", "band", "channel", "active", "launch_utc",
+  "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
   "launch_lat", "launch_lon", "status", "close_reason", "tracker",
 ]);
 
@@ -42,6 +42,20 @@ function optionalText(t: Table, where: string, key: string): string | null {
   const v = t[key];
   if (v === undefined || v === null || v === "") return null;
   if (typeof v !== "string") fail(`${where}.${key}`, "must be text in quotes");
+  return v;
+}
+
+/** A "YYYY-MM-DD HH:MM:SS" UTC timestamp, or null when absent. The form is
+ * fixed so that two of them compare as text. */
+function utcText(t: Table, where: string, key: string): string | null {
+  const v = optionalText(t, where, key);
+  if (v === null) return null;
+  if (!LAUNCH_UTC.test(v)) {
+    fail(`${where}.${key}`, 'must look like "2026-08-30 12:44:00" (UTC, in quotes)');
+  }
+  if (Number.isNaN(Date.parse(v.replace(" ", "T") + "Z"))) {
+    fail(`${where}.${key}`, `"${v}" is not a real date and time`);
+  }
   return v;
 }
 
@@ -87,14 +101,10 @@ function flight(entry: unknown, index: number): FlightMeta {
   const active = entry.active ?? true;
   if (typeof active !== "boolean") fail(`${where}.active`, "must be true or false");
 
-  const launchUtc = optionalText(entry, where, "launch_utc");
-  if (launchUtc !== null) {
-    if (!LAUNCH_UTC.test(launchUtc)) {
-      fail(`${where}.launch_utc`, 'must look like "2026-08-30 12:44:00" (UTC, in quotes)');
-    }
-    if (Number.isNaN(Date.parse(launchUtc.replace(" ", "T") + "Z"))) {
-      fail(`${where}.launch_utc`, `"${launchUtc}" is not a real date and time`);
-    }
+  const launchUtc = utcText(entry, where, "launch_utc");
+  const endUtc = utcText(entry, where, "end_utc");
+  if (launchUtc !== null && endUtc !== null && endUtc <= launchUtc) {
+    fail(`${where}.end_utc`, `"${endUtc}" is not after launch_utc "${launchUtc}"`);
   }
 
   const status = entry.status ?? "live";
@@ -119,6 +129,7 @@ function flight(entry: unknown, index: number): FlightMeta {
     channel,
     active,
     launch_utc: launchUtc,
+    end_utc: endUtc,
     launch_lat: optionalNumber(entry, where, "launch_lat"),
     launch_lon: optionalNumber(entry, where, "launch_lon"),
     status,
@@ -170,9 +181,21 @@ function load(): { site: SiteConfig; flights: FlightMeta[] } {
     seen.add(f.flight_id);
   }
 
+  // Mirrors tool/picolog/export_site.py: a flight is on the site while it
+  // is active, and once it is closed; a parked one is not.
+  const featured = optionalText(site, "[site]", "featured");
+  if (featured !== null) {
+    const f = flights.find((x) => x.flight_id === featured);
+    if (!f) fail("[site].featured", `"${featured}" is not the flight_id of any [[flights]] entry`);
+    if (f.active === false && f.status !== "closed") {
+      fail("[site].featured", `${featured} has active = false, so it is not on the site`);
+    }
+  }
+
   return {
     site: {
       callsign: site.callsign.trim().toUpperCase(),
+      featured,
       url: optionalText(site, "[site]", "url") ?? env.SITE_URL ?? vercelUrl,
       repo: optionalText(site, "[site]", "repo") ?? vercelRepo ?? UPSTREAM_REPO,
     },

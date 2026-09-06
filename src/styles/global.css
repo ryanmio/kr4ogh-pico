@@ -749,6 +749,7 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   border-radius: 50%; background: currentColor;
   animation: pulse 1.8s ease-out infinite;
 }
+.fv-status-dot-ended { animation: none; }
 .fv-status-sub {
   font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint);
   margin-top: 0.15rem;
@@ -811,7 +812,7 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   margin-top: auto; padding-top: 0.5rem;
 }
 .fv-side-links {
-  display: flex; align-items: center; gap: 0.5rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
   background: var(--glass); border: 1px solid var(--glass-border);
   border-radius: 12px; padding: 0.4rem 0.6rem;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -825,6 +826,9 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   padding: 0.22rem 0.75rem;
 }
 .fv-chip:hover { color: var(--text); border-color: var(--glass-border); }
+/* The "Next flight" chip is a link, not a button, so it opens in a new tab
+ * like any other link, but it dresses like its neighbours. */
+a.fv-chip { text-decoration: none; }
 .fv-updated {
   display: block;
   font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint);

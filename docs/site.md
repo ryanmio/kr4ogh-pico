@@ -38,8 +38,21 @@ in existence is 3-13 minutes old. The page shows that fix. Nothing can do
 better, including Traquito's own dashboard.
 
 The home page **is** the flight: while something is up, there is nothing to
-click through to. `/live/<flight_id>/` is the permalink for a particular
-flight and renders the same component.
+click through to. With several flights on the site it is built around the
+featured one (`[site].featured` in `flights.toml`, else the live flight that
+launched first) and switches to another in place when the address says
+`?feature=<flight_id>`: the asked-for flight's committed track is fetched
+from `/live/<flight_id>/track.json` and the live refresh proceeds from
+there. A **Next flight** button walks the flights. `/live/<flight_id>/` is
+the permalink for a particular flight and renders the same component.
+
+A closed flight (`status = "closed"`) is the same view with the clock
+stopped: the committed track is final, wspr.live is not asked, and no
+weather is offered over a track that is history. Its `end_utc` is also what
+tells it apart from a later flight on the same channel under the same
+callsign, which to wspr.live is the same signal: every path that pulls or
+attributes spots, the tool's pull and decode, the export, and the browser
+refresh, is bounded by each flight's launch and end.
 
 Numbers are shown in metric or imperial, the reader's choice, remembered per
 browser. The stored track is always metric and always knots; conversion
