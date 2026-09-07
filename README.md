@@ -87,7 +87,9 @@ If you get stuck, open an issue here with your callsign and channel.
   ingest tool reads the same file, and both reject the same mistakes.
 - `src/data/tracks/<callsign>-<flight_id>.json` is each flight's decoded track,
   committed to git by the workflow so the page has its numbers before any
-  network round trip.
+  network round trip. Beside it, `<callsign>-<flight_id>.ghosts.json` lists
+  the slots where the tracker was heard but only its grid square got
+  through: the map draws those as hollow "ghost" dots off the track.
 - The page then asks wspr.live for everything since the last committed fix,
   decodes it in the browser with a TypeScript port of the tool's decoder,
   and merges. It checks again every two minutes.

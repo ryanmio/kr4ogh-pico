@@ -6,11 +6,12 @@ import {
   bearingDeg, compassPoint, fmtDuration, fmtInt, fmtRelative, fmtUtc, haversineKm,
   trackStats,
 } from "./format";
+import { heardBounds, lastKnown } from "./ghosts";
 import { METRICS, type MetricKey } from "./metrics";
 import {
   groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
 } from "./speed";
-import type { FlightMeta } from "./types";
+import type { FlightMeta, GhostPoint } from "./types";
 import * as u from "./units";
 import type { Units } from "./units";
 import type { TrackPoint } from "./types";
@@ -168,12 +169,18 @@ function metricCard(
  * paint, and re-rendered in the browser on refresh and unit changes. */
 /** `active` is the card whose panel is open, or null when none is: the
  * highlight means "details shown below", so nothing is highlighted until
- * the reader asks. The map's coloring is named by its own legend. */
+ * the reader asks. The map's coloring is named by its own legend.
+ *
+ * `ghosts` are the slots heard without telemetry. They count as the
+ * tracker being heard -- "last heard" and "flying for" take them in -- and
+ * as nothing else: every number on the metric cards is from the last full
+ * fix, because a ghost carries none of them. */
 export function sidebarHtml(
   meta: FlightMeta, track: TrackPoint[], units: Units, active: ActiveCard,
-  opts: { pending?: boolean } = {},
+  opts: { pending?: boolean; ghosts?: GhostPoint[] } = {},
 ): string {
   const ended = meta.status === "closed";
+  const ghosts = opts.ghosts ?? [];
   // The tracker card leads: it is what the header used to say (who this
   // is), shaped like every other card, and pressing it opens the build
   // details panel.
@@ -199,10 +206,21 @@ export function sidebarHtml(
   }
   const s = trackStats(track);
   if (!s) {
-    return tracker + `<div class="fv-status"><p class="empty-note">No decoded
-      telemetry yet. The tracker reports every 10 minutes once it has sun
-      and a GPS fix.</p></div>`;
+    const heard = heardBounds(track, ghosts);
+    // Heard, but never with its telemetry: the map has a square to show
+    // and the card can say when, and that is all.
+    const note = heard
+      ? `Heard ${fmtInt(ghosts.length)} time${ghosts.length === 1 ? "" : "s"},
+        last ${esc(heard.lastUtc.slice(5, 16))} UTC, but never with its
+        telemetry: the position is known to a grid square and nothing else
+        yet. The tracker reports every 10 minutes once it has sun and a GPS
+        fix.`
+      : `No decoded telemetry yet. The tracker reports every 10 minutes once
+        it has sun and a GPS fix.`;
+    return tracker + `<div class="fv-status"><p class="empty-note">${note}</p></div>`;
   }
+  const heard = heardBounds(track, ghosts)!;
+  const known = lastKnown(track, ghosts)!;
   const volts = track.map((p) => p.voltage_v);
   const temps = track.map((p) => p.temperature_c);
   const alt = (m: number) => u.altitude(m, units).text;
@@ -215,22 +233,28 @@ export function sidebarHtml(
   const heading = prev
     ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
     : null;
-  const aloftMs = Date.parse(s.lastUtc) - Date.parse(s.firstUtc);
+  const aloftMs = Date.parse(heard.lastUtc) - Date.parse(heard.firstUtc);
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
   // A closed flight's "last heard" is history, not a heartbeat: the dot
-  // stops pulsing and the card says when, not how long ago.
+  // stops pulsing and the card says when, not how long ago. When the
+  // newest report is a ghost the card says so, because the numbers under
+  // it are from an older report than the time it names.
+  const partial = ghosts.length
+    ? ` · ${fmtInt(ghosts.length)} without telemetry`
+    : "";
   const status = `<button type="button" class="fv-status" data-panel="status"
     aria-pressed="${active === "status"}">
     <span class="fv-card-icon" style="color:${ended ? "#94a3b8" : "#34d399"}"><span
       class="fv-status-dot${ended ? " fv-status-dot-ended" : ""}"></span></span>
     <span class="fv-status-text">
       <span class="fv-status-main">${ended
-        ? `Flight ended · last heard ${esc(s.lastUtc.slice(5, 16))} UTC`
-        : `Last heard ${esc(fmtRelative(s.lastUtc))}`}</span>
+        ? `Flight ended · last heard ${esc(heard.lastUtc.slice(5, 16))} UTC`
+        : `Last heard ${esc(fmtRelative(heard.lastUtc))}`}${
+        known.coarse ? " · position only" : ""}</span>
       <span class="fv-status-sub">${ended ? "flew" : "flying"} for ${esc(fmtDuration(aloftMs))}
-        · ${fmtInt(s.points)} reports</span>
+        · ${fmtInt(s.points)} reports${partial}</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
   </button>

@@ -104,3 +104,47 @@ function plusTwoMinutes(slot: string): string {
   t.setUTCMinutes(t.getUTCMinutes() + 2);
   return t.toISOString().slice(0, 19).replace("T", " ");
 }
+
+/** A Regular slot the matcher produced nothing for. */
+export interface RegularOnly {
+  slotUtc: string;
+  /** The grid square every confirming station reported, upper-cased. */
+  grid4: string;
+  rxStationCount: number;
+}
+
+/** The Regular slots that paired with nothing: no station heard both
+ * messages, or nothing telemetry-shaped arrived at all, or the candidates
+ * tied. The tracker was heard in each of them, and its grid square with it.
+ *
+ * Stations disagree about the square now and then (a false decode of one
+ * letter), so the square is put to the same vote as a telemetry payload,
+ * counted by distinct receiver, and a tie skips the slot rather than
+ * guessing. A direct port of tool/picolog/match.py's regular_only_slots.
+ */
+export function regularOnlySlots(
+  regularSpots: Spot[], matches: Match[],
+): RegularOnly[] {
+  const matched = new Set(matches.map((m) => m.slotUtc));
+  const bySlot = new Map<string, Map<string, Set<string>>>();
+  for (const spot of regularSpots) {
+    if (matched.has(spot.time)) continue;
+    const grid4 = spot.tx_loc.slice(0, 4).toUpperCase();
+    if (grid4.length !== 4) continue;
+    let byGrid = bySlot.get(spot.time);
+    if (!byGrid) bySlot.set(spot.time, (byGrid = new Map()));
+    let rxs = byGrid.get(grid4);
+    if (!rxs) byGrid.set(grid4, (rxs = new Set()));
+    rxs.add(spot.rx_sign);
+  }
+  const out: RegularOnly[] = [];
+  for (const slot of [...bySlot.keys()].sort()) {
+    const ranked = [...bySlot.get(slot)!.entries()]
+      .map(([grid4, rxs]) => [grid4, rxs.size] as const)
+      .sort((a, b) => b[1] - a[1]);
+    if (ranked.length >= 2 && ranked[0]![1] === ranked[1]![1]) continue;
+    const [grid4, count] = ranked[0]!;
+    out.push({ slotUtc: slot, grid4, rxStationCount: count });
+  }
+  return out;
+}

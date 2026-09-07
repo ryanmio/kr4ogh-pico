@@ -8,13 +8,16 @@ import {
   fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
 import { fmtUtc } from "./format";
+import { lastKnown, trailingGhosts, unwrapGhostLons } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { speedText } from "./speed";
 import { altitude as fmtAltitude, type Units } from "./units";
-import type { FlightMeta, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 
 export interface MapOptions {
   units?: Units;
+  /** Slots heard without telemetry, drawn as ghosts beside the track. */
+  ghosts?: GhostPoint[];
   /** What the spots are colored by. */
   metric?: MetricKey;
   /** "fit" sizes the box to the track (article-style pages); "fill" leaves
@@ -79,12 +82,27 @@ export function renderMap(
   const units = opts.units ?? "metric";
   const metric = METRICS[opts.metric ?? "altitude"];
   const fill = opts.sizing === "fill";
+  const ghosts = opts.ghosts ?? [];
 
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
+  const ghostLons = unwrapGhostLons(track, lons, ghosts);
+  const ghostLatlngs = ghosts.map((g, i) => L.latLng(g.lat, ghostLons[i]!));
+  // Ghosts newer than the last fix: the balloon has been heard along them
+  // since it last sent telemetry, so they are the end of the story, drawn
+  // as a dashed tail with the beacon on the last of them.
+  const tail = trailingGhosts(track, ghosts);
+  const tailLatlngs = ghostLatlngs.slice(ghosts.length - tail.length);
+  const here = lastKnown(track, ghosts);
+  const hereLatlng = tail.length ? tailLatlngs.at(-1)! : latlngs.at(-1);
+  // The fit takes every position, with the balloon last (fitRegion's
+  // contract): a ghost off the side of the track must not sit off screen.
+  const fitPts = hereLatlng
+    ? [...latlngs, ...ghostLatlngs].filter((ll) => ll !== hereLatlng).concat(hereLatlng)
+    : [];
   // Worked out before the map exists, because on "fit" pages the box has to
   // be the right height before Leaflet measures it.
-  const fitted = latlngs.length > 0 ? fitBoundsFor(latlngs) : null;
+  const fitted = fitPts.length > 0 ? fitBoundsFor(fitPts) : null;
   if (fitted && !fill) fitHeightToBounds(el, fitted);
 
   const map = L.map(el, {
@@ -120,7 +138,7 @@ export function renderMap(
       .addTo(map);
   }
 
-  if (track.length === 0) {
+  if (!hereLatlng || !here) {
     if (meta.launch_lat != null && meta.launch_lon != null) {
       map.setView([meta.launch_lat, meta.launch_lon], 6);
     } else {
@@ -134,12 +152,35 @@ export function renderMap(
   // the path from whatever is beneath it.
   L.polyline(latlngs, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
   L.polyline(latlngs, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
+  // The tail is dashed and never joins the line: a grid square is a claim
+  // of where the balloon was to within 80 km, and the solid line is a claim
+  // of 4. From the last fix out to the newest ghost, or ghost to ghost when
+  // no fix has been decoded at all yet.
+  if (tail.length) {
+    const tailLine = [...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs];
+    L.polyline(tailLine, { color: "#0b1020", weight: 6, opacity: 0.4 }).addTo(map);
+    L.polyline(tailLine, {
+      color: "#e2e8f0", weight: 2, opacity: 0.8, dashArray: "4 7",
+    }).addTo(map);
+  }
+  // The square the balloon is somewhere in, when a ghost is the newest
+  // report: the beacon alone would claim a precision the report lacks.
+  if (here.coarse) {
+    L.rectangle(
+      L.latLngBounds(
+        L.latLng(hereLatlng.lat - 0.5, hereLatlng.lng - 1),
+        L.latLng(hereLatlng.lat + 0.5, hereLatlng.lng + 1),
+      ),
+      { color: "#e2e8f0", weight: 1, opacity: 0.5, dashArray: "3 5", fill: false,
+        interactive: false },
+    ).addTo(map);
+  }
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
   const raws = track.map((p) => metric.raw(p));
-  const lo = Math.min(...raws);
-  const hi = Math.max(...raws);
+  const lo = raws.length ? Math.min(...raws) : 0;
+  const hi = raws.length ? Math.max(...raws) : 0;
   const spots = L.layerGroup().addTo(map);
 
   /** Draw the spots for the current zoom, dropping any that would land on
@@ -173,6 +214,23 @@ export function renderMap(
       i === 0 || i === track.length - 1 || i % step === 0);
     const sizeOf = (p: TrackPoint) =>
       p === shown[0] || p === shown[shown.length - 1] ? SPOT_RADIUS : radius;
+
+    // Ghosts go under everything: hollow, dim, a little smaller than a
+    // spot, and never thinned -- there are only ever a handful. The one
+    // the beacon sits on keeps a spot's full size, the way the two ends
+    // of the track do.
+    ghosts.forEach((g, i) => {
+      const isHere = here.coarse && i === ghosts.length - 1;
+      L.circleMarker(ghostLatlngs[i]!, {
+        radius: isHere ? SPOT_RADIUS : Math.max(GHOST_MIN_RADIUS, radius - 1.5),
+        color: GHOST_STROKE, weight: 1.2, opacity: 0.8,
+        fillColor: SPOT_OUTLINE, fillOpacity: 0.45,
+      }).bindTooltip(
+        `${fmtUtc(g.utc)}<br>heard in ${g.grid4} by ` +
+        `${g.rx_station_count} station${g.rx_station_count === 1 ? "" : "s"}` +
+        " · no telemetry",
+      ).addTo(spots);
+    });
 
     // Outlines first, all of them, then the fills. Drawn per spot instead,
     // each outline lands on its neighbours' fill wherever fixes overlap, and
@@ -209,7 +267,7 @@ export function renderMap(
   // metric-coloured dot for this same fix is underneath and has to stay
   // readable, or the newest point is the one point whose value you cannot
   // see.
-  L.marker(latlngs[latlngs.length - 1]!, {
+  L.marker(hereLatlng, {
     icon: L.divIcon({
       className: "last-pos-icon",
       html: '<span class="last-pos-pulse"></span>',
@@ -238,9 +296,10 @@ export function renderMap(
   // they land on screen. Every zoom after this one re-thins them.
   drawSpots();
   map.on("zoomend", drawSpots);
+  const allLons = [...lons, ...ghostLons];
   map.setMaxBounds(L.latLngBounds(
-    L.latLng(-85, Math.min(...lons) - 360),
-    L.latLng(85, Math.max(...lons) + 360),
+    L.latLng(-85, Math.min(...allLons) - 360),
+    L.latLng(85, Math.max(...allLons) + 360),
   ));
 
   // The legend names the metric the spots are colored by. The desktop live
@@ -282,6 +341,12 @@ const SPOT_SMALL_ZOOM = 2;
  * are drawn as a pass of their own and overlap each other. */
 const SPOT_OUTLINE_PX = 1.5;
 const SPOT_OUTLINE = "#0b1020";
+
+/** A ghost's ring, and the smallest it shrinks to at the world view. The
+ * ring is the track's own light grey: a ghost is a report of the balloon,
+ * not a value on the metric ramp, so it takes no colour from it. */
+const GHOST_STROKE = "#e2e8f0";
+const GHOST_MIN_RADIUS = 2.5;
 
 /** How many spots the canvas will carry before they start being sampled.
  * Each one is two circles, an outline and a fill. */

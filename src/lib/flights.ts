@@ -12,10 +12,17 @@
  */
 import { configuredFlights, siteConfig } from "./config";
 import { resolveTrackSpeeds } from "./speed";
-import type { FlightMeta, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 
 const trackModules = import.meta.glob<{ default: TrackPoint[] }>(
-  "../data/tracks/*.json",
+  ["../data/tracks/*.json", "!../data/tracks/*.ghosts.json"],
+  { eager: true },
+);
+// Beside each track, the slots heard without telemetry (lib/types.ts,
+// GhostPoint), written by the same export. Optional: a track exported
+// before ghosts existed simply has none.
+const ghostModules = import.meta.glob<{ default: GhostPoint[] }>(
+  "../data/tracks/*.ghosts.json",
   { eager: true },
 );
 
@@ -23,10 +30,17 @@ const tracksByFile = new Map<string, TrackPoint[]>();
 for (const [path, mod] of Object.entries(trackModules)) {
   tracksByFile.set(path.split("/").pop()!, mod.default);
 }
+const ghostsByFile = new Map<string, GhostPoint[]>();
+for (const [path, mod] of Object.entries(ghostModules)) {
+  ghostsByFile.set(path.split("/").pop()!, mod.default);
+}
 
 /** Mirrors tool/picolog/export_site.py. */
 function trackFilename(flight: FlightMeta): string {
   return `${flight.callsign}-${flight.flight_id}.json`;
+}
+function ghostsFilename(flight: FlightMeta): string {
+  return `${flight.callsign}-${flight.flight_id}.ghosts.json`;
 }
 
 export function allFlights(): FlightMeta[] {
@@ -72,4 +86,10 @@ export function trackFor(flight: FlightMeta): TrackPoint[] {
  * record of what the tracker sent, without the derived speeds. */
 export function rawTrackFor(flight: FlightMeta): TrackPoint[] {
   return tracksByFile.get(trackFilename(flight)) ?? [];
+}
+
+/** The committed ghosts for a flight, for the page and for
+ * /live/<id>/ghosts.json. */
+export function ghostsFor(flight: FlightMeta): GhostPoint[] {
+  return ghostsByFile.get(ghostsFilename(flight)) ?? [];
 }

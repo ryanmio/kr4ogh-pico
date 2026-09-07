@@ -7,7 +7,7 @@
  */
 import { featuredFlight } from "../src/lib/flights";
 import { channel20m } from "../src/lib/wspr/channels";
-import { fetchTrack } from "../src/lib/wspr/track";
+import { fetchWindow } from "../src/lib/wspr/track";
 
 const hours = Number(process.argv[2] ?? 6);
 // The flight the home page shows.
@@ -23,14 +23,18 @@ console.log(`channel ${ch.channel}: id13 ${ch.id13}, regular minute ${ch.startMi
   + `telemetry minute ${ch.telemetryMinute}, ${ch.frequencyHz} Hz`);
 
 const t0 = performance.now();
-const track = await fetchTrack(flight, start, end);
+const { track, ghosts } = await fetchWindow(flight, start, end);
 const ms = performance.now() - t0;
 
-console.log(`\nfetch + decode of ${hours} h: ${ms.toFixed(0)} ms, ${track.length} fixes\n`);
+console.log(`\nfetch + decode of ${hours} h: ${ms.toFixed(0)} ms, ${track.length} fixes, `
+  + `${ghosts.length} heard without telemetry\n`);
 for (const p of track.slice(-5)) {
   console.log(`  ${p.utc}  ${p.grid6}  ${String(p.altitude_m).padStart(6)} m  `
     + `${p.voltage_v.toFixed(2)} V  ${String(p.temperature_c).padStart(3)} C  `
     + `${p.rx_station_count} rx`);
+}
+for (const g of ghosts.slice(-5)) {
+  console.log(`  ${g.utc}  ${g.grid4}    (no telemetry)         ${g.rx_station_count} rx`);
 }
 console.log(`\nJSON for comparison:`);
 console.log(JSON.stringify(track.map((p) => [p.utc, p.grid6, p.altitude_m,

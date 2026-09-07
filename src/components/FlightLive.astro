@@ -32,18 +32,21 @@
  */
 import { withBase } from "../lib/base";
 import { siteConfig, UPSTREAM_REPO } from "../lib/config";
+import { lastKnown } from "../lib/ghosts";
 import { sidebarHtml } from "../lib/render";
-import type { FlightMeta, TrackPoint } from "../lib/types";
+import type { FlightMeta, GhostPoint, TrackPoint } from "../lib/types";
 
 interface Props {
   flight: FlightMeta;
   track: TrackPoint[];
+  /** Slots heard without telemetry; see lib/types.ts. */
+  ghosts?: GhostPoint[];
   /** Every flight on the site, in "Next flight" order. Defaults to just
    * this one, which hides the button. */
   flights?: FlightMeta[];
   mode?: "home" | "permalink";
 }
-const { flight, track, flights = [flight], mode = "permalink" } = Astro.props;
+const { flight, track, ghosts = [], flights = [flight], mode = "permalink" } = Astro.props;
 const ended = flight.status === "closed";
 // The "Next flight" link, as built; the script re-aims it at the reader's
 // current flight and carries their toggles along.
@@ -54,8 +57,8 @@ const nextHref = mode === "home"
 
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
-const sidebar = sidebarHtml(flight, track, "metric", null);
-const last = track.at(-1);
+const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts });
+const last = lastKnown(track, ghosts);
 // What the About panel needs to say about this instance: whose site, where
 // its source lives, and where the project it is an instance of lives.
 const site = { ...siteConfig, upstream: UPSTREAM_REPO };
@@ -65,6 +68,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   class="fv fv-loading"
   data-flight={JSON.stringify(flight)}
   data-track={JSON.stringify(track)}
+  data-ghosts={JSON.stringify(ghosts)}
   data-flights={JSON.stringify(flights)}
   data-mode={mode}
   data-site={JSON.stringify(site)}
@@ -96,7 +100,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       </div>
       <span class="fv-updated" id="updated">
         {last
-          ? `${ended ? "Flight ended · last" : "Newest"} position ${last.utc} UTC`
+          ? `${ended ? "Flight ended · last" : "Newest"} position ${last.utc} UTC${
+            last.coarse ? " (grid square only)" : ""}`
           : "No positions yet"}
       </span>
     </div>
@@ -122,6 +127,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import { withBase } from "../lib/base";
   import { featureFromSearch, urlWithFeature } from "../lib/feature";
   import { renderMapInto } from "../lib/flightview";
+  import { heardBounds, lastKnown } from "../lib/ghosts";
   import { addCornerControl } from "../lib/map";
   import type { GlobeHandle } from "../lib/globe";
   import {
@@ -136,7 +142,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     SPEED_CEILING_KT,
   } from "../lib/speed";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
-  import type { FlightMeta, SiteConfig, TrackPoint } from "../lib/types";
+  import type { FlightMeta, GhostPoint, SiteConfig, TrackPoint } from "../lib/types";
   import {
     panelFromSearch, urlWithPanel, type PanelKind,
   } from "../lib/panel";
@@ -158,6 +164,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let meta = JSON.parse(root.dataset.flight!) as FlightMeta;
     const site = JSON.parse(root.dataset.site!) as SiteConfig & { upstream: string };
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
+    let ghosts = JSON.parse(root.dataset.ghosts!) as GhostPoint[];
     const flights = JSON.parse(root.dataset.flights!) as FlightMeta[];
     const mode = root.dataset.mode === "home" ? "home" : "permalink";
     /** A closed flight: the track is final and nothing is polled. */
@@ -213,12 +220,16 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       swapped = true;
       meta = chosen;
       track = [];
+      ghosts = [];
       document.title = document.title.replace(/^[^—]*—/, `${meta.callsign} ${meta.flight_id} —`);
       cardsSlot.innerHTML = sidebarHtml(meta, track, units, null, { pending: true });
       refreshBtn.hidden = ended();
       try {
-        const resp = await fetch(withBase(`/live/${encodeURIComponent(meta.flight_id)}/track.json`));
-        if (resp.ok) track = resolveTrackSpeeds(await resp.json() as TrackPoint[]);
+        const at = (name: string) =>
+          fetch(withBase(`/live/${encodeURIComponent(meta.flight_id)}/${name}`));
+        const [trackResp, ghostResp] = await Promise.all([at("track.json"), at("ghosts.json")]);
+        if (trackResp.ok) track = resolveTrackSpeeds(await trackResp.json() as TrackPoint[]);
+        if (ghostResp.ok) ghosts = await ghostResp.json() as GhostPoint[];
       } catch {
         // The live refresh can still find the flight from launch; a closed
         // flight will say it has no positions, which is at least honest.
@@ -309,7 +320,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // toggle, leaving the right edge to the zoom control alone; on a
       // phone they sit along the bottom of the map.
       const wide = window.matchMedia("(min-width: 900px)").matches;
-      const lon = track.at(-1)?.lon ?? meta.launch_lon ?? 0;
+      const lon = lastKnown(track, ghosts)?.lon ?? meta.launch_lon ?? 0;
       const viewToggle = buildViewToggle();
       // Weather is offered for a live flight only: a closed flight's track
       // is history, and today's clouds over it would be a picture that
@@ -327,6 +338,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
+            ghosts,
             overlaid: wide && mapSlot.clientWidth >= 900,
             ...(ended() ? {} : {
               weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
@@ -342,7 +354,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         }
       }
       const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, sizing: "fill",
+        units, metric, ghosts, sizing: "fill",
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return;
@@ -418,7 +430,14 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function renderSidebar() {
-      cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard());
+      cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard(), { ghosts });
+    }
+
+    /** The line under the cards: the newest report, and what kind. */
+    function newestText(prefix: string): string {
+      const known = lastKnown(track, ghosts);
+      if (!known) return "No positions yet";
+      return `${prefix} position ${known.utc} UTC${known.coarse ? " (grid square only)" : ""}`;
     }
 
     function paintCards() {
@@ -559,17 +578,25 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         gaps.push({ t, v: (t - parseUtc(pts[i - 1]!.utc).getTime()) / 60_000 });
       }
       const s = trackStats(track)!;
+      const heard = heardBounds(track, ghosts)!;
       let longest = 0;
       for (let i = 1; i < track.length; i++) {
         longest = Math.max(longest,
           parseUtc(track[i]!.utc).getTime() -
           parseUtc(track[i - 1]!.utc).getTime());
       }
-      const sinceMs = Date.now() - parseUtc(s.lastUtc).getTime();
+      const sinceMs = Date.now() - parseUtc(heard.lastUtc).getTime();
+      // A ghost is the tracker heard with only half its report: the
+      // Regular message with the grid square, never the telemetry. The
+      // map draws them hollow; this is where the count is explained.
+      const partial = ghosts.length
+        ? mini("Without telemetry", `${fmtInt(ghosts.length)} heard, grid square only`)
+        : "";
       panelBody.innerHTML =
         `<div class="fv-minis">${[
-          mini("Last heard", `${s.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`),
+          mini("Last heard", `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`),
           mini("Reports", `${fmtInt(s.points)} since launch`),
+          partial,
           mini("Cadence", "every 10 min in sunlight"),
           mini("Longest silence", `${fmtDuration(longest)} (overnight)`),
         ].join("")}</div>` +
@@ -816,7 +843,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // The download button lives inside the re-rendered data panel.
     panelBody.addEventListener("click", (ev) => {
       if (!(ev.target as HTMLElement).closest("#download")) return;
-      const blob = new Blob([JSON.stringify({ ...meta, track }, null, 1)],
+      const blob = new Blob([JSON.stringify({ ...meta, track, ghosts }, null, 1)],
         { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -831,26 +858,26 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         await drawFirst();
         renderSidebar();
         renderPanel();
-        const last = track.at(-1);
-        updatedEl.textContent = last
-          ? `Flight ended · last position ${last.utc} UTC`
+        updatedEl.textContent = lastKnown(track, ghosts)
+          ? newestText("Flight ended · last")
           : "No positions recorded";
         return;
       }
       refreshBtn.disabled = true;
-      const result = await refreshTrack(meta, track);
+      const result = await refreshTrack(meta, track, ghosts);
       refreshBtn.disabled = false;
       if (result.error) {
         // The bundled track is all there is; show it rather than a spinner
         // that will never resolve.
         void drawFirst();
-        const last = track.at(-1);
-        updatedEl.textContent = last
-          ? `Can't reach wspr.live — showing up to ${last.utc} UTC`
+        const known = lastKnown(track, ghosts);
+        updatedEl.textContent = known
+          ? `Can't reach wspr.live — showing up to ${known.utc} UTC`
           : "Can't reach wspr.live";
         return;
       }
       track = result.track;
+      ghosts = result.ghosts;
       if (firstPaint) {
         await drawFirst();
         renderSidebar();
@@ -860,9 +887,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         renderSidebar();
         renderPanel();
       }
-      const last = track.at(-1);
-      updatedEl.textContent = last
-        ? `Newest position ${last.utc} UTC · checked ${new Date().toISOString().slice(11, 16)} UTC`
+      updatedEl.textContent = lastKnown(track, ghosts)
+        ? `${newestText("Newest")} · checked ${new Date().toISOString().slice(11, 16)} UTC`
         : "No positions yet";
     }
 

@@ -8,6 +8,10 @@ Three tables:
              Append-only: never updated, never deleted (enforced by triggers).
   telemetry  decoded records. Fully derivable from `spots`, safe to drop and
              rebuild — that is the point of storing raw.
+  ghosts     slots where only the Regular message was heard: a grid square
+             and a station count, no telemetry. Derived like `telemetry`,
+             and rebuilt with it; docs/partial-spots.md says why they are
+             kept apart from it.
 
 `pulls` is load-bearing, not bookkeeping. It is what lets the tool distinguish
 "no query ever covered this window" from "the balloon was silent". Those are
@@ -84,6 +88,18 @@ CREATE TABLE IF NOT EXISTS telemetry (
     PRIMARY KEY (flight_id, utc)
 );
 
+CREATE TABLE IF NOT EXISTS ghosts (
+    flight_id          TEXT NOT NULL,
+    utc                TEXT NOT NULL,
+    grid4              TEXT NOT NULL,
+    lat                REAL NOT NULL,
+    lon                REAL NOT NULL,
+    rx_station_count   INTEGER NOT NULL,
+    matcher_name       TEXT NOT NULL,
+    matcher_version    INTEGER NOT NULL,
+    PRIMARY KEY (flight_id, utc)
+);
+
 CREATE INDEX IF NOT EXISTS spots_by_time ON spots (band, time);
 """
 
@@ -102,6 +118,9 @@ TELEMETRY_COLUMNS = ("flight_id", "utc", "grid6", "lat", "lon", "altitude_m",
                      "speed_knots", "voltage_v", "temperature_c", "gps_valid",
                      "rx_station_count", "regular_spot_id", "telemetry_spot_id",
                      "matcher_name", "matcher_version")
+
+GHOST_COLUMNS = ("flight_id", "utc", "grid4", "lat", "lon", "rx_station_count",
+                 "matcher_name", "matcher_version")
 
 
 def _fmt(t: datetime | str) -> str:
@@ -168,9 +187,25 @@ class Store:
             self.conn.execute(sql, [rec[c] for c in TELEMETRY_COLUMNS])
         self.conn.commit()
 
+    def replace_ghosts(self, flight_id: str, records: list[dict]) -> None:
+        """Set a flight's ghosts to exactly these, dropping the rest.
+
+        Replaced rather than upserted: a slot that was a ghost stops being
+        one the moment a later pull completes it, and a stale ghost left
+        beside a full fix would be the same slot twice.
+        """
+        self.conn.execute("DELETE FROM ghosts WHERE flight_id = ?", (flight_id,))
+        placeholders = ", ".join("?" for _ in GHOST_COLUMNS)
+        sql = (f"INSERT INTO ghosts ({', '.join(GHOST_COLUMNS)}) "
+               f"VALUES ({placeholders})")
+        for rec in records:
+            self.conn.execute(sql, [rec[c] for c in GHOST_COLUMNS])
+        self.conn.commit()
+
     def clear_telemetry(self) -> None:
         """Drop all derived records (before a rebuild from raw spots)."""
         self.conn.execute("DELETE FROM telemetry")
+        self.conn.execute("DELETE FROM ghosts")
         self.conn.commit()
 
     def uncovered_windows(self, band: int, query_kind: str,

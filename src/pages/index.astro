@@ -11,17 +11,18 @@
 import FlightLive from "../components/FlightLive.astro";
 import Base from "../layouts/Base.astro";
 import { siteConfig } from "../lib/config";
-import { featuredFlight, shownFlights, trackFor } from "../lib/flights";
+import { featuredFlight, ghostsFor, shownFlights, trackFor } from "../lib/flights";
 
 const flights = shownFlights();
 const flight = featuredFlight();
 const track = flight ? trackFor(flight) : [];
+const ghosts = flight ? ghostsFor(flight) : [];
 const title = `${siteConfig.callsign} — live balloon telemetry`;
 ---
 
 {flight
   ? <Base title={title} chrome={false}>
-      <FlightLive flight={flight} track={track} flights={flights} mode="home" />
+      <FlightLive flight={flight} track={track} ghosts={ghosts} flights={flights} mode="home" />
     </Base>
   : <Base title={title}>
       <div class="notice notice-accent">Nothing in the air right now.</div>

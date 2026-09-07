@@ -1,7 +1,9 @@
 # Partial spots: showing a Regular message with no Telemetry
 
-Status: **not built.** Watching it across flights; build if it keeps costing
-us the fixes that matter. Written 2026-08-31 after F1B's first sunset.
+Status: **built 2026-09-07**, as "ghosts": see "What was built" at the end.
+The rest of this note is the analysis it was built from, written
+2026-08-31 after F1B's first sunset, and still the reference for why the
+site draws these the way it does.
 
 ## The shape of the problem
 
@@ -87,7 +89,7 @@ time column is `DateTimeLocal`, not UTC. `docs/decode-status.md` records the
 same trap for its `dtGte`/`dtLte` inputs. A dashboard row reading 17:34 in a
 US-Eastern browser is 21:34 UTC.
 
-## If we build it
+## If we build it (the plan as first written)
 
 Mirror the Traquito model. It is the reference the site is checked against,
 and disagreeing with it silently is a bug by definition.
@@ -135,3 +137,48 @@ cost of waiting is bounded and legible.
 
 If those add up, build it. If partials stay a handful of edge slots per
 flight, the strict both-messages rule is the better default.
+
+## What was built
+
+The Traquito model, with one change of shape: the coarse positions are a
+second list beside the track, not nullable rows inside it.
+
+- `src/lib/types.ts` -- `GhostPoint`: `utc`, `grid4`, `lat`, `lon`,
+  `rx_station_count`. Nothing else, because nothing else is known.
+  `TrackPoint` is untouched.
+- `src/lib/wspr/match.ts` / `tool/picolog/match.py` -- `regularOnlySlots`
+  / `regular_only_slots`: every Regular slot the matcher produced no
+  decodable fix for. The grid square is put to the same distinct-receiver
+  vote as a telemetry payload; a tie skips the slot.
+- `src/lib/wspr/track.ts` -- `decodeWindow` returns `{ track, ghosts }`;
+  `tool/picolog/pipeline.py` writes a `ghosts` table beside `telemetry`,
+  replaced whole on each rebuild so a slot that later completes stops
+  being a ghost. `export_site.py` writes
+  `src/data/tracks/<callsign>-<id>.ghosts.json` next to the track, merged
+  the same way and pruned against the merged track. The browser refresh
+  (`src/lib/livetrack.ts`) does the same merge and prune.
+- `src/lib/ghosts.ts` -- the questions that need both lists: `lastKnown`,
+  `heardBounds`, `trailingGhosts`, and unwrapping a ghost's longitude next
+  to the track's.
+- `src/lib/map.ts`, `src/lib/globe.ts` -- ghosts are small hollow grey
+  rings under the spots, uncoloured by the metric. They never join the
+  line. When ghosts are newer than the last fix, a dashed tail runs from
+  the last fix through them, the beacon moves to the newest, and the grid
+  square it stands for is outlined: the beacon alone would claim 4 km.
+- `src/lib/render.ts`, `FlightLive.astro` -- "last heard" and "flying
+  for" count ghosts as the tracker being heard, and the status card says
+  "position only" when the newest report is one. Every metric card, chart,
+  the table and the speed derivation read the track alone, which is the
+  "statsHtml question" above answered by construction: there is no null to
+  skip.
+
+Why two lists rather than nullable fields: the plan above touched eight
+files "all mechanical apart from the statsHtml question". With a separate
+list the stats, charts, table, range slicing and speed window need no
+change at all, the archive format is unchanged, and a ghost cannot be
+mistaken for a fix anywhere a `TrackPoint` is read.
+
+What the first export found, seeded from wspr.live on 2026-09-07: F1B's
+launch slot at 12:44 and its three FM38 sunset slots from the table above,
+plus one slot ten minutes after what had been its last fix; F2A and F2B
+each ending, that morning, on a ghost.

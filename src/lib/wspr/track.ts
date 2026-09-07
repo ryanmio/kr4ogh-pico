@@ -11,10 +11,12 @@
  * renderer. The Python's internal `speed_knots` is `speed_kt` here, the same
  * rename tool/picolog/export_site.py performs on its way out.
  */
-import type { TrackPoint } from "../types";
+import type { GhostPoint, TrackPoint } from "../types";
 import { channel20m, type Channel } from "./channels";
 import { DecodeError, decodeCallsign, decodeGridPower, maidenheadToLatLon } from "./decode";
-import { fingerprintMatch, MATCHER_NAME, MATCHER_VERSION, type Match } from "./match";
+import {
+  fingerprintMatch, MATCHER_NAME, MATCHER_VERSION, regularOnlySlots, type Match,
+} from "./match";
 import {
   BAND_CODES, fetchSpots, regularSpotsQuery, telemetryCandidatesQuery, type Spot,
 } from "./query";
@@ -59,14 +61,43 @@ export function decodeMatch(m: Match): TrackPoint | null {
   };
 }
 
-/** Decode a whole window of raw spots into track points, oldest first. */
-export function decodeSpots(regularSpots: Spot[], telemetrySpots: Spot[]): TrackPoint[] {
-  const points: TrackPoint[] = [];
-  for (const m of fingerprintMatch(regularSpots, telemetrySpots)) {
+/** Everything one window of raw spots decodes to: the full fixes, and the
+ * slots where only the Regular message was heard. */
+export interface DecodedWindow {
+  track: TrackPoint[];
+  ghosts: GhostPoint[];
+}
+
+/** Decode a whole window of raw spots, both halves oldest first.
+ *
+ * A slot is a ghost when the matcher paired nothing in it, or when it did
+ * and the pair turned out not to be Basic Telemetry: either way the tracker
+ * was heard and its grid square is all that is known. A slot never appears
+ * in both lists. */
+export function decodeWindow(regularSpots: Spot[], telemetrySpots: Spot[]): DecodedWindow {
+  const matches = fingerprintMatch(regularSpots, telemetrySpots);
+  const track: TrackPoint[] = [];
+  const decoded: Match[] = [];
+  for (const m of matches) {
     const p = decodeMatch(m);
-    if (p) points.push(p);
+    if (p) {
+      track.push(p);
+      decoded.push(m);
+    }
   }
-  return points;
+  const ghosts = regularOnlySlots(regularSpots, decoded).map((g) => {
+    const [lat, lon] = maidenheadToLatLon(g.grid4);
+    return {
+      utc: g.slotUtc, grid4: g.grid4, lat, lon, rx_station_count: g.rxStationCount,
+    };
+  });
+  return { track, ghosts };
+}
+
+/** The full fixes alone, for callers that compare against the Python's
+ * telemetry table (dev/verify-port.ts). */
+export function decodeSpots(regularSpots: Spot[], telemetrySpots: Spot[]): TrackPoint[] {
+  return decodeWindow(regularSpots, telemetrySpots).track;
 }
 
 /** Fetch and decode one window straight from wspr.live.
@@ -74,9 +105,9 @@ export function decodeSpots(regularSpots: Spot[], telemetrySpots: Spot[]): Track
  * The two queries are independent, so they go out together: one round trip
  * instead of two, which roughly halves the wait.
  */
-export async function fetchTrack(
+export async function fetchWindow(
   flight: FlightSpec, windowStart: Date, windowEnd: Date, signal?: AbortSignal,
-): Promise<TrackPoint[]> {
+): Promise<DecodedWindow> {
   const band = BAND_CODES[flight.band];
   if (band === undefined) throw new Error(`unsupported band: ${flight.band}`);
   const ch: Channel = channel20m(flight.channel);
@@ -90,13 +121,13 @@ export async function fetchTrack(
       signal,
     ),
   ]);
-  return decodeSpots(regular, telemetry);
+  return decodeWindow(regular, telemetry);
 }
 
 /** Merge newly decoded points into an existing track; the newer decode wins a
  * collision. Used to append a live tail onto the track bundled with the page. */
-export function mergeTrack(base: TrackPoint[], incoming: TrackPoint[]): TrackPoint[] {
-  const byUtc = new Map<string, TrackPoint>();
+export function mergeTrack<P extends { utc: string }>(base: P[], incoming: P[]): P[] {
+  const byUtc = new Map<string, P>();
   for (const p of base) byUtc.set(p.utc, p);
   for (const p of incoming) byUtc.set(p.utc, p);
   return [...byUtc.values()].sort((a, b) => a.utc.localeCompare(b.utc));

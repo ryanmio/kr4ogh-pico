@@ -3,7 +3,9 @@
 The public site reads its flight list from flights.toml and each flight's
 decoded track from
 
-  src/data/tracks/<callsign>-<flight_id>.json    oldest fix first
+  src/data/tracks/<callsign>-<flight_id>.json         oldest fix first
+  src/data/tracks/<callsign>-<flight_id>.ghosts.json  the slots heard
+                                                      without telemetry
 
 The callsign is in the name because a copy of this repository made for
 another callsign keeps whatever tracks were committed here; a flight of
@@ -23,6 +25,10 @@ database holding only the last hour, so writing a track straight from that
 database would delete a long flight's history. Every export therefore reads
 the committed track first and unions it with what the database holds, keyed
 by UTC. That makes the export idempotent and safe to run from any window.
+
+The ghosts file is merged the same way and then pruned against the merged
+track: a slot that was a ghost in one export and a full fix in the next is a
+full fix, and nothing else.
 
 Which flights appear: any flight that is `active` (in the air now), plus any
 flight explicitly marked `status = "closed"` (flown, finished, still worth
@@ -53,6 +59,10 @@ _TRACK_FIELDS = (
 )
 
 
+# The site's GhostPoint shape (src/lib/types.ts).
+_GHOST_FIELDS = ("utc", "grid4", "lat", "lon", "rx_station_count")
+
+
 def _shown(flight: Flight) -> bool:
     return flight.active or flight.status == "closed"
 
@@ -60,6 +70,11 @@ def _shown(flight: Flight) -> bool:
 def track_filename(flight: Flight) -> str:
     """Mirrors src/lib/flights.ts."""
     return f"{flight.callsign}-{flight.flight_id}.json"
+
+
+def ghosts_filename(flight: Flight) -> str:
+    """Mirrors src/lib/flights.ts."""
+    return f"{flight.callsign}-{flight.flight_id}.ghosts.json"
 
 
 
@@ -74,6 +89,19 @@ def _track_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
         point["gps_valid"] = bool(point["gps_valid"])
         out.append(point)
     return out
+
+
+def _ghosts_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
+    rows = conn.execute(
+        f"SELECT {', '.join(_GHOST_FIELDS)} FROM ghosts WHERE flight_id = ? "
+        "ORDER BY utc", (flight_id,)).fetchall()
+    return [dict(zip(_GHOST_FIELDS, row)) for row in rows]
+
+
+def _prune_ghosts(track: list[dict], ghosts: list[dict]) -> list[dict]:
+    """Drop every ghost whose slot has a full fix."""
+    fixed = {p["utc"] for p in track}
+    return [g for g in ghosts if g["utc"] not in fixed]
 
 
 def _merge(existing: list[dict], incoming: list[dict]) -> list[dict]:
@@ -97,7 +125,7 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
     flights = [f for f in load_flights(flights_path) if _shown(f)]
     tracks_dir = Path(site_dir) / "src" / "data" / "tracks"
 
-    keep = {track_filename(f) for f in flights}
+    keep = {track_filename(f) for f in flights} | {ghosts_filename(f) for f in flights}
     for stale in sorted(tracks_dir.glob("*.json")) if tracks_dir.is_dir() else []:
         if stale.name not in keep:
             stale.unlink()
@@ -111,6 +139,15 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
             changed = _write_if_changed(path, merged)
             print(f"{flight.flight_id}: {len(merged)} points "
                   f"(+{len(merged) - len(existing)})"
+                  f"{' updated' if changed else ' unchanged'}")
+
+            gpath = tracks_dir / ghosts_filename(flight)
+            existing = json.loads(gpath.read_text()) if gpath.exists() else []
+            ghosts = _prune_ghosts(
+                merged, _merge(existing, _ghosts_from_db(conn, flight.flight_id)))
+            changed = _write_if_changed(gpath, ghosts)
+            print(f"{flight.flight_id}: {len(ghosts)} heard without telemetry "
+                  f"({len(ghosts) - len(existing):+d})"
                   f"{' updated' if changed else ' unchanged'}")
 
 

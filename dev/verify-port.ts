@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { channel20m } from "../src/lib/wspr/channels";
-import { decodeSpots, MATCHER_NAME, MATCHER_VERSION } from "../src/lib/wspr/track";
+import { decodeWindow, MATCHER_NAME, MATCHER_VERSION } from "../src/lib/wspr/track";
 import type { Spot } from "../src/lib/wspr/query";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -37,8 +37,16 @@ const telemetry = spots.filter((s) =>
   && s.tx_sign[2] === ch.id13[1]
   && Number(s.time.slice(14, 16)) % 10 === ch.telemetryMinute);
 
-const got = decodeSpots(regular, telemetry);
+const { track: got, ghosts } = decodeWindow(regular, telemetry);
 const want = vector.expected_telemetry as Record<string, unknown>[];
+
+// The day's Regular-only slots, as the Python finds them (tool/tests/
+// test_vectors.py holds the same list) and as docs/decode-status.md
+// counted them against the dashboard.
+const WANT_GHOSTS = [
+  { utc: "2026-08-18 04:44:00", grid4: "AN71", rx: 22 },
+  { utc: "2026-08-18 16:54:00", grid4: "BN35", rx: 13 },
+];
 
 // Left side is the site's TrackPoint field, right side the vector's
 // (Python) name. They differ only for speed: the site has always called it
@@ -69,8 +77,14 @@ for (let i = 0; i < Math.min(got.length, want.length); i++) {
   }
 }
 
+const gotGhosts = ghosts.map((g) => ({ utc: g.utc, grid4: g.grid4, rx: g.rx_station_count }));
+if (JSON.stringify(gotGhosts) !== JSON.stringify(WANT_GHOSTS)) {
+  fail(`ghosts: got ${JSON.stringify(gotGhosts)}, want ${JSON.stringify(WANT_GHOSTS)}`);
+}
+
 if (failures === 0) {
-  console.log(`PASS: all ${want.length} rows identical across all ${FIELDS.length} fields`);
+  console.log(`PASS: all ${want.length} rows identical across all ${FIELDS.length} fields, `
+    + `and the ${WANT_GHOSTS.length} slots heard without telemetry`);
   // The matcher identity is a constant on the port, not a per-row field.
   console.log(`       matcher ${MATCHER_NAME} v${MATCHER_VERSION}, `
     + `vector says ${want[0].matcher_name} v${want[0].matcher_version}`);

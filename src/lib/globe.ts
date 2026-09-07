@@ -28,11 +28,12 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 import {
   fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
+import { lastKnown, trailingGhosts, unwrapGhostLons } from "./ghosts";
 import {
   buildWeatherToggle, cloudTiles, enhanceIrTile, rainTiles,
   type WeatherLayer, type WeatherTiles,
 } from "./weather";
-import type { FlightMeta, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 
 /** Infrared tiles come through this scheme: `pico-ir://<satLon>|<url>`.
  * MapLibre substitutes {z}/{y}/{x} into the whole template before the
@@ -124,14 +125,44 @@ function baseStyle(): StyleSpecification {
   };
 }
 
-/** The launch dot, the cased track line and the newest fix, as style
- * sources and layers. Same colours and weights as the flat map, and the
- * same dark casing, for the same reason: over imagery or weather a lone
- * thin grey line vanishes. */
+/** Every position the globe draws, unwrapped, with the balloon last. */
+interface Positions {
+  lons: number[];
+  ghostLons: number[];
+  /** Where the balloon was last heard, or null with nothing to show. */
+  here: { lon: number; lat: number; coarse: boolean } | null;
+  /** All latitudes and longitudes, balloon last: fitRegion's contract. */
+  fitLats: number[];
+  fitLons: number[];
+}
+
+function positions(track: TrackPoint[], ghosts: GhostPoint[]): Positions {
+  const lons = unwrapLons(track);
+  const ghostLons = unwrapGhostLons(track, lons, ghosts);
+  const known = lastKnown(track, ghosts);
+  const tail = trailingGhosts(track, ghosts);
+  const here = !known ? null : known.coarse
+    ? { lon: ghostLons[ghostLons.length - 1]!, lat: known.lat, coarse: true }
+    : { lon: lons[lons.length - 1]!, lat: known.lat, coarse: false };
+  // Whichever kind of report is newest goes last; the other list first.
+  const pts = tail.length
+    ? [...track.map((p, i) => [p.lat, lons[i]!]), ...ghosts.map((g, i) => [g.lat, ghostLons[i]!])]
+    : [...ghosts.map((g, i) => [g.lat, ghostLons[i]!]), ...track.map((p, i) => [p.lat, lons[i]!])];
+  return {
+    lons, ghostLons, here,
+    fitLats: pts.map((p) => p[0]!), fitLons: pts.map((p) => p[1]!),
+  };
+}
+
+/** The launch dot, the cased track line, the ghosts with their dashed
+ * tail, and the newest report, as style sources and layers. Same colours
+ * and weights as the flat map, and the same dark casing, for the same
+ * reason: over imagery or weather a lone thin grey line vanishes. */
 function addTrack(
   style: StyleSpecification, meta: FlightMeta, track: TrackPoint[],
-  lons: number[],
+  ghosts: GhostPoint[], pos: Positions,
 ): void {
+  const { lons, ghostLons, here } = pos;
   if (meta.launch_lat != null && meta.launch_lon != null) {
     style.sources.launch = {
       type: "geojson",
@@ -148,42 +179,121 @@ function addTrack(
       },
     });
   }
-  if (!track.length) return;
-  style.sources.flight = {
-    type: "geojson",
-    data: {
-      type: "Feature", properties: {},
-      geometry: {
-        type: "LineString",
-        coordinates: track.map((p, i) => [lons[i]!, p.lat]),
+  if (!here) return;
+  if (ghosts.length) {
+    // Hollow and dim, under the track, as on the flat map.
+    style.sources.ghosts = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: {
+          type: "MultiPoint",
+          coordinates: ghosts.map((g, i) => [ghostLons[i]!, g.lat]),
+        },
       },
-    },
-  };
+    };
+    style.layers.push({
+      id: "ghosts", type: "circle", source: "ghosts",
+      paint: {
+        "circle-radius": 3.5, "circle-color": "#0b1020", "circle-opacity": 0.45,
+        "circle-stroke-color": "#e2e8f0", "circle-stroke-width": 1.2,
+        "circle-stroke-opacity": 0.8,
+      },
+    });
+  }
+  if (track.length) {
+    style.sources.flight = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: track.map((p, i) => [lons[i]!, p.lat]),
+        },
+      },
+    };
+    style.layers.push(
+      { id: "track-casing", type: "line", source: "flight",
+        paint: { "line-color": "#0b1020", "line-width": 7, "line-opacity": 0.5 } },
+      { id: "track", type: "line", source: "flight",
+        paint: { "line-color": "#e2e8f0", "line-width": 2.6, "line-opacity": 0.9 } },
+    );
+  }
+  // The dashed tail from the last fix out along the ghosts heard since,
+  // for the reason the flat map gives: a square is not a fix.
+  const tail = trailingGhosts(track, ghosts);
+  if (tail.length) {
+    const from = ghosts.length - tail.length;
+    const coords = [
+      ...(track.length ? [[lons[lons.length - 1]!, track[track.length - 1]!.lat]] : []),
+      ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
+    ];
+    style.sources.tail = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: { type: "LineString", coordinates: coords },
+      },
+    };
+    style.layers.push(
+      { id: "tail-casing", type: "line", source: "tail",
+        paint: { "line-color": "#0b1020", "line-width": 6, "line-opacity": 0.4 } },
+      { id: "tail", type: "line", source: "tail",
+        paint: {
+          "line-color": "#e2e8f0", "line-width": 2, "line-opacity": 0.8,
+          "line-dasharray": [2, 3.5],
+        } },
+    );
+  }
+  if (here.coarse) {
+    // The square the balloon is somewhere in.
+    style.sources.square = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [here.lon - 1, here.lat - 0.5], [here.lon + 1, here.lat - 0.5],
+            [here.lon + 1, here.lat + 0.5], [here.lon - 1, here.lat + 0.5],
+            [here.lon - 1, here.lat - 0.5],
+          ],
+        },
+      },
+    };
+    style.layers.push({
+      id: "square", type: "line", source: "square",
+      paint: {
+        "line-color": "#e2e8f0", "line-width": 1, "line-opacity": 0.5,
+        "line-dasharray": [2, 3],
+      },
+    });
+  }
   style.sources.here = {
     type: "geojson",
     data: {
       type: "Feature", properties: {},
-      geometry: {
-        type: "Point",
-        coordinates: [lons[lons.length - 1]!, track[track.length - 1]!.lat],
-      },
+      geometry: { type: "Point", coordinates: [here.lon, here.lat] },
     },
   };
-  style.layers.push(
-    { id: "track-casing", type: "line", source: "flight",
-      paint: { "line-color": "#0b1020", "line-width": 7, "line-opacity": 0.5 } },
-    { id: "track", type: "line", source: "flight",
-      paint: { "line-color": "#e2e8f0", "line-width": 2.6, "line-opacity": 0.9 } },
-    // A solid dot for the newest fix; the pulsing ring rides on top as a
-    // DOM marker, since only the DOM can animate. Unlike the flat map there
-    // is no metric-coloured point underneath to keep visible, so the dot is
-    // filled with the track's own colour.
-    { id: "here", type: "circle", source: "here",
-      paint: {
+  // A solid dot for the newest report; the pulsing ring rides on top as a
+  // DOM marker, since only the DOM can animate. Unlike the flat map there
+  // is no metric-coloured point underneath to keep visible, so the dot is
+  // filled with the track's own colour -- or, on a ghost, drawn as the
+  // ghost it is, hollow and at a spot's size.
+  style.layers.push({
+    id: "here", type: "circle", source: "here",
+    paint: here.coarse
+      ? {
+        "circle-radius": 6, "circle-color": "#0b1020", "circle-opacity": 0.45,
+        "circle-stroke-color": "#e2e8f0", "circle-stroke-width": 1.2,
+        "circle-stroke-opacity": 0.8,
+      }
+      : {
         "circle-radius": 6, "circle-color": "#e2e8f0",
         "circle-stroke-color": "#0b1020", "circle-stroke-width": 1.5,
-      } },
-  );
+      },
+  });
 }
 
 /** Open on the flat map's framing: the whole track plus room around the
@@ -191,10 +301,9 @@ function addTrack(
  * cannot be fitted -- the fit is the planet -- so stand back and put the
  * balloon in the middle of the face instead. */
 function aimCamera(
-  map: MapGL, meta: FlightMeta, track: TrackPoint[],
-  lons: number[], overlaid: boolean,
+  map: MapGL, meta: FlightMeta, pos: Positions, overlaid: boolean,
 ): void {
-  if (!track.length) {
+  if (!pos.here) {
     if (meta.launch_lat != null && meta.launch_lon != null) {
       map.jumpTo({ center: [meta.launch_lon, meta.launch_lat], zoom: 4 });
     } else {
@@ -202,12 +311,9 @@ function aimCamera(
     }
     return;
   }
-  const r = fitRegion(track.map((p) => p.lat), lons);
+  const r = fitRegion(pos.fitLats, pos.fitLons);
   if (r.east - r.west >= 300) {
-    map.jumpTo({
-      center: [lons[lons.length - 1]!, track[track.length - 1]!.lat],
-      zoom: 1.3,
-    });
+    map.jumpTo({ center: [pos.here.lon, pos.here.lat], zoom: 1.3 });
     return;
   }
   map.fitBounds(
@@ -242,6 +348,8 @@ export interface GlobeOpts {
    * leaves them room. */
   overlaid?: boolean;
   weather?: GlobeWeather;
+  /** Slots heard without telemetry, drawn as ghosts beside the track. */
+  ghosts?: GhostPoint[];
 }
 
 export interface GlobeHandle {
@@ -313,7 +421,7 @@ function addGlobeWeather(map: MapGL, opts: GlobeWeather): void {
       maxzoom: t.maxNativeZoom, attribution: t.attribution,
     });
     // Over the labels, under the track -- the flat map's stacking.
-    const beforeId = ["launch", "track-casing"]
+    const beforeId = ["launch", "ghosts", "track-casing", "tail-casing", "here"]
       .find((id) => map.getLayer(id));
     map.addLayer(
       { id: WEATHER_ID, type: "raster", source: WEATHER_ID,
@@ -332,9 +440,10 @@ export function renderGlobe(
   opts: GlobeOpts = {},
 ): GlobeHandle {
   el.classList.add("fv-map-fill", "fv-globe");
-  const lons = unwrapLons(track);
+  const ghosts = opts.ghosts ?? [];
+  const pos = positions(track, ghosts);
   const style = baseStyle();
-  addTrack(style, meta, track, lons);
+  addTrack(style, meta, track, ghosts, pos);
 
   const map = new MapGL({
     container: el,
@@ -347,16 +456,16 @@ export function renderGlobe(
   map.addControl(
     new NavigationControl({ showCompass: false }), "top-right");
 
-  aimCamera(map, meta, track, lons, !!opts.overlaid);
+  aimCamera(map, meta, pos, !!opts.overlaid);
 
-  if (track.length) {
+  if (pos.here) {
     // The pulsing "you are here", same CSS as the flat map's.
     const icon = document.createElement("div");
     icon.className = "last-pos-icon";
     icon.style.width = icon.style.height = "22px";
     icon.innerHTML = '<span class="last-pos-pulse"></span>';
     new Marker({ element: icon })
-      .setLngLat([lons[lons.length - 1]!, track[track.length - 1]!.lat])
+      .setLngLat([pos.here.lon, pos.here.lat])
       .addTo(map);
   }
 

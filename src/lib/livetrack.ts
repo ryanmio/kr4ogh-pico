@@ -10,9 +10,10 @@
  * was last updated. Nothing here can leave the page emptier than it started.
  */
 import { parseUtc } from "./format";
+import { pruneGhosts } from "./ghosts";
 import { resolveTrackSpeeds } from "./speed";
-import { fetchTrack, mergeTrack, type FlightSpec } from "./wspr/track";
-import type { TrackPoint } from "./types";
+import { fetchWindow, mergeTrack, type FlightSpec } from "./wspr/track";
+import type { GhostPoint, TrackPoint } from "./types";
 
 /** What the refresh needs to know about a flight: the channel to query,
  * and the window it flew in. The window matters when two flights share a
@@ -46,16 +47,22 @@ const OVERLAP_MS = 20 * 60 * 1000;
 
 export interface LiveTrackResult {
   track: TrackPoint[];
-  /** Points that were not in the bundled track. */
+  /** The slots heard without telemetry, brought up to date the same way. */
+  ghosts: GhostPoint[];
+  /** Reports, of either kind, that were not in the bundled data. */
   added: number;
   /** Null when the update succeeded; the failure otherwise. */
   error: Error | null;
 }
 
 export async function refreshTrack(
-  flight: LiveFlight, bundled: TrackPoint[], signal?: AbortSignal,
+  flight: LiveFlight, bundled: TrackPoint[], bundledGhosts: GhostPoint[] = [],
+  signal?: AbortSignal,
 ): Promise<LiveTrackResult> {
   const now = new Date();
+  // The window opens at the last full fix even when ghosts are newer: a
+  // ghost's slot is one the slower stations may yet complete, so it is
+  // asked about again until a fix lands there.
   const last = bundled.at(-1);
   const lastMs = last ? Date.parse(last.utc.replace(" ", "T") + "Z") : NaN;
   let fromMs = Number.isFinite(lastMs)
@@ -68,22 +75,32 @@ export async function refreshTrack(
   // lies outside is another flight.
   if (flight.launch_utc) fromMs = Math.max(fromMs, parseUtc(flight.launch_utc).getTime());
   if (flight.end_utc) toMs = Math.min(toMs, parseUtc(flight.end_utc).getTime());
-  if (toMs <= fromMs) return { track: bundled, added: 0, error: null };
+  if (toMs <= fromMs) {
+    return { track: bundled, ghosts: bundledGhosts, added: 0, error: null };
+  }
 
   try {
-    const fresh = await fetchTrack(flight, new Date(fromMs), new Date(toMs), signal);
+    const fresh = await fetchWindow(flight, new Date(fromMs), new Date(toMs), signal);
     const known = new Set(bundled.map((p) => p.utc));
+    const knownGhosts = new Set(bundledGhosts.map((g) => g.utc));
+    // Re-derived over the whole merged track, not just the tail: a
+    // saturated fix at the old end had no fixes after it to measure
+    // against, and now it does. See lib/speed.ts.
+    const track = resolveTrackSpeeds(mergeTrack(bundled, fresh.track));
     return {
-      // Re-derived over the whole merged track, not just the tail: a
-      // saturated fix at the old end had no fixes after it to measure
-      // against, and now it does. See lib/speed.ts.
-      track: resolveTrackSpeeds(mergeTrack(bundled, fresh)),
-      added: fresh.filter((p) => !known.has(p.utc)).length,
+      track,
+      // A bundled ghost whose slot has since completed is dropped, and so
+      // is a fresh ghost from a slot the bundled track already has a fix
+      // for: the window overlaps the bundled end on purpose.
+      ghosts: pruneGhosts(track, mergeTrack(bundledGhosts, fresh.ghosts)),
+      added: fresh.track.filter((p) => !known.has(p.utc)).length
+        + fresh.ghosts.filter((g) => !knownGhosts.has(g.utc) && !known.has(g.utc)).length,
       error: null,
     };
   } catch (err) {
     return {
       track: bundled,
+      ghosts: bundledGhosts,
       added: 0,
       error: err instanceof Error ? err : new Error(String(err)),
     };

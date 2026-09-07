@@ -13,7 +13,7 @@ from .config import Flight
 from .decode import decode_callsign, decode_grid_power, maidenhead_to_latlon
 from .match import NAME as MATCHER_NAME
 from .match import VERSION as MATCHER_VERSION
-from .match import Match, fingerprint_match
+from .match import Match, RegularOnly, fingerprint_match, regular_only_slots
 from .store import Store
 from .wsprlive import fetch_spots, regular_spots_query, telemetry_candidates_query
 
@@ -45,7 +45,9 @@ def pull_flight_window(store: Store, flight: Flight,
 
 def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
     """Match and decode every stored spot for one flight, overwriting its
-    derived records. Returns the number of records written."""
+    derived records: the telemetry table, and beside it the ghosts, the
+    slots heard without telemetry. Returns the number of telemetry records
+    written."""
     channel = channel_table_20m()[flight.channel]
 
     # Only spots from the flight's own span, launch_utc to end_utc: the store
@@ -72,12 +74,34 @@ def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
                              flight.band_code, channel.telemetry_minute, *tel_params))
 
     records = []
+    decoded = []
     for m in fingerprint_match(regulars, candidates):
         record = _decode_match(flight, m)
         if record is not None:
             records.append(record)
+            decoded.append(m)
     store.upsert_telemetry(records)
+    # A slot is a ghost when nothing paired in it, or when the pair was not
+    # Basic Telemetry: the tracker was heard either way, and the grid square
+    # is all that is known. Mirrors src/lib/wspr/track.py's decodeWindow.
+    store.replace_ghosts(flight.flight_id, [
+        _ghost_record(flight, g)
+        for g in regular_only_slots(regulars, decoded)])
     return len(records)
+
+
+def _ghost_record(flight: Flight, g: RegularOnly) -> dict:
+    lat, lon = maidenhead_to_latlon(g.grid4)
+    return {
+        "flight_id": flight.flight_id,
+        "utc": g.slot_utc,
+        "grid4": g.grid4,
+        "lat": lat,
+        "lon": lon,
+        "rx_station_count": g.rx_station_count,
+        "matcher_name": MATCHER_NAME,
+        "matcher_version": MATCHER_VERSION,
+    }
 
 
 def _decode_match(flight: Flight, m: Match) -> dict | None:

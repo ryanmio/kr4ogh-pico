@@ -4,17 +4,19 @@
  * permalink for a particular one, closed flights included. */
 import FlightLive from "../../components/FlightLive.astro";
 import Base from "../../layouts/Base.astro";
-import { shownFlights, trackFor } from "../../lib/flights";
-import type { FlightMeta, TrackPoint } from "../../lib/types";
+import { ghostsFor, shownFlights, trackFor } from "../../lib/flights";
+import type { FlightMeta, GhostPoint, TrackPoint } from "../../lib/types";
 
 export async function getStaticPaths() {
   return shownFlights().map((flight) => ({
     params: { id: flight.flight_id },
-    props: { flight, track: trackFor(flight) },
+    props: { flight, track: trackFor(flight), ghosts: ghostsFor(flight) },
   }));
 }
 
-const { flight, track } = Astro.props as { flight: FlightMeta; track: TrackPoint[] };
+const { flight, track, ghosts } = Astro.props as {
+  flight: FlightMeta; track: TrackPoint[]; ghosts: GhostPoint[];
+};
 const what = flight.status === "closed" ? "balloon flight" : "live balloon telemetry";
 ---
 
@@ -23,5 +25,5 @@ const what = flight.status === "closed" ? "balloon flight" : "live balloon telem
   description={`Telemetry for ${flight.callsign} flight ${flight.flight_id}.`}
   chrome={false}
 >
-  <FlightLive flight={flight} track={track} flights={shownFlights()} mode="permalink" />
+  <FlightLive flight={flight} track={track} ghosts={ghosts} flights={shownFlights()} mode="permalink" />
 </Base>

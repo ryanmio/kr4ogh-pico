@@ -8,7 +8,9 @@ callsign.
 ## How a live flight reaches the page
 
 1. **Bundled track, instant.** `flights.toml` names the flights and
-   `src/data/tracks/<callsign>-<flight_id>.json` holds each one's track; both are in
+   `src/data/tracks/<callsign>-<flight_id>.json` holds each one's track, with
+   `<callsign>-<flight_id>.ghosts.json` beside it for the slots heard without
+   telemetry (`docs/partial-spots.md`); all are in
    git and read at build time (`src/lib/config.ts`, `src/lib/flights.ts`),
    so the stats are in the HTML and the page has its numbers before any
    network round trip.

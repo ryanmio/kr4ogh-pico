@@ -43,6 +43,24 @@ def test_full_pipeline_reproduces_verified_day(vector, tmp_path_factory):
     store.close()
 
 
+def test_regular_only_slots_become_ghosts(vector, tmp_path_factory):
+    # The day's Regular-only slots, which docs/decode-status.md counted
+    # against the dashboard. dev/verify-port.ts holds the same list.
+    store = Store(tmp_path_factory.mktemp("db") / "vector.db")
+    store.insert_spots(vector["raw_spots"])
+    rebuild_flight_telemetry(store, Flight(**vector["flight"]))
+    rows = store.conn.execute(
+        "SELECT utc, grid4, lat, lon, rx_station_count FROM ghosts ORDER BY utc"
+    ).fetchall()
+    assert rows == [
+        ("2026-08-18 04:44:00", "AN71", 41.5, -165.0, 22),
+        ("2026-08-18 16:54:00", "BN35", 45.5, -153.0, 13),
+    ]
+    fixed = {r[0] for r in store.conn.execute("SELECT utc FROM telemetry")}
+    assert not fixed & {r[0] for r in rows}
+    store.close()
+
+
 def test_rebuild_is_idempotent(vector, tmp_path_factory):
     store = Store(tmp_path_factory.mktemp("db") / "vector.db")
     store.insert_spots(vector["raw_spots"])

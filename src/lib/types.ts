@@ -26,6 +26,20 @@ export interface TrackPoint {
   rx_station_count: number;
 }
 
+/** A slot where only the Regular message was heard: the callsign, a 4-char
+ * grid square and the power, but no Telemetry message any station could pair
+ * with it. The position is the centre of a 1 deg x 2 deg box, so it is known
+ * to about 80 km rather than 4, and nothing else about the fix is known at
+ * all. The map draws these as ghosts beside the track; they never join the
+ * line and never feed the stats. See docs/partial-spots.md. */
+export interface GhostPoint {
+  utc: string;
+  grid4: string;
+  lat: number;
+  lon: number;
+  rx_station_count: number;
+}
+
 export interface FlightMeta {
   flight_id: string;
   callsign: string;

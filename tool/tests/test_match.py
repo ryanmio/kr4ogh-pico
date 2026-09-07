@@ -79,3 +79,33 @@ def test_duplicate_reports_from_one_station_count_once():
     matches = fingerprint_match([reg("A1AA", 14097060)], tels)
     assert len(matches) == 1
     assert matches[0].rx_station_count == 1
+
+
+# ---------- Regular-only slots ----------
+
+from picolog.match import regular_only_slots  # noqa: E402
+
+LATER = "2025-06-01 10:10:00"
+
+
+def test_unmatched_regular_slot_becomes_a_ghost():
+    regs = [reg("K1ABC", 14097061), reg("W9XYZ", 14097070),
+            reg("K1ABC", 14097061, time=LATER)]
+    matches = fingerprint_match(regs, [tel("K1ABC", 14097063)])
+    ghosts = regular_only_slots(regs, matches)
+    assert [(g.slot_utc, g.grid4, g.rx_station_count) for g in ghosts] == [
+        (LATER, "FN41", 1)]
+
+
+def test_ghost_counts_distinct_stations_and_normalises_the_square():
+    regs = [reg("K1ABC", 14097061), reg("K1ABC", 14097061),
+            {**reg("W9XYZ", 14097070), "tx_loc": "fn41"}]
+    ghosts = regular_only_slots(regs, [])
+    assert [(g.grid4, g.rx_station_count) for g in ghosts] == [("FN41", 2)]
+
+
+def test_ghost_square_is_put_to_a_vote():
+    regs = [reg("A", 1), reg("B", 1), {**reg("C", 1), "tx_loc": "FN42"}]
+    assert [g.grid4 for g in regular_only_slots(regs, [])] == ["FN41"]
+    tied = [reg("A", 1), {**reg("C", 1), "tx_loc": "FN42"}]
+    assert regular_only_slots(tied, []) == []

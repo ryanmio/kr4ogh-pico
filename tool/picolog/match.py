@@ -90,3 +90,43 @@ def fingerprint_match(regular_spots: list[dict], telemetry_spots: list[dict],
 def _plus_two_minutes(slot: str) -> str:
     t = datetime.fromisoformat(slot)
     return (t + timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+@dataclass(frozen=True)
+class RegularOnly:
+    slot_utc: str
+    grid4: str  # the square every confirming station reported, upper-cased
+    rx_station_count: int
+
+
+def regular_only_slots(regular_spots: list[dict],
+                       matches: list[Match]) -> list[RegularOnly]:
+    """The Regular slots that paired with nothing: no station heard both
+    messages, nothing telemetry-shaped arrived at all, or the candidates
+    tied. The tracker was heard in each of them, and its grid square with it.
+
+    Stations disagree about the square now and then (a false decode of one
+    letter), so the square is put to the same vote as a telemetry payload,
+    counted by distinct receiver, and a tie skips the slot rather than
+    guessing. Ported to src/lib/wspr/match.ts as regularOnlySlots.
+    """
+    matched = {m.slot_utc for m in matches}
+    by_slot: dict[str, dict[str, set]] = {}
+    for spot in regular_spots:
+        if spot["time"] in matched:
+            continue
+        grid4 = (spot["tx_loc"] or "")[:4].upper()
+        if len(grid4) != 4:
+            continue
+        by_slot.setdefault(spot["time"], {}).setdefault(grid4, set()).add(
+            spot["rx_sign"])
+    out = []
+    for slot, by_grid in sorted(by_slot.items()):
+        votes = Counter({grid4: len(rxs) for grid4, rxs in by_grid.items()})
+        ranked = votes.most_common(2)
+        if len(ranked) == 2 and ranked[0][1] == ranked[1][1]:
+            continue
+        grid4, count = ranked[0]
+        out.append(RegularOnly(slot_utc=slot, grid4=grid4,
+                               rx_station_count=count))
+    return out
