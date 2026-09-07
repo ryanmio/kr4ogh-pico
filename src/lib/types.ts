@@ -62,6 +62,14 @@ export interface FlightMeta {
   tracker?: Record<string, string>;
 }
 
+/** Another flight drawn on the same map for comparison (lib/overlay.ts):
+ * its track and ghosts, and the flight it is, for the name on its beacon. */
+export interface OverlayTrack {
+  meta: FlightMeta;
+  track: TrackPoint[];
+  ghosts: GhostPoint[];
+}
+
 /** The [site] table of flights.toml, with the deploy-time fallbacks
  * resolved (lib/config.ts). */
 export interface SiteConfig {

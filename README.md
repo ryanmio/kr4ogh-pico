@@ -67,7 +67,9 @@ press the pencil, commit.
   of them: `featured = "F2B"` in the `[site]` table picks it, otherwise the
   live flight that launched first. `/?feature=<flight_id>` shows another,
   the **Next flight** button walks them, and every flight also has its own
-  address at `/live/<flight_id>/`.
+  address at `/live/<flight_id>/`. To see two at once, the **All flights**
+  button draws the others' tracks on the same map (`?overlay=all`, or
+  `?overlay=F2A` for a particular one).
 - **The track stays fresh by itself.** A daily workflow refreshes the
   committed track; the browser fetches anything newer on every visit. If
   the workflow ever stops (GitHub pauses scheduled workflows in a repository

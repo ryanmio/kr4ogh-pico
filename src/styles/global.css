@@ -402,6 +402,25 @@ main { padding: 2.2rem 0 3.5rem; }
   border: 2px solid rgba(226, 232, 240, 0.9);
   animation: pulse-ring 1.8s ease-out infinite;
 }
+/* An overlaid flight's beacon: the same ring in the overlay's own grey, so
+   the featured flight's white one stays the one that means "this flight". */
+.last-pos-pulse-overlay {
+  border-color: rgba(148, 163, 184, 0.9);
+  animation-name: pulse-ring-overlay;
+}
+@keyframes pulse-ring-overlay {
+  0% { box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.5); }
+  100% { box-shadow: 0 0 0 12px rgba(148, 163, 184, 0); }
+}
+/* The flight id beside an overlaid beacon, on both renderers. */
+.overlay-label {
+  font-family: var(--mono); font-size: 0.66rem; font-weight: 600;
+  color: #cbd5e1; background: rgba(11, 16, 32, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.4); border-radius: 4px;
+  padding: 0.1rem 0.35rem; white-space: nowrap;
+  box-shadow: none;
+}
+.leaflet-tooltip.overlay-label::before { display: none; }
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(226, 232, 240, 0.5); }
   100% { box-shadow: 0 0 0 12px rgba(226, 232, 240, 0); }
@@ -829,6 +848,9 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 /* The "Next flight" chip is a link, not a button, so it opens in a new tab
  * like any other link, but it dresses like its neighbours. */
 a.fv-chip { text-decoration: none; }
+.fv-chip[aria-pressed="true"] {
+  color: var(--accent); background: rgba(148, 163, 184, 0.18);
+}
 .fv-updated {
   display: block;
   font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint);

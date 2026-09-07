@@ -96,6 +96,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         <button type="button" class="fv-chip" data-panel="about">About</button>
         <a class="fv-chip" id="next-flight" href={nextHref} hidden={flights.length < 2}
           title={`${after!.callsign} ${after!.flight_id}`}>Next flight &rsaquo;</a>
+        <button type="button" class="fv-chip" id="overlay-toggle" hidden={flights.length < 2}
+          aria-pressed="false" title="Draw the other flights on this map too">All flights</button>
         <button class="linklike" id="refresh" type="button" hidden={ended}>Check now</button>
       </div>
       <span class="fv-updated" id="updated">
@@ -136,13 +138,18 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
+  import {
+    overlaysFromSearch, resolveOverlays, urlWithOverlays, type OverlayChoice,
+  } from "../lib/overlay";
   import { sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
   import {
     groundSpeedKt, hasSaturatedSpeed, resolveTrackSpeeds, speedText,
     SPEED_CEILING_KT,
   } from "../lib/speed";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
-  import type { FlightMeta, GhostPoint, SiteConfig, TrackPoint } from "../lib/types";
+  import type {
+    FlightMeta, GhostPoint, OverlayTrack, SiteConfig, TrackPoint,
+  } from "../lib/types";
   import {
     panelFromSearch, urlWithPanel, type PanelKind,
   } from "../lib/panel";
@@ -202,7 +209,13 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const updatedEl = root.querySelector<HTMLElement>("#updated")!;
     const refreshBtn = root.querySelector<HTMLButtonElement>("#refresh")!;
     const nextLink = root.querySelector<HTMLAnchorElement>("#next-flight")!;
+    const overlayBtn = root.querySelector<HTMLButtonElement>("#overlay-toggle")!;
     const REFRESH_MS = 2 * 60 * 1000;
+    // Other flights on the same map (lib/overlay.ts): what the address
+    // asked for, and the tracks fetched for it. Context only: they never
+    // reach the cards or the panel.
+    let overlayChoice: OverlayChoice | null = overlaysFromSearch(location.search);
+    let overlays: OverlayTrack[] = [];
 
     // ---------- which flight ----------
 
@@ -234,6 +247,62 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         // The live refresh can still find the flight from launch; a closed
         // flight will say it has no positions, which is at least honest.
       }
+    }
+
+    /** The committed track and ghosts of another flight, for overlaying.
+     * A fetch that fails leaves an empty overlay rather than no overlay,
+     * so a live one can still be found from launch by the refresh. */
+    async function fetchOverlay(f: FlightMeta): Promise<OverlayTrack> {
+      const at = (name: string) =>
+        fetch(withBase(`/live/${encodeURIComponent(f.flight_id)}/${name}`));
+      try {
+        const [t, g] = await Promise.all([at("track.json"), at("ghosts.json")]);
+        return {
+          meta: f,
+          track: t.ok ? resolveTrackSpeeds(await t.json() as TrackPoint[]) : [],
+          ghosts: g.ok ? await g.json() as GhostPoint[] : [],
+        };
+      } catch {
+        return { meta: f, track: [], ghosts: [] };
+      }
+    }
+
+    /** Bring `overlays` in line with the choice: keep the ones already
+     * loaded, fetch the rest, drop the ones no longer asked for -- and
+     * never this flight itself, which the choice may name after a "Next
+     * flight" press. */
+    async function loadOverlays() {
+      const ids = resolveOverlays(
+        overlayChoice, meta.flight_id, flights.map((f) => f.flight_id));
+      const have = new Map(overlays.map((o) => [o.meta.flight_id, o]));
+      overlays = await Promise.all(ids.map((id) =>
+        have.get(id) ?? fetchOverlay(flights.find((f) => f.flight_id === id)!)));
+      paintOverlayToggle();
+    }
+
+    /** Ask wspr.live for the live overlays' newest reports, alongside the
+     * refresh of the flight itself. Returns how many arrived. */
+    async function refreshOverlays(): Promise<number> {
+      const counts = await Promise.all(overlays.map(async (o) => {
+        if (o.meta.status === "closed") return 0;
+        const r = await refreshTrack(o.meta, o.track, o.ghosts);
+        if (r.error) return 0;
+        o.track = r.track;
+        o.ghosts = r.ghosts;
+        return r.added;
+      }));
+      return counts.reduce((a, b) => a + b, 0);
+    }
+
+    /** The chip: lit while other flights are on the map, named for the one
+     * other flight when there is only one. */
+    function paintOverlayToggle() {
+      const others = flights.filter((f) => f.flight_id !== meta.flight_id);
+      overlayBtn.hidden = others.length === 0;
+      overlayBtn.setAttribute("aria-pressed", String(overlays.length > 0));
+      overlayBtn.textContent = others.length === 1
+        ? `Show ${others[0]!.flight_id}`
+        : "All flights";
     }
 
     /** Aim the "Next flight" link at the flight after this one, carrying
@@ -338,7 +407,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
-            ghosts,
+            ghosts, overlays,
             overlaid: wide && mapSlot.clientWidth >= 900,
             ...(ended() ? {} : {
               weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
@@ -354,7 +423,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         }
       }
       const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, ghosts, sizing: "fill",
+        units, metric, ghosts, overlays, sizing: "fill",
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return;
@@ -854,17 +923,25 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     async function update() {
       if (ended()) {
-        // Nothing to ask: the committed track is the whole flight.
-        await drawFirst();
-        renderSidebar();
-        renderPanel();
+        // Nothing to ask about this flight: the committed track is the
+        // whole of it. A live flight overlaid on it still moves.
+        const overlayAdded = await refreshOverlays();
+        if (firstPaint) {
+          await drawFirst();
+          renderSidebar();
+          renderPanel();
+        } else if (overlayAdded > 0) {
+          drawMapAgain();
+        }
         updatedEl.textContent = lastKnown(track, ghosts)
           ? newestText("Flight ended · last")
           : "No positions recorded";
         return;
       }
       refreshBtn.disabled = true;
-      const result = await refreshTrack(meta, track, ghosts);
+      const [result, overlayAdded] = await Promise.all([
+        refreshTrack(meta, track, ghosts), refreshOverlays(),
+      ]);
       refreshBtn.disabled = false;
       if (result.error) {
         // The bundled track is all there is; show it rather than a spinner
@@ -882,7 +959,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         await drawFirst();
         renderSidebar();
         renderPanel();
-      } else if (result.added > 0) {
+      } else if (result.added > 0 || overlayAdded > 0) {
         drawMapAgain();
         renderSidebar();
         renderPanel();
@@ -894,16 +971,29 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     refreshBtn.addEventListener("click", update);
 
+    overlayBtn.addEventListener("click", async () => {
+      // Either every other flight is on the map or none is; a link can
+      // name particular ones, the button does not need to.
+      overlayChoice = overlays.length ? null : "all";
+      pinInUrl(urlWithOverlays(location.href, overlayChoice));
+      await loadOverlays();
+      // Adding a flight is a reason to see it: the view refits unless the
+      // reader has already taken hold of the map.
+      drawMapAgain();
+    });
+
+    // The overlays' committed tracks come first, so the opening draw has
+    // them; the timer then runs whatever the flight's own state, because
+    // a closed flight can carry a live one on its map.
+    await loadOverlays();
     update();
-    if (!ended()) {
-      // If wspr.live hangs rather than failing, the bundled track appears
-      // anyway; a late answer then lands through the normal refresh path.
-      setTimeout(() => void drawFirst(), 6000);
-      setInterval(update, REFRESH_MS);
-      // A phone that has been asleep should catch up the moment it is looked at.
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") update();
-      });
-    }
+    // If wspr.live hangs rather than failing, the bundled track appears
+    // anyway; a late answer then lands through the normal refresh path.
+    setTimeout(() => void drawFirst(), 6000);
+    setInterval(update, REFRESH_MS);
+    // A phone that has been asleep should catch up the moment it is looked at.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") update();
+    });
   }
 </script>

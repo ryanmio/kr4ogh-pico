@@ -33,7 +33,7 @@ import {
   buildWeatherToggle, cloudTiles, enhanceIrTile, rainTiles,
   type WeatherLayer, type WeatherTiles,
 } from "./weather";
-import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, OverlayTrack, TrackPoint } from "./types";
 
 /** Infrared tiles come through this scheme: `pico-ir://<satLon>|<url>`.
  * MapLibre substitutes {z}/{y}/{x} into the whole template before the
@@ -296,6 +296,74 @@ function addTrack(
   });
 }
 
+/** Another flight's line and dashed tail in the overlay grey, under the
+ * featured flight's layers. Its beacon is a DOM marker, added by the
+ * caller, since only the DOM animates. */
+function addOverlay(
+  style: StyleSpecification, o: OverlayTrack, pos: Positions, n: number,
+): void {
+  const { lons, ghostLons, here } = pos;
+  if (!here) return;
+  if (o.track.length) {
+    style.sources[`overlay-${n}`] = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: o.track.map((p, i) => [lons[i]!, p.lat]),
+        },
+      },
+    };
+    style.layers.push(
+      { id: `overlay-${n}-casing`, type: "line", source: `overlay-${n}`,
+        paint: { "line-color": "#0b1020", "line-width": 5, "line-opacity": 0.35 } },
+      { id: `overlay-${n}`, type: "line", source: `overlay-${n}`,
+        paint: { "line-color": OVERLAY_COLOR, "line-width": 2, "line-opacity": 0.75 } },
+    );
+  }
+  const tail = trailingGhosts(o.track, o.ghosts);
+  if (tail.length) {
+    const from = o.ghosts.length - tail.length;
+    style.sources[`overlay-${n}-tail`] = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            ...(o.track.length ? [[lons[lons.length - 1]!, o.track[o.track.length - 1]!.lat]] : []),
+            ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
+          ],
+        },
+      },
+    };
+    style.layers.push({
+      id: `overlay-${n}-tail`, type: "line", source: `overlay-${n}-tail`,
+      paint: {
+        "line-color": OVERLAY_COLOR, "line-width": 1.6, "line-opacity": 0.7,
+        "line-dasharray": [2, 3.5],
+      },
+    });
+  }
+  style.sources[`overlay-${n}-here`] = {
+    type: "geojson",
+    data: {
+      type: "Feature", properties: {},
+      geometry: { type: "Point", coordinates: [here.lon, here.lat] },
+    },
+  };
+  style.layers.push({
+    id: `overlay-${n}-here`, type: "circle", source: `overlay-${n}-here`,
+    paint: {
+      "circle-radius": 4.5, "circle-color": OVERLAY_COLOR,
+      "circle-stroke-color": "#0b1020", "circle-stroke-width": 1.5,
+    },
+  });
+}
+
+const OVERLAY_COLOR = "#94a3b8";
+
 /** Open on the flat map's framing: the whole track plus room around the
  * balloon (fitRegion, shared numbers). A track that has lapped the planet
  * cannot be fitted -- the fit is the planet -- so stand back and put the
@@ -350,6 +418,8 @@ export interface GlobeOpts {
   weather?: GlobeWeather;
   /** Slots heard without telemetry, drawn as ghosts beside the track. */
   ghosts?: GhostPoint[];
+  /** Other flights drawn under this one, as on the flat map. */
+  overlays?: OverlayTrack[];
 }
 
 export interface GlobeHandle {
@@ -421,7 +491,8 @@ function addGlobeWeather(map: MapGL, opts: GlobeWeather): void {
       maxzoom: t.maxNativeZoom, attribution: t.attribution,
     });
     // Over the labels, under the track -- the flat map's stacking.
-    const beforeId = ["launch", "ghosts", "track-casing", "tail-casing", "here"]
+    const beforeId = ["launch", "overlay-0-casing", "overlay-0", "overlay-0-tail",
+      "overlay-0-here", "ghosts", "track-casing", "tail-casing", "here"]
       .find((id) => map.getLayer(id));
     map.addLayer(
       { id: WEATHER_ID, type: "raster", source: WEATHER_ID,
@@ -443,7 +514,18 @@ export function renderGlobe(
   const ghosts = opts.ghosts ?? [];
   const pos = positions(track, ghosts);
   const style = baseStyle();
+  const overlays = (opts.overlays ?? [])
+    .map((o) => ({ o, pos: positions(o.track, o.ghosts) }))
+    .filter((x) => x.pos.here);
+  overlays.forEach((x, n) => addOverlay(style, x.o, x.pos, n));
   addTrack(style, meta, track, ghosts, pos);
+  // The fit covers the overlays too, this flight's balloon still last.
+  const fit: Positions = {
+    ...pos,
+    fitLats: [...overlays.flatMap((x) => x.pos.fitLats), ...pos.fitLats],
+    fitLons: [...overlays.flatMap((x) => x.pos.fitLons), ...pos.fitLons],
+    here: pos.here ?? overlays.at(-1)?.pos.here ?? null,
+  };
 
   const map = new MapGL({
     container: el,
@@ -456,7 +538,19 @@ export function renderGlobe(
   map.addControl(
     new NavigationControl({ showCompass: false }), "top-right");
 
-  aimCamera(map, meta, pos, !!opts.overlaid);
+  aimCamera(map, meta, fit, !!opts.overlaid);
+
+  for (const x of overlays) {
+    const icon = document.createElement("div");
+    icon.className = "last-pos-icon";
+    icon.style.width = icon.style.height = "22px";
+    icon.innerHTML = '<span class="last-pos-pulse last-pos-pulse-overlay"></span>' +
+      `<span class="overlay-label" style="position:absolute;left:28px;top:3px">${
+        x.o.meta.flight_id.replace(/[<>&]/g, "")}</span>`;
+    new Marker({ element: icon })
+      .setLngLat([x.pos.here!.lon, x.pos.here!.lat])
+      .addTo(map);
+  }
 
   if (pos.here) {
     // The pulsing "you are here", same CSS as the flat map's.

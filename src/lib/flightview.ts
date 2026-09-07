@@ -17,7 +17,8 @@ export function renderMapInto(
   el: HTMLElement, meta: FlightMeta, track: TrackPoint[],
   opts: MapOptions = {},
 ): L.Map | null {
-  if (!track.length && !opts.ghosts?.length && meta.launch_lat == null) return null;
+  if (!track.length && !opts.ghosts?.length && !opts.overlays?.length
+    && meta.launch_lat == null) return null;
   el.classList.add(opts.sizing === "fill" ? "fv-map-fill" : "fv-map");
   return renderMap(el, meta, track, opts);
 }

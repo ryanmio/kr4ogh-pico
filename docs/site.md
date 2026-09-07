@@ -48,6 +48,14 @@ from `/live/<flight_id>/track.json` and the live refresh proceeds from
 there. A **Next flight** button walks the flights. `/live/<flight_id>/` is
 the permalink for a particular flight and renders the same component.
 
+The view is one flight, but the map can carry others for comparison:
+`?overlay=all` (also `overlap=`, `with=`) draws every other shown flight's
+track under the featured one in a quieter grey, each with its own named
+beacon, and `?overlay=F2A` a particular one. An **All flights** button
+writes the former. Overlays are context only -- no cards, no numbers --
+and live ones are refreshed from wspr.live alongside the featured flight
+(`src/lib/overlay.ts`, the `overlays` option of `map.ts` and `globe.ts`).
+
 A closed flight (`status = "closed"`) is the same view with the clock
 stopped: the committed track is final, wspr.live is not asked, and no
 weather is offered over a track that is history. Its `end_utc` is also what
@@ -84,7 +92,8 @@ nothing, which is what closing a panel leaves behind: an open panel is where
 the reader is right now, not a preference, so unlike the units and the
 weather layer it is never remembered per browser and never written into the
 URL as an explicit emptiness. `?p=none` is accepted anyway, for a link typed
-by hand. All three compose: `?u=i&w=c&p=speed`.
+by hand. All three compose: `?u=i&w=c&p=speed`, and `?overlay=` composes
+with all of them.
 
 Archived flights are separate and unchanged: `flights/<flight_id>/`
 (`flight.mdx` + `track.json`), read at build time, fully static forever.

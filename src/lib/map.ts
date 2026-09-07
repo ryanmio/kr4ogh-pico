@@ -12,12 +12,15 @@ import { lastKnown, trailingGhosts, unwrapGhostLons } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { speedText } from "./speed";
 import { altitude as fmtAltitude, type Units } from "./units";
-import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, OverlayTrack, TrackPoint } from "./types";
 
 export interface MapOptions {
   units?: Units;
   /** Slots heard without telemetry, drawn as ghosts beside the track. */
   ghosts?: GhostPoint[];
+  /** Other flights drawn under this one for comparison: a dimmer line and
+   * a named beacon each, nothing else. See lib/overlay.ts. */
+  overlays?: OverlayTrack[];
   /** What the spots are colored by. */
   metric?: MetricKey;
   /** "fit" sizes the box to the track (article-style pages); "fill" leaves
@@ -84,22 +87,14 @@ export function renderMap(
   const fill = opts.sizing === "fill";
   const ghosts = opts.ghosts ?? [];
 
-  const lons = unwrapLons(track);
-  const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
-  const ghostLons = unwrapGhostLons(track, lons, ghosts);
-  const ghostLatlngs = ghosts.map((g, i) => L.latLng(g.lat, ghostLons[i]!));
-  // Ghosts newer than the last fix: the balloon has been heard along them
-  // since it last sent telemetry, so they are the end of the story, drawn
-  // as a dashed tail with the beacon on the last of them.
-  const tail = trailingGhosts(track, ghosts);
-  const tailLatlngs = ghostLatlngs.slice(ghosts.length - tail.length);
-  const here = lastKnown(track, ghosts);
-  const hereLatlng = tail.length ? tailLatlngs.at(-1)! : latlngs.at(-1);
-  // The fit takes every position, with the balloon last (fitRegion's
-  // contract): a ghost off the side of the track must not sit off screen.
-  const fitPts = hereLatlng
-    ? [...latlngs, ...ghostLatlngs].filter((ll) => ll !== hereLatlng).concat(hereLatlng)
-    : [];
+  const geo = geometry(track, ghosts);
+  const { latlngs, ghostLatlngs, tailLatlngs, here, hereLatlng, lons: allLons } = geo;
+  // Overlaid flights are fitted too, with this flight's balloon still last
+  // (fitRegion's contract), so a comparison opens with both in view.
+  const overlays = (opts.overlays ?? [])
+    .map((o) => ({ ...o, geo: geometry(o.track, o.ghosts) }))
+    .filter((o) => o.geo.hereLatlng);
+  const fitPts = [...overlays.flatMap((o) => o.geo.fitPts), ...geo.fitPts];
   // Worked out before the map exists, because on "fit" pages the box has to
   // be the right height before Leaflet measures it.
   const fitted = fitPts.length > 0 ? fitBoundsFor(fitPts) : null;
@@ -138,12 +133,21 @@ export function renderMap(
       .addTo(map);
   }
 
-  if (!hereLatlng || !here) {
+  if (!fitted) {
     if (meta.launch_lat != null && meta.launch_lon != null) {
       map.setView([meta.launch_lat, meta.launch_lon], 6);
     } else {
       map.setView([25, -40], 2);
     }
+    return map;
+  }
+
+  // Under everything of this flight's: context, not the subject.
+  for (const o of overlays) drawOverlay(map, o.meta, o.geo);
+
+  if (!hereLatlng || !here) {
+    // Nothing of this flight's to draw yet; the overlays are the view.
+    map.fitBounds(fitted);
     return map;
   }
 
@@ -156,7 +160,7 @@ export function renderMap(
   // of where the balloon was to within 80 km, and the solid line is a claim
   // of 4. From the last fix out to the newest ghost, or ghost to ghost when
   // no fix has been decoded at all yet.
-  if (tail.length) {
+  if (tailLatlngs.length) {
     const tailLine = [...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs];
     L.polyline(tailLine, { color: "#0b1020", weight: 6, opacity: 0.4 }).addTo(map);
     L.polyline(tailLine, {
@@ -296,10 +300,10 @@ export function renderMap(
   // they land on screen. Every zoom after this one re-thins them.
   drawSpots();
   map.on("zoomend", drawSpots);
-  const allLons = [...lons, ...ghostLons];
+  const everyLon = [...allLons, ...overlays.flatMap((o) => o.geo.lons)];
   map.setMaxBounds(L.latLngBounds(
-    L.latLng(-85, Math.min(...allLons) - 360),
-    L.latLng(85, Math.max(...allLons) + 360),
+    L.latLng(-85, Math.min(...everyLon) - 360),
+    L.latLng(85, Math.max(...everyLon) + 360),
   ));
 
   // The legend names the metric the spots are colored by. The desktop live
@@ -323,6 +327,86 @@ export function renderMap(
   }
   return map;
 }
+
+/** Everything drawn for one flight, in map coordinates: the track and the
+ * ghosts with longitudes unwrapped, the dashed tail of ghosts newer than
+ * the last fix, and where the balloon was last heard. */
+interface Geometry {
+  latlngs: L.LatLng[];
+  ghostLatlngs: L.LatLng[];
+  /** The ghosts newer than the last fix, in order. */
+  tailLatlngs: L.LatLng[];
+  here: ReturnType<typeof lastKnown>;
+  hereLatlng: L.LatLng | undefined;
+  /** Every unwrapped longitude, for the pan limits. */
+  lons: number[];
+  /** Every position with the balloon last: fitRegion's contract. */
+  fitPts: L.LatLng[];
+}
+
+function geometry(track: TrackPoint[], ghosts: GhostPoint[]): Geometry {
+  const lons = unwrapLons(track);
+  const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
+  const ghostLons = unwrapGhostLons(track, lons, ghosts);
+  const ghostLatlngs = ghosts.map((g, i) => L.latLng(g.lat, ghostLons[i]!));
+  // Ghosts newer than the last fix: the balloon has been heard along them
+  // since it last sent telemetry, so they are the end of the story, drawn
+  // as a dashed tail with the beacon on the last of them.
+  const tail = trailingGhosts(track, ghosts);
+  const tailLatlngs = ghostLatlngs.slice(ghosts.length - tail.length);
+  const here = lastKnown(track, ghosts);
+  const hereLatlng = tail.length ? tailLatlngs.at(-1)! : latlngs.at(-1);
+  // A ghost off the side of the track must not sit off screen either.
+  const fitPts = hereLatlng
+    ? [...latlngs, ...ghostLatlngs].filter((ll) => ll !== hereLatlng).concat(hereLatlng)
+    : [];
+  return {
+    latlngs, ghostLatlngs, tailLatlngs, here, hereLatlng,
+    lons: [...lons, ...ghostLons], fitPts,
+  };
+}
+
+/** Another flight on this map: its line and its dashed tail in a quieter
+ * grey, and a beacon with the flight's name on it. No spots, no square, no
+ * ghosts -- those are the detail of the flight being read, and a second
+ * set would be noise over the first. */
+function drawOverlay(map: L.Map, meta: FlightMeta, geo: Geometry): void {
+  const { latlngs, tailLatlngs, here, hereLatlng } = geo;
+  if (!here || !hereLatlng) return;
+  if (latlngs.length) {
+    L.polyline(latlngs, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35 }).addTo(map);
+    L.polyline(latlngs, { color: OVERLAY_COLOR, weight: 2, opacity: 0.75 }).addTo(map);
+  }
+  if (tailLatlngs.length) {
+    const tailLine = [...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs];
+    L.polyline(tailLine, {
+      color: OVERLAY_COLOR, weight: 1.6, opacity: 0.7, dashArray: "4 7",
+    }).addTo(map);
+  }
+  L.circleMarker(hereLatlng, {
+    radius: 4.5, color: SPOT_OUTLINE, weight: 1.5, fillColor: OVERLAY_COLOR,
+    fillOpacity: 1,
+  }).bindTooltip(
+    `${meta.callsign} ${meta.flight_id} · ${fmtUtc(here.utc)}` +
+    (here.coarse ? " · grid square only" : ""),
+  ).addTo(map);
+  L.marker(hereLatlng, {
+    icon: L.divIcon({
+      className: "last-pos-icon",
+      html: '<span class="last-pos-pulse last-pos-pulse-overlay"></span>',
+      iconSize: [22, 22],
+    }),
+    keyboard: false,
+    interactive: false,
+  }).bindTooltip(meta.flight_id, {
+    permanent: true, direction: "right", offset: [14, 0],
+    className: "overlay-label",
+  }).addTo(map);
+}
+
+/** An overlaid flight's grey: the ghosts' ring colour knocked back, so it
+ * sits under the featured flight's white line without competing. */
+const OVERLAY_COLOR = "#94a3b8";
 
 /** Radius of a spot close in, and at the world view, where a run of fixes
  * merges into a band and a slightly smaller dot keeps the track reading as a
