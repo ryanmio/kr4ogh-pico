@@ -836,7 +836,10 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   border-radius: 12px; padding: 0.4rem 0.6rem;
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
-.fv-side-links .linklike { margin-left: auto; font-size: 0.76rem; }
+/* Wraps as one unit, and takes no gap when both chips inside are hidden
+   (a site with a single flight). */
+.fv-chip-group { display: flex; flex-wrap: wrap; gap: inherit; }
+.fv-chip-group:not(:has(> :not([hidden]))) { display: none; }
 .fv-chip {
   font: inherit; font-size: 0.76rem; font-weight: 600;
   color: var(--text-dim); cursor: pointer;
@@ -856,6 +859,12 @@ a.fv-chip { text-decoration: none; }
   font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint);
   margin-top: 0.35rem; padding: 0 0.2rem;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+/* "Check now" sits with the timestamp it refreshes, flowing on from it as
+   text. The padding widens the tap target without moving the line. */
+.fv-updated .linklike {
+  font: inherit; text-shadow: inherit; white-space: nowrap;
+  margin-left: 0.5em; padding: 0.3em 0; margin-block: -0.3em;
 }
 
 /* ----- the detail panel ----- */
