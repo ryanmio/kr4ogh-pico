@@ -81,6 +81,55 @@ press the pencil, commit.
 - **Tracker details**, the build facts shown in the Tracker panel, are an
   optional `[flights.tracker]` table under a flight. Any labels you like.
 
+### Alerts on your phone
+
+Optional. A small Cloudflare Worker in `notify/` taps your phone, and your
+watch if you wear one, when a flight is heard again after a silence: the
+first spot after launch, the first of the morning, landfall after a night
+over the sea. It runs on Cloudflare's free plan, asks wspr.live every five
+minutes, and reaches you within a few minutes of the spot. The site does
+not change and needs none of this.
+
+You need the [ntfy](https://ntfy.sh/) app (free, iPhone and Android) and a
+free [Cloudflare](https://dash.cloudflare.com/sign-up) account. This part
+does use a terminal.
+
+1. In ntfy, subscribe to a topic. The topic name is the only secret: anyone
+   who knows it can subscribe, so make it something nobody would guess,
+   like `n0call-pico-7q2xk`.
+2. In `notify/wrangler.toml`, set `SITE_URL` to your site's address, and
+   commit.
+3. In a terminal, from the repository:
+
+   ```sh
+   cd notify
+   npm install
+   npx wrangler login                  # opens the browser
+   npx wrangler deploy
+   npx wrangler secret put NTFY_TOPIC  # paste the topic name
+   ```
+
+4. Within five minutes the phone shows "Watching N0CALL F1", one per live
+   flight, which is how you know it works. From then on: "N0CALL F1 heard:
+   Heard 12:04 UTC, after 15 h 30 min of silence. GN78gt, 8,640 m, heard by
+   14 stations." Tapping it opens the flight on the map.
+
+What it tells you about is set in `wrangler.toml`. `QUIET_HOURS` is how
+long a flight must have gone unheard for its next hearing to count: 6 by
+default; 0 for every hearing, which is every ten minutes in sunlight.
+`NTFY_PRIORITY` is how loud. Change them there and deploy again, or in the
+Cloudflare dashboard under the Worker's settings. Pushover works too: set
+`PUSHOVER_TOKEN` and `PUSHOVER_USER` as secrets, instead of or as well as
+the ntfy topic.
+
+The Worker reads the flight list from your site's `/flights.json`, so a new
+`[[flights]]` entry is watched as soon as Vercel has rebuilt; there is
+nothing to redeploy. The Worker's own address, printed by `deploy`, is a
+status page: when it last ran, what it last heard, what it last sent, and
+any error. If `deploy` says the KV namespace needs an id, run
+`npx wrangler kv namespace create STATE` and paste the id it prints into
+`wrangler.toml`.
+
 If you get stuck, open an issue here with your callsign and channel.
 
 ## How it works
@@ -111,6 +160,8 @@ format the decoder implements.
   browser is.
 - `.github/workflows/ingest.yml` — the daily refresh, and the seeding run
   when `flights.toml` changes.
+- `notify/` — the optional Cloudflare Worker that taps your phone when a
+  flight is heard ("Alerts on your phone" above).
 - `dev/` — checks and generators; `docs/` — the design notes.
 
 ## Development

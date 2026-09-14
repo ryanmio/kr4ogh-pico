@@ -1,0 +1,38 @@
+# The notifier's Cloudflare settings. README.md, "Alerts on your phone",
+# is the walkthrough; worker.ts says what it does.
+#
+# Two things to set for your own site:
+#   SITE_URL     below, your site's address
+#   NTFY_TOPIC   a secret, not written here: `npx wrangler secret put NTFY_TOPIC`
+name = "pico-balloon-notify"
+main = "worker.ts"
+compatibility_date = "2026-09-01"
+
+# Also serves a status page at the Worker's own address: when it last ran,
+# what it last heard, what it last sent.
+workers_dev = true
+
+[triggers]
+# Every five minutes. The tracker transmits every ten, and its spots reach
+# wspr.live a minute or two after the slot ends, so five minutes is the
+# longest interval that still notices every slot within a few minutes of
+# it. Faster than "*/2" is discourteous to wspr.live for no gain.
+crons = ["*/5 * * * *"]
+
+# One small key: the newest hearing already reported per flight. No id is
+# given on purpose: wrangler creates the namespace on the first deploy.
+[[kv_namespaces]]
+binding = "STATE"
+
+[vars]
+# Your site. The Worker reads /flights.json from it to learn what is
+# flying, and each notification links to /live/<flight_id>/ on it.
+SITE_URL = "https://kr4ogh-pico.vercel.app"
+# A flight must have been unheard this long for its next hearing to be
+# worth a tap: the first spot after launch, the first of the morning,
+# landfall after a night over the sea. "0" taps on every hearing, which is
+# every ten minutes while the tracker has sun.
+QUIET_HOURS = "6"
+# Optional: how loud. ntfy priorities run 1 (silent) to 5 (urgent); 3 is
+# a normal notification.
+# NTFY_PRIORITY = "3"

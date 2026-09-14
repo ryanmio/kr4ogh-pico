@@ -14,3 +14,7 @@ dist/
 dev/browser-check*.png
 
 .mcp.json
+
+# notify (the Cloudflare Worker)
+.wrangler/
+.dev.vars
