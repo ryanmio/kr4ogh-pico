@@ -95,10 +95,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         <div class="fv-chips">
           <button type="button" class="fv-chip" data-panel="data">Data</button>
           <button type="button" class="fv-chip" data-panel="about">About</button>
-          <a class="fv-chip" id="next-flight" href={nextHref} hidden={flights.length < 2}
-            title={`${after!.callsign} ${after!.flight_id}`}>Next flight &rsaquo;</a>
           <button type="button" class="fv-chip" id="overlay-toggle" hidden={flights.length < 2}
             aria-pressed="false" title="Draw the other flights on this map too">All flights</button>
+          <a class="fv-chip" id="next-flight" href={nextHref} hidden={flights.length < 2}
+            title={`${after!.callsign} ${after!.flight_id}`}>Next flight &rsaquo;</a>
         </div>
         <p class="fv-updated" id="updated">
           {last
