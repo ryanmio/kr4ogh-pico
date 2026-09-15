@@ -50,12 +50,14 @@ const probe = async (label) => {
 const first = await probe("initial paint    ");
 
 // Force the exact path that was breaking it: a refresh that adds points.
-await page.evaluate(() => document.getElementById("refresh").click());
+// There is no refresh button; a tab becoming visible asks for one, and a
+// headless page is always visible.
+await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 await page.waitForTimeout(4000);
 const after = await probe("after refresh    ");
 
 // And a second refresh, to catch anything that only breaks on repeat.
-await page.evaluate(() => document.getElementById("refresh").click());
+await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 await page.waitForTimeout(4000);
 const twice = await probe("after 2nd refresh");
 
@@ -79,7 +81,7 @@ const panelProbe = async (label) => {
   return r;
 };
 const panelOn = await panelProbe("speed card       ");
-await page.evaluate(() => document.getElementById("refresh").click());
+await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 await page.waitForTimeout(4000);
 const panelAfter = await panelProbe("speed, refresh   ");
 const panelOk =
@@ -125,7 +127,7 @@ const weatherProbe = async (label) => {
 
 await setWeather("Clouds");
 const wx = await weatherProbe("weather on       ");
-await page.evaluate(() => document.getElementById("refresh").click());
+await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 await page.waitForTimeout(4000);
 const wxAfter = await weatherProbe("weather, refresh ");
 // The tiles come from third parties: the count is reported, never asserted,
@@ -163,7 +165,7 @@ const viewProbe = async (label) => {
 await setView("Globe");
 const gOn = await viewProbe("globe on         ");
 await page.screenshot({ path: "dev/browser-check-globe.png", fullPage: false });
-await page.evaluate(() => document.getElementById("refresh").click());
+await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 await page.waitForTimeout(4000);
 const gAfter = await viewProbe("globe, refresh   ");
 await setView("Flat");

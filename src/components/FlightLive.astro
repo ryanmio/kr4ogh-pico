@@ -92,29 +92,33 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     <div class="fv-cards-slot" set:html={sidebar} />
     <div class="fv-side-foot">
       <div class="fv-side-links">
-        <button type="button" class="fv-chip" data-panel="data">Data</button>
-        <button type="button" class="fv-chip" data-panel="about">About</button>
-        {/* The two flight chips wrap as a pair: the sidebar is too narrow for
-          * all four, and "Data About Next flight" over a lone "All flights"
-          * read as a mistake. */}
-        <span class="fv-chip-group">
+        <div class="fv-chips">
+          <button type="button" class="fv-chip" data-panel="data">Data</button>
+          <button type="button" class="fv-chip" data-panel="about">About</button>
           <a class="fv-chip" id="next-flight" href={nextHref} hidden={flights.length < 2}
             title={`${after!.callsign} ${after!.flight_id}`}>Next flight &rsaquo;</a>
           <button type="button" class="fv-chip" id="overlay-toggle" hidden={flights.length < 2}
             aria-pressed="false" title="Draw the other flights on this map too">All flights</button>
-        </span>
-      </div>
-      <div class="fv-updated">
-        <span id="updated">
+        </div>
+        <p class="fv-updated" id="updated">
           {last
             ? `${ended ? "Flight ended · last" : "Newest"} position ${last.utc} UTC${
               last.coarse ? " (grid square only)" : ""}`
             : "No positions yet"}
-        </span>
-        <button class="linklike" id="refresh" type="button" hidden={ended}>Check now</button>
+        </p>
       </div>
     </div>
   </aside>
+  {/* Shown while the sidebar has more below the fold: the scrollbar is
+    * hidden, so nothing else says the footer is down there. */}
+  <div class="fv-side-more" id="side-more" hidden>
+    <button type="button" aria-label="Scroll the sidebar down">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
 
   <div class="fv-panel" id="panel" hidden>
     <header class="fv-panel-head">
@@ -214,7 +218,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const panelBody = root.querySelector<HTMLElement>("#panel-body")!;
     const rangeToggle = panelEl.querySelector<HTMLElement>(".range-toggle")!;
     const updatedEl = root.querySelector<HTMLElement>("#updated")!;
-    const refreshBtn = root.querySelector<HTMLButtonElement>("#refresh")!;
+    const sideEl = root.querySelector<HTMLElement>(".fv-side")!;
+    const sideMore = root.querySelector<HTMLElement>("#side-more")!;
     const nextLink = root.querySelector<HTMLAnchorElement>("#next-flight")!;
     const overlayBtn = root.querySelector<HTMLButtonElement>("#overlay-toggle")!;
     const REFRESH_MS = 2 * 60 * 1000;
@@ -243,7 +248,6 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       ghosts = [];
       document.title = document.title.replace(/^[^—]*—/, `${meta.callsign} ${meta.flight_id} —`);
       cardsSlot.innerHTML = sidebarHtml(meta, track, units, null, { pending: true });
-      refreshBtn.hidden = ended();
       try {
         const at = (name: string) =>
           fetch(withBase(`/live/${encodeURIComponent(meta.flight_id)}/${name}`));
@@ -928,6 +932,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       URL.revokeObjectURL(a.href);
     });
 
+    // One check in flight at a time: the timer and a tab waking up can
+    // both ask in the same moment.
+    let updating = false;
     async function update() {
       if (ended()) {
         // Nothing to ask about this flight: the committed track is the
@@ -945,11 +952,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           : "No positions recorded";
         return;
       }
-      refreshBtn.disabled = true;
+      if (updating) return;
+      updating = true;
       const [result, overlayAdded] = await Promise.all([
         refreshTrack(meta, track, ghosts), refreshOverlays(),
-      ]);
-      refreshBtn.disabled = false;
+      ]).finally(() => { updating = false; });
       if (result.error) {
         // The bundled track is all there is; show it rather than a spinner
         // that will never resolve.
@@ -972,11 +979,23 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         renderPanel();
       }
       updatedEl.textContent = lastKnown(track, ghosts)
-        ? `${newestText("Newest")} · checked ${new Date().toISOString().slice(11, 16)} UTC`
+        ? newestText("Newest")
         : "No positions yet";
     }
 
-    refreshBtn.addEventListener("click", update);
+    // The sidebar scrolls without a scrollbar, so a chevron says when the
+    // footer is below the fold. Watched by size, not by render: the cards
+    // re-render often and the viewport can change under them.
+    function paintSideMore() {
+      sideMore.hidden = sideEl.scrollHeight - sideEl.clientHeight - sideEl.scrollTop < 8;
+    }
+    sideEl.addEventListener("scroll", paintSideMore, { passive: true });
+    const sideWatch = new ResizeObserver(paintSideMore);
+    sideWatch.observe(sideEl);
+    sideWatch.observe(cardsSlot);
+    sideMore.querySelector("button")!.addEventListener("click", () => {
+      sideEl.scrollTo({ top: sideEl.scrollHeight, behavior: "smooth" });
+    });
 
     overlayBtn.addEventListener("click", async () => {
       // Either every other flight is on the map or none is; a link can
