@@ -77,3 +77,34 @@ def test_ghosts_are_exported_beside_the_track_and_pruned(tmp_path):
         ("2026-09-01 00:30:00", "FN42", 3),
     ]
     assert set(ghosts[0]) == {"utc", "grid4", "lat", "lon", "rx_station_count"}
+
+
+CLOSED = """
+[site]
+callsign = "N0CALL"
+
+[[flights]]
+flight_id = "F1"
+callsign = "N0CALL"
+band = "20m"
+channel = 42
+launch_utc = "2026-09-01 00:00:00"
+end_utc = "2026-09-02 00:00:00"
+status = "closed"
+"""
+
+
+def test_nothing_pulled_keeps_the_committed_track(tmp_path):
+    # The scheduled run's database is a throwaway, and with every flight
+    # closed the pull step creates nothing in it, not even the tables. The
+    # export must still run, and must leave the committed track alone.
+    (tmp_path / "flights.toml").write_text(CLOSED)
+    tracks = tmp_path / "src" / "data" / "tracks"
+    tracks.mkdir(parents=True)
+    committed = [{"utc": "2026-09-01 12:00:00", "grid6": "FM19aa"}]
+    (tracks / "N0CALL-F1.json").write_text(json.dumps(committed))
+
+    export(tmp_path / "flights.toml", tmp_path / "never-pulled.db", tmp_path)
+
+    assert json.loads((tracks / "N0CALL-F1.json").read_text()) == committed
+    assert json.loads((tracks / "N0CALL-F1.ghosts.json").read_text()) == []

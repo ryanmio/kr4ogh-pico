@@ -42,6 +42,7 @@ import sqlite3
 from pathlib import Path
 
 from .config import DEFAULT_PATH, Flight, load_flights
+from .store import Store
 
 # The site's TrackPoint shape (src/lib/types.ts). `speed_knots` is
 # `speed_kt` here, which is what the site has always called it.
@@ -131,7 +132,12 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
             stale.unlink()
             print(f"{stale.name}: removed, no such flight is shown")
 
-    with sqlite3.connect(db_path) as conn:
+    # Through Store, not sqlite3.connect: Store creates the schema, so a
+    # record nothing was pulled into (every flight closed, or a database
+    # path that does not exist yet) is empty rather than an error. The
+    # export then keeps every committed track as it is.
+    with Store(db_path) as store:
+        conn = store.conn
         for flight in flights:
             path = tracks_dir / track_filename(flight)
             existing = json.loads(path.read_text()) if path.exists() else []
