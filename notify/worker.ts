@@ -178,7 +178,9 @@ function describe(h: Hearing): string {
 
 function rule(env: Env): string {
   const h = quietHours(env);
-  return h === 0 ? "every hearing" : `the next hearing after ${h} h of silence`;
+  return h === 0
+    ? "every time it is heard"
+    : `the next time it is heard after ${h} h or more of silence`;
 }
 
 function liveUrl(env: Env, flight: FlightMeta): string {
@@ -193,7 +195,7 @@ function watchingMessage(env: Env, flight: FlightMeta, newest: Hearing | null, n
     : `Not heard in the last ${Math.round(LOOKBACK_MS / 86_400_000)} days.`;
   return {
     title: `Watching ${flight.callsign} ${flight.flight_id}`,
-    body: `${heard} You will hear about ${rule(env)}.`,
+    body: `${heard} Next message: ${rule(env)}.`,
     url: liveUrl(env, flight),
   };
 }
