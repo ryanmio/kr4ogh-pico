@@ -19,6 +19,10 @@ workers_dev = true
 # it. Faster than "*/2" is discourteous to wspr.live for no gain.
 crons = ["*/5 * * * *"]
 
+# Settings changed in the Cloudflare dashboard survive a deploy instead of
+# being reset to what this file says; secrets always do.
+keep_vars = true
+
 # One small key: the newest hearing already reported per flight. No id is
 # given on purpose: wrangler creates the namespace on the first deploy.
 [[kv_namespaces]]
@@ -28,11 +32,15 @@ binding = "STATE"
 # Your site. The Worker reads /flights.json from it to learn what is
 # flying, and each notification links to /live/<flight_id>/ on it.
 SITE_URL = "https://kr4ogh-pico.vercel.app"
-# A flight must have been unheard this long for its next hearing to be
-# worth a tap: the first spot after launch, the first of the morning,
-# landfall after a night over the sea. "0" taps on every hearing, which is
-# every ten minutes while the tracker has sun.
-QUIET_HOURS = "6"
-# Optional: how loud. ntfy priorities run 1 (silent) to 5 (urgent); 3 is
-# a normal notification.
+# Optional: how long a flight must have gone unheard for its next hearing
+# to be worth a tap. 6 hours when unset: the first spot after launch, the
+# first of the morning, landfall after a night over the sea. "0" taps on
+# every hearing, which is every ten minutes while the tracker has sun.
+# Set it here, or, to change it without a deploy, as a secret:
+# `npx wrangler secret put QUIET_HOURS` (a secret is just a setting that
+# survives deploys and stays out of the repo; a plain number is fine).
+# QUIET_HOURS = "6"
+# Optional: how loud. ntfy priorities run 1 to 5; 3 is a normal
+# notification, 2 makes no sound and waits in the drawer, 1 files it under
+# "other notifications". Same choice of here or a secret.
 # NTFY_PRIORITY = "3"

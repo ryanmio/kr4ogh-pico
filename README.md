@@ -114,13 +114,19 @@ does use a terminal.
    Heard 12:04 UTC, after 15 h 30 min of silence. GN78gt, 8,640 m, heard by
    14 stations." Tapping it opens the flight on the map.
 
-What it tells you about is set in `wrangler.toml`. `QUIET_HOURS` is how
-long a flight must have gone unheard for its next hearing to count: 6 by
-default; 0 for every hearing, which is every ten minutes in sunlight.
-`NTFY_PRIORITY` is how loud. Change them there and deploy again, or in the
-Cloudflare dashboard under the Worker's settings. Pushover works too: set
-`PUSHOVER_TOKEN` and `PUSHOVER_USER` as secrets, instead of or as well as
-the ntfy topic.
+What it tells you about is a setting. `QUIET_HOURS` is how long a flight
+must have gone unheard for its next hearing to count: 6 unless set; 0 for
+every hearing, which is every ten minutes in sunlight. `NTFY_PRIORITY` is
+how loud: 3 is normal, 2 makes no sound. Set either in `wrangler.toml` and
+deploy again, or without a deploy with `npx wrangler secret put
+QUIET_HOURS` (a secret is just a setting that survives deploys). Pushover
+works too: set `PUSHOVER_TOKEN` and `PUSHOVER_USER` as secrets, instead of
+or as well as the ntfy topic.
+
+There is no switch to turn it off between flights, because it needs none:
+it follows `flights.toml`. While no flight is live it wakes, sees nothing
+to listen for, and goes back to sleep. Closing a flight there is what
+stops the messages.
 
 If the status page reports "ntfy responded 429", ntfy.sh is rate-limiting
 Cloudflare's shared outgoing address. The Worker waits and retries, and
