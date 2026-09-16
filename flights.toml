@@ -86,7 +86,7 @@ close_reason = "Silent since 2026-09-01 11:04 UTC"
 "Channel" = "348"
 "Schedule" = "every 10 min from :04"
 
-# In the air. First heard 2026-09-06 14:20 UTC.
+# First heard 2026-09-06 14:20 UTC, last heard 2026-09-07 13:50 UTC.
 [[flights]]
 flight_id = "F2A"
 callsign = "KR4OGH"
@@ -94,6 +94,9 @@ band = "20m"
 channel = 206
 active = true
 launch_utc = "2026-09-06 14:20:00"
+end_utc = "2026-09-07 15:00:00"
+status = "closed"
+close_reason = "Silent since 2026-09-07 13:50 UTC"
 launch_lat = 39.2645
 launch_lon = -77.9759
 
@@ -110,8 +113,9 @@ launch_lon = -77.9759
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "206"
 
-# In the air. First heard 2026-09-06 14:44 UTC. Same channel as F1B, which
-# is why F1B carries an end_utc.
+# First heard 2026-09-06 14:44 UTC, last heard 2026-09-07 14:44 UTC. Same
+# channel as F1B, which is why F1B carries an end_utc; this one carries its
+# own for the same reason, for whatever flies channel 348 next.
 [[flights]]
 flight_id = "F2B"
 callsign = "KR4OGH"
@@ -119,6 +123,9 @@ band = "20m"
 channel = 348
 active = true
 launch_utc = "2026-09-06 14:44:00"
+end_utc = "2026-09-07 15:00:00"
+status = "closed"
+close_reason = "Silent since 2026-09-07 14:44 UTC"
 launch_lat = 39.2645
 launch_lon = -77.9759
 
