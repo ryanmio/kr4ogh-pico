@@ -122,6 +122,12 @@ Cloudflare dashboard under the Worker's settings. Pushover works too: set
 `PUSHOVER_TOKEN` and `PUSHOVER_USER` as secrets, instead of or as well as
 the ntfy topic.
 
+If the status page reports "ntfy responded 429", ntfy.sh is rate-limiting
+Cloudflare's shared outgoing address. The Worker waits and retries, and
+tries again on the next tick, so a message is delayed rather than lost;
+to make the limit your own, sign up at ntfy.sh (free), create an access
+token under Account, and `npx wrangler secret put NTFY_TOKEN`.
+
 The Worker reads the flight list from your site's `/flights.json`, so a new
 `[[flights]]` entry is watched as soon as Vercel has rebuilt; there is
 nothing to redeploy. The Worker's own address, printed by `deploy`, is a

@@ -22,6 +22,11 @@
  * Secrets (`npx wrangler secret put NAME`, or the dashboard):
  *   NTFY_TOPIC     an ntfy topic. Anyone who knows it can subscribe, so
  *                  pick one nobody would guess
+ *   NTFY_TOKEN     optional, an access token from an ntfy.sh account.
+ *                  ntfy.sh rate-limits anonymous publishing per IP address,
+ *                  and Cloudflare's outgoing addresses are shared with every
+ *                  other Worker, so the limit is shared too; a token makes
+ *                  the limit yours alone
  *   NTFY_SERVER    optional, a self-hosted ntfy in place of https://ntfy.sh
  *   PUSHOVER_TOKEN, PUSHOVER_USER   the same messages through Pushover
  * Either service, or both, may be set.
@@ -39,6 +44,7 @@ export interface Env {
   SITE_URL: string;
   QUIET_HOURS?: string;
   NTFY_TOPIC?: string;
+  NTFY_TOKEN?: string;
   NTFY_SERVER?: string;
   NTFY_PRIORITY?: string;
   PUSHOVER_TOKEN?: string;
@@ -230,14 +236,34 @@ function heardMessage(
   };
 }
 
+/** POST once; on 429 (rate limited) wait and try again, a few times. A
+ * shared-address limit is a burst limit, and a pause is usually enough.
+ * Anything else that is not 2xx is reported with the service's own words. */
+async function post(service: string, url: string, init: RequestInit): Promise<void> {
+  const pauses = [4_000, 8_000, 12_000];
+  for (let attempt = 0; ; attempt++) {
+    const resp = await fetch(url, init);
+    if (resp.ok) return;
+    const detail = (await resp.text()).replace(/\s+/g, " ").trim().slice(0, 160);
+    if (resp.status === 429 && attempt < pauses.length) {
+      await new Promise((r) => setTimeout(r, pauses[attempt]));
+      continue;
+    }
+    throw new Error(`${service} responded ${resp.status}${detail ? `: ${detail}` : ""}`);
+  }
+}
+
 async function push(env: Env, msg: Message): Promise<void> {
-  const sends: Array<[string, Promise<Response>]> = [];
+  const sends: Promise<void>[] = [];
   if (env.NTFY_TOPIC) {
     // JSON publishing rather than headers: a title with a non-ASCII
     // character in a header needs escaping, and a body does not.
-    sends.push(["ntfy", fetch(env.NTFY_SERVER ?? "https://ntfy.sh", {
+    sends.push(post("ntfy", env.NTFY_SERVER ?? "https://ntfy.sh", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(env.NTFY_TOKEN ? { authorization: `Bearer ${env.NTFY_TOKEN}` } : {}),
+      },
       body: JSON.stringify({
         topic: env.NTFY_TOPIC,
         title: msg.title,
@@ -246,10 +272,10 @@ async function push(env: Env, msg: Message): Promise<void> {
         tags: ["balloon"],
         priority: Number(env.NTFY_PRIORITY ?? 3),
       }),
-    })]);
+    }));
   }
   if (env.PUSHOVER_TOKEN && env.PUSHOVER_USER) {
-    sends.push(["Pushover", fetch("https://api.pushover.net/1/messages.json", {
+    sends.push(post("Pushover", "https://api.pushover.net/1/messages.json", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -260,7 +286,7 @@ async function push(env: Env, msg: Message): Promise<void> {
         url: msg.url,
         url_title: "Open the map",
       }),
-    })]);
+    }));
   }
   if (sends.length === 0) {
     throw new Error(
@@ -268,9 +294,8 @@ async function push(env: Env, msg: Message): Promise<void> {
       + ' (README.md, "Alerts on your phone")',
     );
   }
-  const results = await Promise.all(sends.map(([, p]) => p));
-  const failed = results
-    .map((r, i) => (r.ok ? null : `${sends[i][0]} responded ${r.status}`))
+  const failed = (await Promise.allSettled(sends))
+    .map((r) => (r.status === "rejected" ? String(r.reason instanceof Error ? r.reason.message : r.reason) : null))
     .filter((x): x is string => x !== null);
   if (failed.length) throw new Error(failed.join("; "));
 }
