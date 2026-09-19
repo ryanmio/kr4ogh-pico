@@ -6,7 +6,7 @@ import {
   bearingDeg, compassPoint, fmtDuration, fmtInt, fmtRelative, fmtUtc, haversineKm,
   trackStats,
 } from "./format";
-import { heardBounds, lastKnown } from "./ghosts";
+import { heardBounds } from "./ghosts";
 import { METRICS, type MetricKey } from "./metrics";
 import {
   groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
@@ -220,7 +220,6 @@ export function sidebarHtml(
     return tracker + `<div class="fv-status"><p class="empty-note">${note}</p></div>`;
   }
   const heard = heardBounds(track, ghosts)!;
-  const known = lastKnown(track, ghosts)!;
   const volts = track.map((p) => p.voltage_v);
   const temps = track.map((p) => p.temperature_c);
   const alt = (m: number) => u.altitude(m, units).text;
@@ -237,23 +236,23 @@ export function sidebarHtml(
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
-  // A closed flight's "last heard" is history, not a heartbeat: the dot
-  // stops pulsing and the card says when, not how long ago. When the
-  // newest report is a ghost the card says so, because the numbers under
-  // it are from an older report than the time it names.
+  // Shaped like every other card: a label, one line that never wraps, a
+  // sub line. A closed flight says only that it ended; the date it was
+  // last heard, and whether that newest report was position-only, are in
+  // the Signal panel. The dot stops pulsing when the flight is over.
   const partial = ghosts.length
     ? ` · ${fmtInt(ghosts.length)} without telemetry`
     : "";
-  const status = `<button type="button" class="fv-status" data-panel="status"
+  const status = `<button type="button" class="fv-card fv-status" data-panel="status"
     aria-pressed="${active === "status"}">
     <span class="fv-card-icon" style="color:${ended ? "#94a3b8" : "#34d399"}"><span
       class="fv-status-dot${ended ? " fv-status-dot-ended" : ""}"></span></span>
-    <span class="fv-status-text">
-      <span class="fv-status-main">${ended
-        ? `Flight ended · last heard ${esc(heard.lastUtc.slice(5, 16))} UTC`
-        : `Last heard ${esc(fmtRelative(heard.lastUtc))}`}${
-        known.coarse ? " · position only" : ""}</span>
-      <span class="fv-status-sub">${ended ? "flew" : "flying"} for ${esc(fmtDuration(aloftMs))}
+    <span class="fv-card-text">
+      <span class="fv-card-label">Signal</span>
+      <span class="fv-card-value">${ended
+        ? "Flight ended"
+        : `Heard ${esc(fmtRelative(heard.lastUtc))}`}</span>
+      <span class="fv-card-sub">${ended ? "flew" : "flying"} for ${esc(fmtDuration(aloftMs))}
         · ${fmtInt(s.points)} reports${partial}</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>

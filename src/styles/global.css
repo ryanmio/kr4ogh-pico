@@ -744,35 +744,19 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 
 .fv-cards-slot { display: flex; flex-direction: column; gap: 0.5rem; }
 
-.fv-status {
-  pointer-events: auto;
-  display: flex; align-items: center; gap: 0.7rem;
-  width: 100%; text-align: left;
-  font: inherit; color: var(--text); cursor: pointer;
-  background: var(--glass); border: 1px solid var(--glass-border);
-  border-radius: 14px; padding: 0.55rem 0.7rem;
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  transition: border-color 120ms ease, transform 120ms ease;
-}
-.fv-status:hover { border-color: rgba(148, 163, 184, 0.4); transform: translateY(-1px); }
-.fv-status[aria-pressed="true"] {
-  border-color: rgba(226, 232, 240, 0.55);
-  background: rgba(15, 23, 42, 0.92);
-}
-.fv-status-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.fv-status .fv-card-chevron { margin-left: 0; }
-.fv-status-main { font-weight: 600; font-size: 0.95rem; }
-/* Same tile as the metric icons; the "icon" is a live dot, still pulsing. */
+/* The signal card is a metric card whose "icon" is a live dot, still
+   pulsing. It stops when the flight is over. */
 .fv-status-dot {
   display: block; width: 10px; height: 10px;
   border-radius: 50%; background: currentColor;
   animation: pulse 1.8s ease-out infinite;
 }
 .fv-status-dot-ended { animation: none; }
-.fv-status-sub {
-  font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint);
-  margin-top: 0.15rem;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* Before there is anything to say, the card's slot holds a note instead. */
+div.fv-status {
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: 14px; padding: 0.55rem 0.7rem;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 
 .fv-hint {
@@ -1014,7 +998,7 @@ a.fv-chip { text-decoration: none; }
   }
   .fv-status, .fv-hint, .fv-card-wide { grid-column: 1 / -1; }
   .fv-hint { display: block; margin-top: -0.15rem; }
-  .fv-card, .fv-status, .fv-side-links {
+  .fv-card, div.fv-status, .fv-side-links {
     background: var(--bg-raised); border-color: var(--border);
     backdrop-filter: none; -webkit-backdrop-filter: none;
   }

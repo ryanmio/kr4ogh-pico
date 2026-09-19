@@ -666,6 +666,13 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           parseUtc(track[i - 1]!.utc).getTime());
       }
       const sinceMs = Date.now() - parseUtc(heard.lastUtc).getTime();
+      // The card only says "Flight ended"; this is where the date goes. A
+      // newest report that was a ghost is named too, because every number
+      // on the cards is from an older report than the one heard last.
+      const lastHeard = (ended()
+        ? `${heard.lastUtc.slice(5, 16)} UTC`
+        : `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`) +
+        (lastKnown(track, ghosts)?.coarse ? " · position only" : "");
       // A ghost is the tracker heard with only half its report: the
       // Regular message with the grid square, never the telemetry. The
       // map draws them hollow; this is where the count is explained.
@@ -674,7 +681,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         : "";
       panelBody.innerHTML =
         `<div class="fv-minis">${[
-          mini("Last heard", `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`),
+          mini("Last heard", lastHeard),
           mini("Reports", `${fmtInt(s.points)} since launch`),
           partial,
           mini("Cadence", "every 10 min in sunlight"),
