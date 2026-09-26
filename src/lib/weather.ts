@@ -13,8 +13,10 @@
  * the build, nothing of ours awake. If either source is down the layer
  * simply does not appear and the map is what it always was.
  *
- * Live flights only. An archived flight is months old and today's weather
- * over its track would be a lie told in pictures.
+ * Offered on every flight, live or closed. The layers are always today's
+ * weather, and the track under them is always older than that: a live
+ * flight's tail is two weeks of history too. The reader knows what they are
+ * looking at, and the switch defaults to off.
  */
 
 import L from "leaflet";

@@ -57,8 +57,8 @@ and live ones are refreshed from wspr.live alongside the featured flight
 (`src/lib/overlay.ts`, the `overlays` option of `map.ts` and `globe.ts`).
 
 A closed flight (`status = "closed"`) is the same view with the clock
-stopped: the committed track is final, wspr.live is not asked, and no
-weather is offered over a track that is history. Its `end_utc` is also what
+stopped: the committed track is final and wspr.live is not asked. The
+weather switch stays, and draws today's weather. Its `end_utc` is also what
 tells it apart from a later flight on the same channel under the same
 callsign, which to wspr.live is the same signal: every path that pulls or
 attributes spots, the tool's pull and decode, the export, and the browser
@@ -151,8 +151,10 @@ keeps the site's rule: no proxy, no secrets in the build, nothing of ours
 awake. If a source is down the layer does not appear and the map is what it
 always was.
 
-Live flights only. An archived flight is months old, and today's weather
-drawn over its track would be a picture that lies.
+Offered on every flight, live or closed. The layers are always today's
+weather and the track under them is always older, so a closed flight is no
+worse a fit than a live one; the switch defaults to off and the reader
+chooses.
 
 ## The decoder
 

@@ -26,9 +26,9 @@
  * one's permalink.
  *
  * A closed flight (status "closed") is the same view with the clock
- * stopped: the committed track is final, so wspr.live is not asked, the
- * refresh timer never starts, and today's weather is not offered over a
- * track that is history.
+ * stopped: the committed track is final, so wspr.live is not asked and the
+ * refresh timer never starts. The weather switch stays: it draws today's
+ * weather either way, and the reader can decide whether that is useful.
  */
 import { withBase } from "../lib/base";
 import { siteConfig, UPSTREAM_REPO } from "../lib/config";
@@ -402,10 +402,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const wide = window.matchMedia("(min-width: 900px)").matches;
       const lon = lastKnown(track, ghosts)?.lon ?? meta.launch_lon ?? 0;
       const viewToggle = buildViewToggle();
-      // Weather is offered for a live flight only: a closed flight's track
-      // is history, and today's clouds over it would be a picture that
-      // lies. Both renderers share the choice, so switching views keeps
-      // the weather on.
+      // Weather is today's weather, whatever the flight's status. The layers
+      // are live products drawn under a track that may be two weeks old
+      // whether the flight is still going or not, so a closed flight is no
+      // worse a fit than a live one and the reader decides. Both renderers
+      // share the choice, so switching views keeps the weather on.
       const weatherOpts = {
         initial: weather,
         onChange: (next: WeatherLayer) => {
@@ -420,9 +421,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
             ghosts, overlays,
             overlaid: wide && mapSlot.clientWidth >= 900,
-            ...(ended() ? {} : {
-              weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
-            }),
+            weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
           globe.onInteract(onInteract);
           if (wide) ctlSlot.appendChild(viewToggle);
@@ -443,13 +442,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       mapSlot.addEventListener("wheel", onInteract, { passive: true });
       held.getContainer().addEventListener("dblclick", onInteract);
       held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
-      if (!ended()) {
-        addWeatherControl(held, {
-          lon,
-          ...(wide ? { into: ctlSlot } : { position: "bottomleft" as const }),
-          ...weatherOpts,
-        });
-      }
+      addWeatherControl(held, {
+        lon,
+        ...(wide ? { into: ctlSlot } : { position: "bottomleft" as const }),
+        ...weatherOpts,
+      });
       if (wide) ctlSlot.appendChild(viewToggle);
       else addCornerControl(held, viewToggle, "bottomleft");
     }
