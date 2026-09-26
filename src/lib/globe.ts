@@ -28,7 +28,8 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 import {
   fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
-import { lastKnown, trailingGhosts, unwrapGhostLons } from "./ghosts";
+import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
+import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import {
   buildWeatherToggle, cloudTiles, enhanceIrTile, rainTiles,
   type WeatherLayer, type WeatherTiles,
@@ -364,6 +365,66 @@ function addOverlay(
 
 const OVERLAY_COLOR = "#94a3b8";
 
+/** The forecast's lavender, as on the flat map: not the track, not an
+ * overlay, not a colour off the altitude ramp. */
+const FORECAST_COLOR = "#c4b5fd";
+
+/** The predicted path unwrapped on from the balloon's own longitude, as
+ * [lon, lat] pairs in MapLibre's order. */
+function forecastCoords(f: Forecast, fromLon: number): [number, number][] {
+  let ref = fromLon;
+  return f.points.map((p) => {
+    const lon = unwrapNear(p.lon, ref);
+    ref = lon;
+    return [lon, p.lat];
+  });
+}
+
+/** The forecast as the flat map draws it: dotted from the newest report on
+ * the track's dark casing, with a dot each day. Pushed after the track's
+ * layers so it sits over the weather with them. */
+function addForecast(
+  style: StyleSpecification, f: Forecast,
+  here: { lon: number; lat: number }, coords: [number, number][],
+): void {
+  style.sources.forecast = {
+    type: "geojson",
+    attribution: FORECAST_ATTRIBUTION,
+    data: {
+      type: "Feature", properties: {},
+      geometry: { type: "LineString", coordinates: [[here.lon, here.lat], ...coords] },
+    },
+  };
+  style.layers.push(
+    { id: "forecast-casing", type: "line", source: "forecast",
+      paint: { "line-color": "#0b1020", "line-width": 5, "line-opacity": 0.35 } },
+    { id: "forecast", type: "line", source: "forecast",
+      layout: { "line-cap": "round" },
+      paint: {
+        "line-color": FORECAST_COLOR, "line-width": 2.2, "line-opacity": 0.9,
+        "line-dasharray": [0.1, 3],
+      } },
+  );
+  const marks = dayMarks(f)
+    .map((m) => coords[f.points.indexOf(m.point)])
+    .filter((c): c is [number, number] => !!c);
+  if (!marks.length) return;
+  style.sources["forecast-days"] = {
+    type: "geojson",
+    data: {
+      type: "Feature", properties: {},
+      geometry: { type: "MultiPoint", coordinates: marks },
+    },
+  };
+  style.layers.push({
+    id: "forecast-days", type: "circle", source: "forecast-days",
+    paint: {
+      "circle-radius": 3.5, "circle-color": FORECAST_COLOR,
+      "circle-stroke-color": "#0b1020", "circle-stroke-width": 1.5,
+    },
+  });
+}
+
 /** Open on the flat map's framing: the whole track plus room around the
  * balloon (fitRegion, shared numbers). A track that has lapped the planet
  * cannot be fitted -- the fit is the planet -- so stand back and put the
@@ -420,6 +481,8 @@ export interface GlobeOpts {
   ghosts?: GhostPoint[];
   /** Other flights drawn under this one, as on the flat map. */
   overlays?: OverlayTrack[];
+  /** The predicted path ahead of the balloon, as on the flat map. */
+  forecast?: Forecast | null;
 }
 
 export interface GlobeHandle {
@@ -519,11 +582,21 @@ export function renderGlobe(
     .filter((x) => x.pos.here);
   overlays.forEach((x, n) => addOverlay(style, x.o, x.pos, n));
   addTrack(style, meta, track, ghosts, pos);
-  // The fit covers the overlays too, this flight's balloon still last.
+  const fc = opts.forecast && pos.here
+    ? forecastCoords(opts.forecast, pos.here.lon) : [];
+  if (fc.length) addForecast(style, opts.forecast!, pos.here!, fc);
+  // The fit covers the overlays and the forecast too, this flight's
+  // balloon still last.
   const fit: Positions = {
     ...pos,
-    fitLats: [...overlays.flatMap((x) => x.pos.fitLats), ...pos.fitLats],
-    fitLons: [...overlays.flatMap((x) => x.pos.fitLons), ...pos.fitLons],
+    fitLats: [
+      ...overlays.flatMap((x) => x.pos.fitLats),
+      ...pos.fitLats.slice(0, -1), ...fc.map((c) => c[1]), ...pos.fitLats.slice(-1),
+    ],
+    fitLons: [
+      ...overlays.flatMap((x) => x.pos.fitLons),
+      ...pos.fitLons.slice(0, -1), ...fc.map((c) => c[0]), ...pos.fitLons.slice(-1),
+    ],
     here: pos.here ?? overlays.at(-1)?.pos.here ?? null,
   };
 

@@ -7,8 +7,9 @@ import "leaflet/dist/leaflet.css";
 import {
   fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
+import { dayMarks, FORECAST_ATTRIBUTION, HORIZON_HOURS, type Forecast } from "./forecast";
 import { fmtUtc } from "./format";
-import { lastKnown, trailingGhosts, unwrapGhostLons } from "./ghosts";
+import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { speedText } from "./speed";
 import { altitude as fmtAltitude, type Units } from "./units";
@@ -21,6 +22,9 @@ export interface MapOptions {
   /** Other flights drawn under this one for comparison: a dimmer line and
    * a named beacon each, nothing else. See lib/overlay.ts. */
   overlays?: OverlayTrack[];
+  /** The predicted path ahead of the balloon, drawn dotted from the newest
+   * report. See lib/forecast.ts. */
+  forecast?: Forecast | null;
   /** What the spots are colored by. */
   metric?: MetricKey;
   /** "fit" sizes the box to the track (article-style pages); "fill" leaves
@@ -94,7 +98,15 @@ export function renderMap(
   const overlays = (opts.overlays ?? [])
     .map((o) => ({ ...o, geo: geometry(o.track, o.ghosts) }))
     .filter((o) => o.geo.hereLatlng);
-  const fitPts = [...overlays.flatMap((o) => o.geo.fitPts), ...geo.fitPts];
+  // The forecast runs on from the balloon, unwrapped point by point from
+  // its longitude so a line over the antimeridian stays one line. It is
+  // fitted too, ahead of the balloon in the list so the balloon stays last.
+  const fc = opts.forecast && hereLatlng
+    ? forecastLatlngs(opts.forecast, hereLatlng.lng) : [];
+  const fitPts = [
+    ...overlays.flatMap((o) => o.geo.fitPts),
+    ...geo.fitPts.slice(0, -1), ...fc, ...geo.fitPts.slice(-1),
+  ];
   // Worked out before the map exists, because on "fit" pages the box has to
   // be the right height before Leaflet measures it.
   const fitted = fitPts.length > 0 ? fitBoundsFor(fitPts) : null;
@@ -179,6 +191,8 @@ export function renderMap(
         interactive: false },
     ).addTo(map);
   }
+
+  if (fc.length) drawForecast(map, opts.forecast!, hereLatlng, fc);
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
@@ -300,7 +314,9 @@ export function renderMap(
   // they land on screen. Every zoom after this one re-thins them.
   drawSpots();
   map.on("zoomend", drawSpots);
-  const everyLon = [...allLons, ...overlays.flatMap((o) => o.geo.lons)];
+  const everyLon = [
+    ...allLons, ...overlays.flatMap((o) => o.geo.lons), ...fc.map((p) => p.lng),
+  ];
   map.setMaxBounds(L.latLngBounds(
     L.latLng(-85, Math.min(...everyLon) - 360),
     L.latLng(85, Math.max(...everyLon) + 360),
@@ -407,6 +423,52 @@ function drawOverlay(map: L.Map, meta: FlightMeta, geo: Geometry): void {
 /** An overlaid flight's grey: the ghosts' ring colour knocked back, so it
  * sits under the featured flight's white line without competing. */
 const OVERLAY_COLOR = "#94a3b8";
+
+/** The forecast's own colour: a lavender that is neither the track's white,
+ * the overlays' grey, nor anything on the altitude ramp (blue, cyan,
+ * yellow), so a dotted line in it reads as a guess and never as a report. */
+const FORECAST_COLOR = "#c4b5fd";
+
+function forecastLatlngs(f: Forecast, fromLon: number): L.LatLng[] {
+  let ref = fromLon;
+  return f.points.map((p) => {
+    const lon = unwrapNear(p.lon, ref);
+    ref = lon;
+    return L.latLng(p.lat, lon);
+  });
+}
+
+/** The predicted path ahead of the balloon: a dotted line from the newest
+ * report, on the same dark casing as the track, with a mark each day so
+ * the line has a scale. Under the spots, over the weather. */
+function drawForecast(
+  map: L.Map, f: Forecast, from: L.LatLng, latlngs: L.LatLng[],
+): void {
+  const line = [from, ...latlngs];
+  L.polyline(line, {
+    color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false,
+  }).addTo(map);
+  L.polyline(line, {
+    color: FORECAST_COLOR, weight: 2.2, opacity: 0.9,
+    dashArray: "1 7", lineCap: "round",
+    attribution: FORECAST_ATTRIBUTION,
+  }).bindTooltip(
+    `Forecast: ${HORIZON_HOURS / 24} days from the report of ` +
+    `${fmtUtc(f.from.utc)}${f.from.coarse ? " (grid square)" : ""}` +
+    "<br>SondeHub Tawhiri on GFS winds · a guess, not a report",
+    { sticky: true },
+  ).addTo(map);
+  for (const m of dayMarks(f)) {
+    const at = latlngs[f.points.indexOf(m.point)];
+    if (!at) continue;
+    L.circleMarker(at, {
+      radius: 3.5, color: SPOT_OUTLINE, weight: 1.5,
+      fillColor: FORECAST_COLOR, fillOpacity: 1,
+    }).bindTooltip(
+      `Forecast +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtUtc(m.point.utc)}`,
+    ).addTo(map);
+  }
+}
 
 /** Radius of a spot close in, and at the world view, where a run of fixes
  * merges into a band and a slightly smaller dot keeps the track reading as a

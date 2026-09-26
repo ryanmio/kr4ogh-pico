@@ -176,6 +176,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import {
     resolveView, saveView, urlWithView, type ViewMode,
   } from "../lib/viewmode";
+  import {
+    fetchForecast, forecastOrigin, HORIZON_HOURS, resolveForecastMode,
+    saveForecastMode, urlWithForecast, type Forecast, type ForecastMode,
+  } from "../lib/forecast";
 
   const root = document.querySelector<HTMLElement>(".fv");
   if (root) {
@@ -202,6 +206,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // globe's renderer itself is lazy-loaded so the flat map never pays
     // maplibre's weight.
     let view: ViewMode = resolveView(location.search);
+    // The predicted path ahead of the balloon (lib/forecast.ts): the
+    // reader's choice, held out here like the weather's, and the
+    // prediction itself, so a rebuilt map draws it without asking again.
+    let forecastMode: ForecastMode = resolveForecastMode(location.search);
+    let forecast: Forecast | null = null;
     // Which panel is open, if any. A `?p=speed` link arrives with that
     // panel already open, so a link shows what its sender was looking at.
     let panel: PanelKind | null = panelFromSearch(location.search);
@@ -223,6 +232,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const nextLink = root.querySelector<HTMLAnchorElement>("#next-flight")!;
     const overlayBtn = root.querySelector<HTMLButtonElement>("#overlay-toggle")!;
     const REFRESH_MS = 2 * 60 * 1000;
+    // How long a refresh waits for the forecast before drawing without it.
+    const FORECAST_WAIT_MS = 2000;
     // Other flights on the same map (lib/overlay.ts): what the address
     // asked for, and the tracks fetched for it. Context only: they never
     // reach the cards or the panel.
@@ -383,6 +394,50 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       return div;
     }
 
+    /** One button: the predicted path on or off. Built for a live flight
+     * only; a closed flight's balloon is nowhere, so there is nothing to
+     * predict and no button. */
+    function buildForecastToggle(): HTMLElement {
+      const div = document.createElement("div");
+      div.className = "weather-toggle forecast-toggle";
+      div.setAttribute("role", "group");
+      div.setAttribute("aria-label", "Forecast");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = "Forecast";
+      b.title =
+        `Where the wind takes it next: a ${HORIZON_HOURS / 24}-day float ` +
+        "prediction from the newest report at its altitude, by SondeHub's " +
+        "Tawhiri predictor on GFS winds. A guess, drawn as one.";
+      b.setAttribute("aria-pressed", String(forecastMode === "on"));
+      b.addEventListener("click", () =>
+        void selectForecast(forecastMode === "on" ? "off" : "on"));
+      div.appendChild(b);
+      return div;
+    }
+
+    async function selectForecast(next: ForecastMode) {
+      if (next === forecastMode) return;
+      forecastMode = next;
+      saveForecastMode(next);
+      pinInUrl(urlWithForecast(location.href, next));
+      await syncForecast();
+      // They asked for the line, not to be moved.
+      drawMapAgain(true);
+    }
+
+    /** Bring `forecast` in line with the flight and the choice: predicted
+     * from the newest report (the module caches it), or null. True when
+     * what is held changed and the map has something new to draw. */
+    async function syncForecast(): Promise<boolean> {
+      const origin = !ended() && forecastMode === "on"
+        ? forecastOrigin(track, ghosts) : null;
+      const next = origin ? await fetchForecast(origin) : null;
+      const changed = next !== forecast;
+      forecast = next;
+      return changed;
+    }
+
     async function selectView(next: ViewMode) {
       if (next === view) return;
       if (next === "globe" && !(await ensureGlobeMod())) return;
@@ -419,13 +474,18 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
-            ghosts, overlays,
+            ghosts, overlays, forecast,
             overlaid: wide && mapSlot.clientWidth >= 900,
             weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
           globe.onInteract(onInteract);
           if (wide) ctlSlot.appendChild(viewToggle);
           else globe.addCorner(viewToggle);
+          if (!ended()) {
+            const t = buildForecastToggle();
+            if (wide) ctlSlot.appendChild(t);
+            else globe.addCorner(t);
+          }
           return;
         } catch {
           // WebGL said no; the flat map works everywhere.
@@ -433,7 +493,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         }
       }
       const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, ghosts, overlays, sizing: "fill",
+        units, metric, ghosts, overlays, forecast, sizing: "fill",
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return;
@@ -449,6 +509,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       });
       if (wide) ctlSlot.appendChild(viewToggle);
       else addCornerControl(held, viewToggle, "bottomleft");
+      if (!ended()) {
+        const t = buildForecastToggle();
+        if (wide) ctlSlot.appendChild(t);
+        else addCornerControl(held, t, "bottomleft");
+      }
     }
 
     /** First render: clear the locating state and draw. Safe to call more
@@ -973,11 +1038,21 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
       track = result.track;
       ghosts = result.ghosts;
+      // The forecast rides on the newest report, so it is brought up to
+      // date now; but the map does not wait long for SondeHub, and a slow
+      // answer redraws when it lands.
+      const fc = syncForecast();
+      const fcChanged = await Promise.race([
+        fc, new Promise<null>((r) => setTimeout(() => r(null), FORECAST_WAIT_MS)),
+      ]);
+      if (fcChanged === null) {
+        void fc.then((changed) => { if (changed && !firstPaint) drawMapAgain(); });
+      }
       if (firstPaint) {
         await drawFirst();
         renderSidebar();
         renderPanel();
-      } else if (result.added > 0 || overlayAdded > 0) {
+      } else if (result.added > 0 || overlayAdded > 0 || fcChanged) {
         drawMapAgain();
         renderSidebar();
         renderPanel();

@@ -202,4 +202,4 @@ service; every query the site or the tool makes is bounded and narrow. The
 telemetry format is Traquito's and QRP Labs' U4B, implemented here from the
 published documentation and not from the AGPL reference libraries, so this
 repository can be MIT (see [docs/telemetry-format.md](docs/telemetry-format.md)).
-Map tiles and weather layers are credited on the map.
+Map tiles, weather layers and the float forecast are credited on the map.

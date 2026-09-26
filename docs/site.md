@@ -156,6 +156,39 @@ weather and the track under them is always older, so a closed flight is no
 worse a fit than a live one; the switch defaults to off and the reader
 chooses.
 
+## Where it goes next
+
+A live flight's map carries a dotted line ahead of the balloon: a float
+prediction from the newest report, at the altitude of the newest fix,
+three days out, with a dot each day. It is `src/lib/forecast.ts`, drawn by
+both renderers.
+
+The predictor is Tawhiri, the Cambridge University Spaceflight engine that
+SondeHub runs (`api.v2.sondehub.org/tawhiri`). Given a position, an
+altitude and a time it walks the GFS wind field forward at that altitude.
+That is the same wind an animated wind map shows, turned into the one thing
+a reader wants from it. The service is keyless and CORS-open, so it holds
+to the site's rule: the visitor's browser asks, nothing of ours is in the
+loop, and if SondeHub is down the line is simply absent.
+
+The prediction starts at the report itself when the predictor accepts it:
+the tracker is silent overnight, and running the wind forward from where it
+was last heard is the best guess of where it is now as well as where it is
+going. A report older than the model window is refused, and the line is
+then run from now at that position. The newest report is often a ghost
+(a grid square, no telemetry); the position is taken from it and the
+altitude from the last full fix.
+
+One answer is kept for half an hour per origin, so the two-minute rebuild
+never asks SondeHub twice for the same thing. A new fix is a new origin.
+The refresh waits two seconds for the answer and draws without it past
+that; a late answer redraws when it lands.
+
+The line is on by default. A **Forecast** button beside the weather switch
+turns it off, remembered per browser; `?f=n` in a link hides it and `?f=y`
+shows it, on the same rule as `?w=`. Closed flights have no line and no
+button: the balloon is nowhere, so there is nothing to predict.
+
 ## The decoder
 
 `src/lib/wspr/` is a TypeScript port of the Python in `tool/picolog/` —
