@@ -428,11 +428,20 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     /** Bring `forecast` in line with the flight and the choice: predicted
      * from the newest report (the module caches it), or null. True when
-     * what is held changed and the map has something new to draw. */
+     * what is held changed and the map has something new to draw.
+     *
+     * Only the newest call is allowed to land. A slow answer can arrive
+     * after the reader has switched the line off, or after a later refresh
+     * has already predicted from a newer fix; either way it is stale, and
+     * writing it would put back a line that was taken away, or an older
+     * prediction over a newer one. */
+    let forecastGeneration = 0;
     async function syncForecast(): Promise<boolean> {
+      const token = ++forecastGeneration;
       const origin = !ended() && forecastMode === "on"
         ? forecastOrigin(track, ghosts) : null;
       const next = origin ? await fetchForecast(origin) : null;
+      if (token !== forecastGeneration) return false;
       const changed = next !== forecast;
       forecast = next;
       return changed;
