@@ -108,10 +108,17 @@ const ASCENT_RATE_MPS = 5;
 
 /** What the altitude has to be doing, over the newest half hour of fixes,
  * to count as climbing or coming down. A pico climbs at about half a metre
- * a second; at float it drifts by a few hundredths. Two fixes at least a
- * quarter of an hour apart are needed to say anything. */
+ * a second; at float it drifts by a few hundredths, and the tracker's
+ * 20 m altitude steps over one ten-minute interval are a few hundredths
+ * too, so two fixes an interval apart are enough to tell the two apart. */
 const TREND_WINDOW_MS = 30 * 60_000;
-const TREND_MIN_SPAN_MS = 15 * 60_000;
+const TREND_MIN_SPAN_MS = 5 * 60_000;
+
+/** With a single fix in the window (the first report after a silent night,
+ * say) the fix before it still describes the trend, as long as it is not
+ * too old to say anything about now. A climb lasts a few hours, so a gap
+ * longer than this means the balloon has been up for a while. */
+const TREND_MAX_GAP_MS = 3 * 60 * 60_000;
 const CLIMB_MPS = 0.2;
 const DESCENT_MPS = 0.3;
 
@@ -164,14 +171,20 @@ export interface Forecast {
 }
 
 /** Metres per second the altitude is changing over the newest half hour
- * of fixes, or null when there are not two fixes far enough apart to say. */
+ * of fixes, or null when nothing recent enough says. */
 export function climbRate(track: TrackPoint[]): number | null {
   const last = track.at(-1);
   if (!last) return null;
-  const end = parseUtc(last.utc).getTime();
-  const recent = track.filter((p) => end - parseUtc(p.utc).getTime() <= TREND_WINDOW_MS);
-  const first = recent[0]!;
-  const span = end - parseUtc(first.utc).getTime();
+  const at = (p: TrackPoint) => parseUtc(p.utc).getTime();
+  const end = at(last);
+  const recent = track.filter((p) => end - at(p) <= TREND_WINDOW_MS);
+  let first = recent[0]!;
+  if (recent.length < 2) {
+    const prev = track.at(-2);
+    if (!prev || end - at(prev) > TREND_MAX_GAP_MS) return null;
+    first = prev;
+  }
+  const span = end - at(first);
   if (span < TREND_MIN_SPAN_MS) return null;
   return (last.altitude_m - first.altitude_m) / (span / 1000);
 }
@@ -183,8 +196,8 @@ export function climbRate(track: TrackPoint[]): number | null {
  *
  * - Coming down faster than a float ever drifts: the flight is ending,
  *   and there is no float to predict. Null.
- * - Well below the expected float and climbing, or too young to tell:
- *   the climb is modelled. The origin is the newest full fix, not a newer
+ * - Well below the expected float and climbing, or a flight of one fix,
+ *   which is a balloon just off the ground: the climb is modelled. The origin is the newest full fix, not a newer
  *   ghost, so the position, altitude and time the climb starts from
  *   belong together; a ghost's square with a fix's altitude from half an
  *   hour earlier would be a position the balloon has left paired with a
@@ -197,7 +210,11 @@ export function climbRate(track: TrackPoint[]): number | null {
  *
  * Otherwise the balloon is level, and the line floats at the altitude of
  * the newest fix from the newest report of any kind: a ghost is the best
- * position there is, and at float the fix's altitude still holds. */
+ * position there is, and at float the fix's altitude still holds. This is
+ * also where a balloon that has settled below its expected float lands,
+ * and where one that has been silent too long for a trend lands: the
+ * expected float only ever shapes the climb, never the float itself, so a
+ * balloon slowly losing gas is forecast at whatever height it reports. */
 export function forecastOrigin(
   track: TrackPoint[], ghosts: GhostPoint[], expectedFloatM: number | null,
 ): ForecastOrigin | null {
@@ -207,7 +224,8 @@ export function forecastOrigin(
   if (rate !== null && rate <= -DESCENT_MPS) return null;
   const belowFloat = expectedFloatM !== null
     && fix.altitude_m < expectedFloatM - FLOAT_MARGIN_M;
-  if (belowFloat && (rate === null || rate >= CLIMB_MPS)) {
+  const climbing = rate !== null ? rate >= CLIMB_MPS : track.length === 1;
+  if (belowFloat && climbing) {
     return {
       utc: fix.utc, lat: fix.lat, lon: fix.lon, altitude_m: fix.altitude_m,
       coarse: false,
@@ -215,7 +233,7 @@ export function forecastOrigin(
       float_m: expectedFloatM!,
     };
   }
-  if (rate !== null && rate >= CLIMB_MPS && expectedFloatM === null) return null;
+  if (climbing && expectedFloatM === null) return null;
   const known = lastKnown(track, ghosts)!;
   return {
     utc: known.utc, lat: known.lat, lon: known.lon, altitude_m: fix.altitude_m,
