@@ -141,3 +141,38 @@ launch_lon = -77.9759
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "348"
+
+# JP-05 launched 2026-10-03 13:55 UTC (9:55 AM EDT).
+[[flights]]
+flight_id = "F3A"
+callsign = "KR4OGH"
+band = "20m"
+channel = 512
+launch_utc = "2026-10-03 13:55:00"
+
+[flights.tracker]
+"Hardware" = "Traquito Jetpack (RP2040) · JP-05"
+"Transmit power" = "20 mW"
+"Mode" = "WSPR + U4B telemetry"
+"Frequency" = "14.097140 MHz (20 m)"
+"Channel" = "512"
+"Schedule" = "every 10 min from :02"
+"Launched" = "2026-10-03 13:55 UTC"
+
+# JP-06 launched 2026-10-03 14:32 UTC (10:32 AM EDT). Reuses channel 206;
+# F2A carries an end_utc so the two stay separate flights.
+[[flights]]
+flight_id = "F3B"
+callsign = "KR4OGH"
+band = "20m"
+channel = 206
+launch_utc = "2026-10-03 14:32:00"
+
+[flights.tracker]
+"Hardware" = "Traquito Jetpack (RP2040) · JP-06"
+"Transmit power" = "20 mW"
+"Mode" = "WSPR + U4B telemetry"
+"Frequency" = "14.097060 MHz (20 m)"
+"Channel" = "206"
+"Schedule" = "every 10 min from :00"
+"Launched" = "2026-10-03 14:32 UTC"
