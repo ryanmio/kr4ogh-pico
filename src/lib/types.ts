@@ -57,6 +57,11 @@ export interface FlightMeta {
   launch_lon: number | null;
   status: "live" | "closed";
   close_reason: string | null;
+  /** Metres the balloon is expected to float at, from flights.toml. It is
+   * what lets the forecast model the climb (lib/forecast.ts); without it
+   * the line can only float at the altitude last reported. Absent in
+   * older archives. */
+  float_m?: number | null;
   /** Build details for the Tracker panel, label -> value, in the order
    * written in flights.toml. */
   tracker?: Record<string, string>;

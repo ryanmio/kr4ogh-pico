@@ -91,33 +91,59 @@ export function saveForecastMode(mode: ForecastMode): void {
 
 const TAWHIRI = "https://api.v2.sondehub.org/tawhiri";
 
-/** How far ahead the line runs. The model window is about eight days from
- * the newest GFS run, but a float prediction is honest for a few days and
- * decoration after that; three keeps the line something a reader can
- * believe. */
+/** How far ahead of now the line runs. The model window is about eight
+ * days from the newest GFS run, but a float prediction is honest for a few
+ * days and decoration after that; three keeps the line something a reader
+ * can believe. Measured from now, not from the report: a report that is
+ * hours old still gets a line three days into the future. */
 export const HORIZON_HOURS = 72;
 
 /** Tawhiri's float profile insists on an ascent: the float altitude has to
- * be above the launch altitude, and an ascent rate is required. So the
- * profile starts this far under the balloon's own altitude and climbs at
- * this rate, which makes the ascent stage two seconds long and a couple of
- * points, and puts the float at the altitude the tracker reported. */
+ * be above the launch altitude, and an ascent rate is required. Once the
+ * balloon is level the profile starts this far under its own altitude and
+ * climbs at this rate, which makes the ascent stage two seconds long and
+ * puts the float at the altitude the tracker reported. */
 const ASCENT_M = 10;
 const ASCENT_RATE_MPS = 5;
+
+/** What the altitude has to be doing, over the newest half hour of fixes,
+ * to count as climbing or coming down. A pico climbs at about half a metre
+ * a second; at float it drifts by a few hundredths. Two fixes at least a
+ * quarter of an hour apart are needed to say anything. */
+const TREND_WINDOW_MS = 30 * 60_000;
+const TREND_MIN_SPAN_MS = 15 * 60_000;
+const CLIMB_MPS = 0.2;
+const DESCENT_MPS = 0.3;
+
+/** The climb the predictor is given: the measured rate within sane bounds,
+ * or the typical pico rate when the flight is too young to have one. */
+const DEFAULT_CLIMB_MPS = 0.5;
+const MAX_CLIMB_MPS = 3;
+
+/** Within this much of the expected float the balloon is treated as there:
+ * the last few hundred metres of a climb are slow and make no difference
+ * to where the wind takes it. */
+const FLOAT_MARGIN_M = 300;
 
 export const FORECAST_ATTRIBUTION =
   'Forecast &copy; <a href="https://sondehub.org/">SondeHub</a> Tawhiri (GFS)';
 
-/** What the line is predicted from: the newest report, at the newest
- * altitude the tracker sent. */
+/** What the line is predicted from: a report, and what the balloon is
+ * doing at it. */
 export interface ForecastOrigin {
   utc: string;
   lat: number;
   lon: number;
   altitude_m: number;
-  /** True when the newest report is a ghost, so the position is a grid
-   * square rather than a fix. */
+  /** True when the report is a ghost, so the position is a grid square
+   * rather than a fix. */
   coarse: boolean;
+  /** Metres per second the balloon is still climbing at, or null once it
+   * has levelled off. */
+  climb_mps: number | null;
+  /** The altitude the line floats at: the flight's expected float while
+   * climbing, the reported altitude once level. */
+  float_m: number;
 }
 
 export interface ForecastPoint {
@@ -137,18 +163,63 @@ export interface Forecast {
   points: ForecastPoint[];
 }
 
-/** The origin for a flight, or null with nothing to predict from. A ghost
- * can be the position (the balloon is somewhere in that square) but only a
- * full fix knows the altitude, and without one there is no float level. */
+/** Metres per second the altitude is changing over the newest half hour
+ * of fixes, or null when there are not two fixes far enough apart to say. */
+export function climbRate(track: TrackPoint[]): number | null {
+  const last = track.at(-1);
+  if (!last) return null;
+  const end = parseUtc(last.utc).getTime();
+  const recent = track.filter((p) => end - parseUtc(p.utc).getTime() <= TREND_WINDOW_MS);
+  const first = recent[0]!;
+  const span = end - parseUtc(first.utc).getTime();
+  if (span < TREND_MIN_SPAN_MS) return null;
+  return (last.altitude_m - first.altitude_m) / (span / 1000);
+}
+
+/** The origin for a flight, or null with nothing honest to predict from.
+ *
+ * Three cases, read off the altitude trend and the flight's expected
+ * float (`float_m` in flights.toml):
+ *
+ * - Coming down faster than a float ever drifts: the flight is ending,
+ *   and there is no float to predict. Null.
+ * - Well below the expected float and climbing, or too young to tell:
+ *   the climb is modelled. The origin is the newest full fix, not a newer
+ *   ghost, so the position, altitude and time the climb starts from
+ *   belong together; a ghost's square with a fix's altitude from half an
+ *   hour earlier would be a position the balloon has left paired with a
+ *   height it has long passed. Floating at the reported altitude instead
+ *   would be the wrong flight entirely: a balloon at 3 km is in a
+ *   different wind from the one it will float in, and a line drawn there
+ *   wanders over the continent while the real one crosses an ocean.
+ * - Climbing with no expected float to climb to: nothing honest can be
+ *   drawn, and nothing is. Null.
+ *
+ * Otherwise the balloon is level, and the line floats at the altitude of
+ * the newest fix from the newest report of any kind: a ghost is the best
+ * position there is, and at float the fix's altitude still holds. */
 export function forecastOrigin(
-  track: TrackPoint[], ghosts: GhostPoint[],
+  track: TrackPoint[], ghosts: GhostPoint[], expectedFloatM: number | null,
 ): ForecastOrigin | null {
-  const known = lastKnown(track, ghosts);
   const fix = track.at(-1);
-  if (!known || !fix) return null;
+  if (!fix) return null;
+  const rate = climbRate(track);
+  if (rate !== null && rate <= -DESCENT_MPS) return null;
+  const belowFloat = expectedFloatM !== null
+    && fix.altitude_m < expectedFloatM - FLOAT_MARGIN_M;
+  if (belowFloat && (rate === null || rate >= CLIMB_MPS)) {
+    return {
+      utc: fix.utc, lat: fix.lat, lon: fix.lon, altitude_m: fix.altitude_m,
+      coarse: false,
+      climb_mps: Math.min(MAX_CLIMB_MPS, Math.max(CLIMB_MPS, rate ?? DEFAULT_CLIMB_MPS)),
+      float_m: expectedFloatM!,
+    };
+  }
+  if (rate !== null && rate >= CLIMB_MPS && expectedFloatM === null) return null;
+  const known = lastKnown(track, ghosts)!;
   return {
-    utc: known.utc, lat: known.lat, lon: known.lon,
-    altitude_m: fix.altitude_m, coarse: known.coarse,
+    utc: known.utc, lat: known.lat, lon: known.lon, altitude_m: fix.altitude_m,
+    coarse: known.coarse, climb_mps: null, float_m: fix.altitude_m,
   };
 }
 
@@ -186,14 +257,22 @@ class PredictionError extends Error {}
 async function predict(
   from: ForecastOrigin, start: Date, stop: Date,
 ): Promise<ForecastPoint[]> {
+  // Climbing: the real climb, from the fix to the expected float. Level:
+  // the token two-second ascent that puts the float at the reported
+  // altitude (a fix at ground level cannot start below zero).
+  const climbing = from.climb_mps !== null;
+  const launchAlt = climbing
+    ? Math.round(from.altitude_m)
+    : Math.max(0, Math.round(from.altitude_m) - ASCENT_M);
+  const floatAlt = climbing ? Math.round(from.float_m) : launchAlt + ASCENT_M;
   const q = new URLSearchParams({
     profile: "float_profile",
     launch_latitude: from.lat.toFixed(4),
     launch_longitude: lon360(from.lon).toFixed(4),
-    launch_altitude: (Math.round(from.altitude_m) - ASCENT_M).toString(),
+    launch_altitude: launchAlt.toString(),
     launch_datetime: isoSeconds(start),
-    ascent_rate: ASCENT_RATE_MPS.toString(),
-    float_altitude: Math.round(from.altitude_m).toString(),
+    ascent_rate: (climbing ? from.climb_mps! : ASCENT_RATE_MPS).toFixed(2),
+    float_altitude: floatAlt.toString(),
     stop_datetime: isoSeconds(stop),
   });
   const r = await fetch(`${TAWHIRI}?${q}`);
@@ -235,7 +314,9 @@ let cached: { key: string; at: number; promise: Promise<Forecast | null> } | nul
 export function fetchForecast(
   from: ForecastOrigin, now: number = Date.now(),
 ): Promise<Forecast | null> {
-  const key = [from.utc, from.lat, from.lon, from.altitude_m].join("|");
+  const key = [
+    from.utc, from.lat, from.lon, from.altitude_m, from.climb_mps, from.float_m,
+  ].join("|");
   if (cached && cached.key === key && now - cached.at < CACHE_MS) return cached.promise;
   const stop = new Date(now + HORIZON_HOURS * 3_600_000);
   const promise = (async (): Promise<Forecast | null> => {

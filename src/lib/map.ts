@@ -192,7 +192,7 @@ export function renderMap(
     ).addTo(map);
   }
 
-  if (fc.length) drawForecast(map, opts.forecast!, hereLatlng, fc);
+  if (fc.length) drawForecast(map, opts.forecast!, hereLatlng, fc, units);
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
@@ -442,7 +442,7 @@ function forecastLatlngs(f: Forecast, fromLon: number): L.LatLng[] {
  * report, on the same dark casing as the track, with a mark each day so
  * the line has a scale. Under the spots, over the weather. */
 function drawForecast(
-  map: L.Map, f: Forecast, from: L.LatLng, latlngs: L.LatLng[],
+  map: L.Map, f: Forecast, from: L.LatLng, latlngs: L.LatLng[], units: Units,
 ): void {
   const line = [from, ...latlngs];
   L.polyline(line, {
@@ -454,7 +454,11 @@ function drawForecast(
     attribution: FORECAST_ATTRIBUTION,
   }).bindTooltip(
     `Forecast: ${HORIZON_HOURS / 24} days from the report of ` +
-    `${fmtUtc(f.from.utc)}${f.from.coarse ? " (grid square)" : ""}` +
+    `${fmtUtc(f.from.utc)}${f.from.coarse ? " (grid square)" : ""}<br>` +
+    (f.from.climb_mps !== null
+      ? `climbing at ${f.from.climb_mps.toFixed(1)} m/s to float at ` +
+        `${fmtAltitude(f.from.float_m, units).text}`
+      : `floating at ${fmtAltitude(f.from.float_m, units).text}`) +
     "<br>SondeHub Tawhiri on GFS winds · a guess, not a report",
     { sticky: true },
   ).addTo(map);

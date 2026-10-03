@@ -44,6 +44,12 @@ featured = "F2B"
 #               closed flight keeps its page and its track, stops being
 #               polled, and reads as ended.
 #   close_reason   optional note on why it closed
+#   float_m     optional, metres above sea level the balloon is expected to
+#               float at. The map's forecast line needs it while the balloon
+#               is still climbing: with it the line models the climb to
+#               float; without it there is no line until the balloon has
+#               levelled off. Your envelope's usual float, or an earlier
+#               flight's.
 #
 # An optional [flights.tracker] table right after a flight holds build
 # details for the Tracker panel: any labels you like, in the order written.
@@ -149,6 +155,8 @@ callsign = "KR4OGH"
 band = "20m"
 channel = 512
 launch_utc = "2026-10-03 13:55:00"
+# Expected float: the earlier JP flights settled between 10.6 and 10.9 km.
+float_m = 10700
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040) · JP-05"
@@ -167,6 +175,7 @@ callsign = "KR4OGH"
 band = "20m"
 channel = 206
 launch_utc = "2026-10-03 14:32:00"
+float_m = 10700
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040) · JP-06"

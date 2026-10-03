@@ -439,7 +439,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     async function syncForecast(): Promise<boolean> {
       const token = ++forecastGeneration;
       const origin = !ended() && forecastMode === "on"
-        ? forecastOrigin(track, ghosts) : null;
+        ? forecastOrigin(track, ghosts, meta.float_m ?? null) : null;
       const next = origin ? await fetchForecast(origin) : null;
       if (token !== forecastGeneration) return false;
       const changed = next !== forecast;

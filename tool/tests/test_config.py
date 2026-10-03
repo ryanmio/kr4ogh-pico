@@ -23,6 +23,7 @@ callsign = "N0CALL"
 band = "20m"
 channel = 42
 launch_utc = "2026-08-30 12:44:00"
+float_m = 10700
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack"
@@ -42,6 +43,7 @@ close_reason = "silence >7 days"
     assert flights[0].band_code == 14
     assert flights[0].active and flights[0].status == "live"
     assert flights[0].launch.isoformat() == "2026-08-30T12:44:00"
+    assert flights[0].float_m == 10700 and flights[1].float_m is None
     # Label order is the file's; values arrive as text whatever they were.
     assert flights[0].tracker == {"Hardware": "Traquito Jetpack", "Channel": "42"}
     assert not flights[1].active
@@ -87,6 +89,7 @@ channel = 43
     ("launch_utc", '"2026-13-30 12:44:00"', "not a real date"),
     ("status", '"done"', '"live" or "closed"'),
     ("balloon", '"x"', "unknown field"),
+    ("float_m", "-5", "metres above sea level"),
 ])
 def test_bad_field_named_in_error(tmp_path, field, bad, words):
     good = {"flight_id": '"T1"', "callsign": '"N0CALL"', "band": '"20m"', "channel": "42"}

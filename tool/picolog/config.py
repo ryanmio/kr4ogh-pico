@@ -27,7 +27,7 @@ _CALLSIGN = re.compile(r"^[A-Z0-9/]{3,10}$")
 _LAUNCH_UTC = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 _FLIGHT_FIELDS = {
     "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
-    "launch_lat", "launch_lon", "status", "close_reason", "tracker",
+    "launch_lat", "launch_lon", "status", "close_reason", "float_m", "tracker",
 }
 
 
@@ -59,6 +59,9 @@ class Flight:
     launch_lon: float | None = None
     status: str = "live"
     close_reason: str | None = None
+    # Metres the balloon is expected to float at. The site's forecast uses
+    # it to model the climb; the tool carries it through untouched.
+    float_m: float | None = None
     # Build details for the site's Tracker panel, label -> value, in the
     # order written. The tool carries it through untouched.
     tracker: dict[str, str] | None = None
@@ -185,6 +188,10 @@ def _flight(entry: object, index: int) -> Flight:
     if status not in ("live", "closed"):
         _fail(f"{where}.status", 'must be "live" or "closed"')
 
+    float_m = _optional_num(entry, where, "float_m")
+    if float_m is not None and not 0 < float_m < 50_000:
+        _fail(f"{where}.float_m", "must be metres above sea level, e.g. 10700")
+
     tracker = entry.get("tracker")
     if tracker is not None:
         if not isinstance(tracker, dict):
@@ -203,6 +210,7 @@ def _flight(entry: object, index: int) -> Flight:
         launch_lon=_optional_num(entry, where, "launch_lon"),
         status=status,
         close_reason=_optional_str(entry, where, "close_reason"),
+        float_m=float_m,
         tracker=tracker,
     )
 

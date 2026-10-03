@@ -175,9 +175,23 @@ The prediction starts at the report itself when the predictor accepts it:
 the tracker is silent overnight, and running the wind forward from where it
 was last heard is the best guess of where it is now as well as where it is
 going. A report older than the model window is refused, and the line is
-then run from now at that position. The newest report is often a ghost
-(a grid square, no telemetry); the position is taken from it and the
-altitude from the last full fix.
+then run from now at that position.
+
+What the balloon is doing decides what is asked for, read off the altitude
+trend over the newest half hour of fixes:
+
+- **Level**: the line floats at the altitude of the newest fix, from the
+  newest report of any kind. A ghost (a grid square, no telemetry) is the
+  best position there is, and at float the fix's altitude still holds.
+- **Climbing**, and well below the flight's expected float (`float_m` in
+  flights.toml): the climb is modelled, from the newest full fix at the
+  measured rate up to the expected float, then the float. This is what
+  `float_m` is for. A balloon at 3 km is in a different wind from the one
+  it will float in, and a line floated at 3 km wanders over the continent
+  while the real flight crosses an ocean. Without `float_m` nothing honest
+  can be drawn during the climb, and nothing is.
+- **Coming down** faster than a float ever drifts: the flight is ending,
+  there is no float to predict, and there is no line.
 
 One answer is kept for half an hour per origin, so the two-minute rebuild
 never asks SondeHub twice for the same thing. A new fix is a new origin.
