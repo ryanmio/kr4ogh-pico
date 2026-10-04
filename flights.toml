@@ -155,6 +155,9 @@ callsign = "KR4OGH"
 band = "20m"
 channel = 512
 launch_utc = "2026-10-03 13:55:00"
+end_utc = "2026-10-03 16:02:00"
+status = "closed"
+close_reason = "Down — weather; silent since 2026-10-03 16:02 UTC"
 # Expected float. The earlier JP flights settled between 10.6 and 10.9 km;
 # these two were filled with less free lift and should sit a little lower.
 float_m = 10300
@@ -176,6 +179,9 @@ callsign = "KR4OGH"
 band = "20m"
 channel = 206
 launch_utc = "2026-10-03 14:32:00"
+end_utc = "2026-10-03 16:40:00"
+status = "closed"
+close_reason = "Down — weather; silent since 2026-10-03 16:40 UTC"
 float_m = 10300
 
 [flights.tracker]
