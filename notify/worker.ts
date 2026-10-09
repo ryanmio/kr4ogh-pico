@@ -5,8 +5,9 @@
  * optional extra for the operator. Every five minutes Cloudflare wakes it;
  * it asks wspr.live for each live flight's newest spots, decodes them with
  * the site's own decoder (src/lib/wspr/), and sends a push notification
- * when a flight is heard again after being quiet: the first spot after
- * launch, the first of the morning, landfall after a night over the sea.
+ * when a flight is heard: every hearing, or, with QUIET_HOURS set, only
+ * after a silence (the first spot after launch, the first of the morning,
+ * landfall after a night over the sea).
  * README.md, "Alerts on your phone", is the walkthrough.
  *
  * Why a Worker and not the daily GitHub Action: a cron here fires on the
@@ -16,8 +17,9 @@
  * Settings (wrangler.toml [vars], or the Cloudflare dashboard):
  *   SITE_URL       the deployed site: /flights.json there is the flight
  *                  list, and notifications link to /live/<id>/ on it
- *   QUIET_HOURS    how long a flight must have gone unheard for its next
- *                  hearing to count; "0" reports every hearing
+ *   QUIET_HOURS    optional, how long a flight must have gone unheard for
+ *                  its next hearing to count; unset or "0" reports every
+ *                  hearing
  *   NTFY_PRIORITY  optional, 1 (silent) to 5 (urgent); ntfy's default is 3
  * Secrets (`npx wrangler secret put NAME`, or the dashboard):
  *   NTFY_TOPIC     an ntfy topic. Anyone who knows it can subscribe, so
@@ -96,8 +98,11 @@ function wsprTime(d: Date): string {
   return d.toISOString().slice(0, 19).replace("T", " ");
 }
 
+/** 0 unless set: every hearing. Blank counts as unset, not as 0 by way of
+ * Number(""), so a value cleared in the dashboard falls back to this. */
 function quietHours(env: Env): number {
-  const h = Number(env.QUIET_HOURS ?? "6");
+  const raw = (env.QUIET_HOURS ?? "").trim();
+  const h = raw === "" ? 0 : Number(raw);
   if (!Number.isFinite(h) || h < 0) {
     throw new Error(`QUIET_HOURS must be a number of hours, 0 or more, not "${env.QUIET_HOURS}"`);
   }
@@ -365,7 +370,9 @@ export default {
     const state = await readState(env);
     return Response.json({
       site: env.SITE_URL,
-      quiet_hours: env.QUIET_HOURS ?? "6",
+      quiet_hours: (() => {
+        try { return quietHours(env); } catch (err) { return String(err); }
+      })(),
       sends_to: {
         ntfy: Boolean(env.NTFY_TOPIC),
         pushover: Boolean(env.PUSHOVER_TOKEN && env.PUSHOVER_USER),

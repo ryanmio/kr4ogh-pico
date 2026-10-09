@@ -115,8 +115,10 @@ does use a terminal.
    14 stations." Tapping it opens the flight on the map.
 
 What it tells you about is a setting. `QUIET_HOURS` is how long a flight
-must have gone unheard for its next hearing to count: 6 unless set; 0 for
-every hearing, which is every ten minutes in sunlight. `NTFY_PRIORITY` is
+must have gone unheard for its next hearing to count. Unset, it reports
+every hearing, which is every ten minutes in sunlight; 6 reports only the
+first spot after launch, the first of the morning, landfall after a night
+over the sea. `NTFY_PRIORITY` is
 how loud: 3 is normal, 2 makes no sound. Set either in `wrangler.toml` and
 deploy again, or without a deploy with `npx wrangler secret put
 QUIET_HOURS` (a secret is just a setting that survives deploys). Pushover

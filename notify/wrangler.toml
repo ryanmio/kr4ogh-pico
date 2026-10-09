@@ -33,9 +33,10 @@ binding = "STATE"
 # flying, and each notification links to /live/<flight_id>/ on it.
 SITE_URL = "https://kr4ogh-pico.vercel.app"
 # Optional: how long a flight must have gone unheard for its next hearing
-# to be worth a tap. 6 hours when unset: the first spot after launch, the
-# first of the morning, landfall after a night over the sea. "0" taps on
-# every hearing, which is every ten minutes while the tracker has sun.
+# to be worth a tap. Unset, blank or "0" taps on every hearing, which is
+# every ten minutes while the tracker has sun. "6" taps only on the first
+# spot after launch, the first of the morning, landfall after a night over
+# the sea.
 # Set it here, or, to change it without a deploy, as a secret:
 # `npx wrangler secret put QUIET_HOURS` (a secret is just a setting that
 # survives deploys and stays out of the repo; a plain number is fine).
