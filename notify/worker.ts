@@ -243,20 +243,29 @@ function heardMessage(
   };
 }
 
-/** POST once; on 429 (rate limited) wait and try again, a few times. A
- * shared-address limit is a burst limit, and a pause is usually enough.
- * Anything else that is not 2xx is reported with the service's own words. */
+/** POST, and try again, a few times, on anything worth a second try: 429
+ * (rate limited), a 5xx, or a connection that hangs. Some connections from
+ * Cloudflare to ntfy.sh never answer (Cloudflare reports 522 after ~20 s)
+ * while the next one, a moment later, answers at once; so each attempt
+ * gives up after a few seconds rather than waiting the hang out. Anything
+ * else that is not 2xx is reported with the service's own words. */
 async function post(service: string, url: string, init: RequestInit): Promise<void> {
-  const pauses = [4_000, 8_000, 12_000];
+  const pauses = [1_000, 4_000, 8_000, 12_000, 12_000];
   for (let attempt = 0; ; attempt++) {
-    const resp = await fetch(url, init);
-    if (resp.ok) return;
-    const detail = (await resp.text()).replace(/\s+/g, " ").trim().slice(0, 160);
-    if (resp.status === 429 && attempt < pauses.length) {
-      await new Promise((r) => setTimeout(r, pauses[attempt]));
-      continue;
+    let failure: string;
+    try {
+      const resp = await fetch(url, { ...init, signal: AbortSignal.timeout(8_000) });
+      if (resp.ok) return;
+      const detail = (await resp.text()).replace(/\s+/g, " ").trim().slice(0, 160);
+      failure = `${service} responded ${resp.status}${detail ? `: ${detail}` : ""}`;
+      if (resp.status !== 429 && resp.status < 500) throw new Error(failure);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith(`${service} responded`)) throw err;
+      failure = `${service} did not answer: ${message}`;
     }
-    throw new Error(`${service} responded ${resp.status}${detail ? `: ${detail}` : ""}`);
+    if (attempt >= pauses.length) throw new Error(failure);
+    await new Promise((r) => setTimeout(r, pauses[attempt]));
   }
 }
 
