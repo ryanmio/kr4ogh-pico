@@ -202,6 +202,7 @@ channel = 549
 launch_utc = "2026-10-10 13:24:00"
 launch_lat = 39.2645
 launch_lon = -77.9759
+float_m = 10500
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040) · JP-08"
