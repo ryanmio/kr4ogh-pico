@@ -380,19 +380,18 @@ function forecastCoords(f: Forecast, fromLon: number): [number, number][] {
   });
 }
 
-/** The forecast as the flat map draws it: dotted from the newest report on
+/** The forecast as the flat map draws it: dotted from the last full fix on
  * the track's dark casing, with a dot each day. Pushed after the track's
  * layers so it sits over the weather with them. */
 function addForecast(
-  style: StyleSpecification, f: Forecast,
-  here: { lon: number; lat: number }, coords: [number, number][],
+  style: StyleSpecification, f: Forecast, coords: [number, number][],
 ): void {
   style.sources.forecast = {
     type: "geojson",
     attribution: FORECAST_ATTRIBUTION,
     data: {
       type: "Feature", properties: {},
-      geometry: { type: "LineString", coordinates: [[here.lon, here.lat], ...coords] },
+      geometry: { type: "LineString", coordinates: coords },
     },
   };
   style.layers.push(
@@ -582,9 +581,10 @@ export function renderGlobe(
     .filter((x) => x.pos.here);
   overlays.forEach((x, n) => addOverlay(style, x.o, x.pos, n));
   addTrack(style, meta, track, ghosts, pos);
-  const fc = opts.forecast && pos.here
-    ? forecastCoords(opts.forecast, pos.here.lon) : [];
-  if (fc.length) addForecast(style, opts.forecast!, pos.here!, fc);
+  // From the last full fix, where the prediction starts, not a newer ghost.
+  const fc = opts.forecast && pos.lons.length
+    ? forecastCoords(opts.forecast, pos.lons.at(-1)!) : [];
+  if (fc.length) addForecast(style, opts.forecast!, fc);
   // The fit covers the overlays and the forecast too, this flight's
   // balloon still last.
   const fit: Positions = {

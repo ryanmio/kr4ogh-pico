@@ -98,11 +98,13 @@ export function renderMap(
   const overlays = (opts.overlays ?? [])
     .map((o) => ({ ...o, geo: geometry(o.track, o.ghosts) }))
     .filter((o) => o.geo.hereLatlng);
-  // The forecast runs on from the balloon, unwrapped point by point from
-  // its longitude so a line over the antimeridian stays one line. It is
-  // fitted too, ahead of the balloon in the list so the balloon stays last.
-  const fc = opts.forecast && hereLatlng
-    ? forecastLatlngs(opts.forecast, hereLatlng.lng) : [];
+  // The forecast runs on from the last full fix, which is where it was
+  // predicted from (a newer ghost is only a grid square), unwrapped point
+  // by point from that fix's longitude so a line over the antimeridian
+  // stays one line. It is fitted too, ahead of the balloon in the list so
+  // the balloon stays last.
+  const fc = opts.forecast && latlngs.length
+    ? forecastLatlngs(opts.forecast, latlngs.at(-1)!.lng) : [];
   const fitPts = [
     ...overlays.flatMap((o) => o.geo.fitPts),
     ...geo.fitPts.slice(0, -1), ...fc, ...geo.fitPts.slice(-1),
@@ -192,7 +194,7 @@ export function renderMap(
     ).addTo(map);
   }
 
-  if (fc.length) drawForecast(map, opts.forecast!, hereLatlng, fc, units);
+  if (fc.length) drawForecast(map, opts.forecast!, fc, units);
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
@@ -438,13 +440,12 @@ function forecastLatlngs(f: Forecast, fromLon: number): L.LatLng[] {
   });
 }
 
-/** The predicted path ahead of the balloon: a dotted line from the newest
- * report, on the same dark casing as the track, with a mark each day so
+/** The predicted path ahead of the balloon: a dotted line from the last
+ * full fix (the predictor's first point), on the same dark casing as the track, with a mark each day so
  * the line has a scale. Under the spots, over the weather. */
 function drawForecast(
-  map: L.Map, f: Forecast, from: L.LatLng, latlngs: L.LatLng[], units: Units,
+  map: L.Map, f: Forecast, line: L.LatLng[], units: Units,
 ): void {
-  const line = [from, ...latlngs];
   L.polyline(line, {
     color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false,
   }).addTo(map);
@@ -454,7 +455,7 @@ function drawForecast(
     attribution: FORECAST_ATTRIBUTION,
   }).bindTooltip(
     `Forecast: ${HORIZON_HOURS / 24} days from the report of ` +
-    `${fmtUtc(f.from.utc)}${f.from.coarse ? " (grid square)" : ""}<br>` +
+    `${fmtUtc(f.from.utc)}<br>` +
     (f.from.climb_mps !== null
       ? `climbing at ${f.from.climb_mps.toFixed(1)} m/s to float at ` +
         `${fmtAltitude(f.from.float_m, units).text}`
@@ -463,7 +464,7 @@ function drawForecast(
     { sticky: true },
   ).addTo(map);
   for (const m of dayMarks(f)) {
-    const at = latlngs[f.points.indexOf(m.point)];
+    const at = line[f.points.indexOf(m.point)];
     if (!at) continue;
     L.circleMarker(at, {
       radius: 3.5, color: SPOT_OUTLINE, weight: 1.5,

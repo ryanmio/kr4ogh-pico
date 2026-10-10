@@ -18,8 +18,7 @@
  */
 
 import { parseUtc } from "./format";
-import { lastKnown } from "./ghosts";
-import type { GhostPoint, TrackPoint } from "./types";
+import type { TrackPoint } from "./types";
 
 // ---------- the reader's choice ----------
 
@@ -135,16 +134,13 @@ const FLOAT_MARGIN_M = 300;
 export const FORECAST_ATTRIBUTION =
   'Forecast &copy; <a href="https://sondehub.org/">SondeHub</a> Tawhiri (GFS)';
 
-/** What the line is predicted from: a report, and what the balloon is
+/** What the line is predicted from: a full fix, and what the balloon is
  * doing at it. */
 export interface ForecastOrigin {
   utc: string;
   lat: number;
   lon: number;
   altitude_m: number;
-  /** True when the report is a ghost, so the position is a grid square
-   * rather than a fix. */
-  coarse: boolean;
   /** Metres per second the balloon is still climbing at, or null once it
    * has levelled off. */
   climb_mps: number | null;
@@ -191,32 +187,35 @@ export function climbRate(track: TrackPoint[]): number | null {
 
 /** The origin for a flight, or null with nothing honest to predict from.
  *
+ * Always the newest full fix, never a newer ghost: a ghost's position is
+ * only a four-character grid square, a degree by two, while a fix places
+ * the balloon to a few kilometres, and a wind trajectory run from the
+ * wrong corner of a square ends up hundreds of kilometres off a few days
+ * out. A ghost also carries no altitude of its own, so the fix's position,
+ * altitude and time belong together.
+ *
  * Three cases, read off the altitude trend and the flight's expected
  * float (`float_m` in flights.toml):
  *
  * - Coming down faster than a float ever drifts: the flight is ending,
  *   and there is no float to predict. Null.
  * - Well below the expected float and climbing, or a flight of one fix,
- *   which is a balloon just off the ground: the climb is modelled. The origin is the newest full fix, not a newer
- *   ghost, so the position, altitude and time the climb starts from
- *   belong together; a ghost's square with a fix's altitude from half an
- *   hour earlier would be a position the balloon has left paired with a
- *   height it has long passed. Floating at the reported altitude instead
- *   would be the wrong flight entirely: a balloon at 3 km is in a
- *   different wind from the one it will float in, and a line drawn there
- *   wanders over the continent while the real one crosses an ocean.
+ *   which is a balloon just off the ground: the climb is modelled.
+ *   Floating at the reported altitude instead would be the wrong flight
+ *   entirely: a balloon at 3 km is in a different wind from the one it
+ *   will float in, and a line drawn there wanders over the continent
+ *   while the real one crosses an ocean.
  * - Climbing with no expected float to climb to: nothing honest can be
  *   drawn, and nothing is. Null.
  *
  * Otherwise the balloon is level, and the line floats at the altitude of
- * the newest fix from the newest report of any kind: a ghost is the best
- * position there is, and at float the fix's altitude still holds. This is
- * also where a balloon that has settled below its expected float lands,
- * and where one that has been silent too long for a trend lands: the
- * expected float only ever shapes the climb, never the float itself, so a
- * balloon slowly losing gas is forecast at whatever height it reports. */
+ * the newest fix. This is also where a balloon that has settled below
+ * its expected float lands, and where one that has been silent too long
+ * for a trend lands: the expected float only ever shapes the climb, never
+ * the float itself, so a balloon slowly losing gas is forecast at
+ * whatever height it reports. */
 export function forecastOrigin(
-  track: TrackPoint[], ghosts: GhostPoint[], expectedFloatM: number | null,
+  track: TrackPoint[], expectedFloatM: number | null,
 ): ForecastOrigin | null {
   const fix = track.at(-1);
   if (!fix) return null;
@@ -225,20 +224,16 @@ export function forecastOrigin(
   const belowFloat = expectedFloatM !== null
     && fix.altitude_m < expectedFloatM - FLOAT_MARGIN_M;
   const climbing = rate !== null ? rate >= CLIMB_MPS : track.length === 1;
+  const at = { utc: fix.utc, lat: fix.lat, lon: fix.lon, altitude_m: fix.altitude_m };
   if (belowFloat && climbing) {
     return {
-      utc: fix.utc, lat: fix.lat, lon: fix.lon, altitude_m: fix.altitude_m,
-      coarse: false,
+      ...at,
       climb_mps: Math.min(MAX_CLIMB_MPS, Math.max(CLIMB_MPS, rate ?? DEFAULT_CLIMB_MPS)),
       float_m: expectedFloatM!,
     };
   }
   if (climbing && expectedFloatM === null) return null;
-  const known = lastKnown(track, ghosts)!;
-  return {
-    utc: known.utc, lat: known.lat, lon: known.lon, altitude_m: fix.altitude_m,
-    coarse: known.coarse, climb_mps: null, float_m: fix.altitude_m,
-  };
+  return { ...at, climb_mps: null, float_m: fix.altitude_m };
 }
 
 /** Tawhiri's longitude runs 0 to 360. */
