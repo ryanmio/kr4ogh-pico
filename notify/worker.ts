@@ -30,8 +30,6 @@
  *                  other Worker, so the limit is shared too; a token makes
  *                  the limit yours alone
  *   NTFY_SERVER    optional, a self-hosted ntfy in place of https://ntfy.sh
- *   PUSHOVER_TOKEN, PUSHOVER_USER   the same messages through Pushover
- * Either service, or both, may be set.
  *
  * State is one KV key: per flight, the newest hearing already accounted
  * for, so a spot is never reported twice, plus what was last sent, for the
@@ -49,8 +47,6 @@ export interface Env {
   NTFY_TOKEN?: string;
   NTFY_SERVER?: string;
   NTFY_PRIORITY?: string;
-  PUSHOVER_TOKEN?: string;
-  PUSHOVER_USER?: string;
 }
 
 /** A slot the tracker was heard in: a full fix, or a ghost (the Regular
@@ -270,50 +266,28 @@ async function post(service: string, url: string, init: RequestInit): Promise<vo
 }
 
 async function push(env: Env, msg: Message): Promise<void> {
-  const sends: Promise<void>[] = [];
-  if (env.NTFY_TOPIC) {
-    // JSON publishing rather than headers: a title with a non-ASCII
-    // character in a header needs escaping, and a body does not.
-    sends.push(post("ntfy", env.NTFY_SERVER ?? "https://ntfy.sh", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(env.NTFY_TOKEN ? { authorization: `Bearer ${env.NTFY_TOKEN}` } : {}),
-      },
-      body: JSON.stringify({
-        topic: env.NTFY_TOPIC,
-        title: msg.title,
-        message: msg.body,
-        click: msg.url,
-        tags: ["balloon"],
-        priority: Number(env.NTFY_PRIORITY ?? 3),
-      }),
-    }));
-  }
-  if (env.PUSHOVER_TOKEN && env.PUSHOVER_USER) {
-    sends.push(post("Pushover", "https://api.pushover.net/1/messages.json", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        token: env.PUSHOVER_TOKEN,
-        user: env.PUSHOVER_USER,
-        title: msg.title,
-        message: msg.body,
-        url: msg.url,
-        url_title: "Open the map",
-      }),
-    }));
-  }
-  if (sends.length === 0) {
+  if (!env.NTFY_TOPIC) {
     throw new Error(
-      "nowhere to send: set the NTFY_TOPIC secret, or PUSHOVER_TOKEN and PUSHOVER_USER"
-      + ' (README.md, "Alerts on your phone")',
+      'nowhere to send: set the NTFY_TOPIC secret (README.md, "Alerts on your phone")',
     );
   }
-  const failed = (await Promise.allSettled(sends))
-    .map((r) => (r.status === "rejected" ? String(r.reason instanceof Error ? r.reason.message : r.reason) : null))
-    .filter((x): x is string => x !== null);
-  if (failed.length) throw new Error(failed.join("; "));
+  // JSON publishing rather than headers: a title with a non-ASCII
+  // character in a header needs escaping, and a body does not.
+  await post("ntfy", env.NTFY_SERVER ?? "https://ntfy.sh", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(env.NTFY_TOKEN ? { authorization: `Bearer ${env.NTFY_TOKEN}` } : {}),
+    },
+    body: JSON.stringify({
+      topic: env.NTFY_TOPIC,
+      title: msg.title,
+      message: msg.body,
+      click: msg.url,
+      tags: ["balloon"],
+      priority: Number(env.NTFY_PRIORITY ?? 3),
+    }),
+  });
 }
 
 async function readState(env: Env): Promise<State> {
@@ -382,10 +356,7 @@ export default {
       quiet_hours: (() => {
         try { return quietHours(env); } catch (err) { return String(err); }
       })(),
-      sends_to: {
-        ntfy: Boolean(env.NTFY_TOPIC),
-        pushover: Boolean(env.PUSHOVER_TOKEN && env.PUSHOVER_USER),
-      },
+      sends_to: { ntfy: Boolean(env.NTFY_TOPIC) },
       ...state,
     });
   },

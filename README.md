@@ -121,9 +121,7 @@ first spot after launch, the first of the morning, landfall after a night
 over the sea. `NTFY_PRIORITY` is
 how loud: 3 is normal, 2 makes no sound. Set either in `wrangler.toml` and
 deploy again, or without a deploy with `npx wrangler secret put
-QUIET_HOURS` (a secret is just a setting that survives deploys). Pushover
-works too: set `PUSHOVER_TOKEN` and `PUSHOVER_USER` as secrets, instead of
-or as well as the ntfy topic.
+QUIET_HOURS` (a secret is just a setting that survives deploys).
 
 There is no switch to turn it off between flights, because it needs none:
 it follows `flights.toml`. While no flight is live it wakes, sees nothing

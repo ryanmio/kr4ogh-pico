@@ -296,7 +296,7 @@ path, that pushes a notification when a flight is heard again after a
 silence. Every five minutes it reads `/flights.json` from the deployed site
 (the checked flight list, `src/pages/flights.json.ts`), asks wspr.live for
 each live flight's newest spots through the same `src/lib/wspr/` code the
-browser runs, and sends through ntfy or Pushover. Its one piece of state is
+browser runs, and sends through ntfy. Its one piece of state is
 the newest hearing already reported per flight, in a KV key. It lives on
 Cloudflare rather than in the daily GitHub Action because a cron there
 fires on the minute and GitHub's runs tens of minutes late at busy hours,
