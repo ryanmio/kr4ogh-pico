@@ -15,6 +15,14 @@
  * Live flights only. A closed flight's balloon is nowhere, so there is
  * nothing to predict -- unlike the weather layers, which are today's
  * weather whatever the flight's status.
+ *
+ * And only from a report the predictor can still start at. It holds the
+ * newest GFS run alone, which reaches back some four to ten hours, so
+ * after a night's silence the last report is older than any wind it has.
+ * Running the line from that position at the present time instead would
+ * leave out every hour of drift since, hundreds of kilometres of it, in a
+ * line that looks as sure as a good one. So there is no line until the
+ * balloon is heard again, and the button says so.
  */
 
 import { parseUtc } from "./format";
@@ -159,8 +167,8 @@ export interface ForecastPoint {
 
 export interface Forecast {
   from: ForecastOrigin;
-  /** When the prediction starts: the report itself, or now when the report
-   * is older than the model window. */
+  /** When the prediction starts: the report itself (or now, should the
+   * report's clock run ahead of the visitor's). */
   startUtc: string;
   /** The trajectory from the start, about every twenty minutes. */
   points: ForecastPoint[];
@@ -262,11 +270,18 @@ interface TawhiriStage {
   }[];
 }
 
-class PredictionError extends Error {}
+/** What fetchForecast answers when the report is older than the oldest
+ * wind the predictor holds: nothing to draw until the balloon is heard
+ * again, which the button tells the reader. */
+export const QUIET = "quiet";
+export type ForecastResult = Forecast | typeof QUIET | null;
 
-/** One request, from one start time. Throws a PredictionError when the
- * predictor could not run it -- the start outside its window is the usual
- * reason -- and any other Error when the service itself is unreachable. */
+class TooOldError extends Error {}
+
+/** One request, from one start time. Throws a TooOldError when the start
+ * is before the predictor's wind data -- it answers a PredictionException
+ * naming the negative hour it was asked for, "hour=-3.35" -- and any other
+ * Error when it failed some other way or is unreachable. */
 async function predict(
   from: ForecastOrigin, start: Date, stop: Date,
 ): Promise<ForecastPoint[]> {
@@ -292,7 +307,9 @@ async function predict(
   const body = await r.json().catch(() => null);
   if (!r.ok) {
     const desc: string = body?.error?.description ?? `HTTP ${r.status}`;
-    if (body?.error?.type === "PredictionException") throw new PredictionError(desc);
+    if (body?.error?.type === "PredictionException" && /hour=-\d/.test(desc)) {
+      throw new TooOldError(desc);
+    }
     throw new Error(desc);
   }
   const stages: TawhiriStage[] = Array.isArray(body?.prediction) ? body.prediction : [];
@@ -309,44 +326,37 @@ async function predict(
  * fresh GFS run gets picked up while the balloon is silent. */
 const CACHE_MS = 30 * 60 * 1000;
 
-let cached: { key: string; at: number; promise: Promise<Forecast | null> } | null = null;
+let cached: { key: string; at: number; promise: Promise<ForecastResult> } | null = null;
 
 /** The prediction from an origin, fetched once per origin per half hour.
  *
- * The start is the report itself when the predictor accepts it: overnight
- * the tracker is silent for hours, and running the wind forward from where
- * it was last heard is the best guess of where it is now as well as where
- * it is going. When the report is older than the model window the
- * predictor refuses, and the line is run from now at that position
- * instead, which is honest as long as it is drawn as a guess.
+ * Always started at the report itself: running the wind forward from where
+ * the balloon was last heard, when it was heard, is the best guess of where
+ * it is now as well as where it is going. QUIET when the report is older
+ * than the predictor's wind data (see the top of this file).
  *
  * Null when the predictor cannot answer at all, cached like a success so
- * a dead service is not retried on every rebuild. The same object comes
+ * a dead service is not retried on every rebuild. QUIET is cached the same
+ * way; a new report is a new origin and asks again. The same object comes
  * back for the same origin until the cache turns over, so a caller can
  * compare by identity to learn whether there is anything new to draw. */
 export function fetchForecast(
   from: ForecastOrigin, now: number = Date.now(),
-): Promise<Forecast | null> {
+): Promise<ForecastResult> {
   const key = [
     from.utc, from.lat, from.lon, from.altitude_m, from.climb_mps, from.float_m,
   ].join("|");
   if (cached && cached.key === key && now - cached.at < CACHE_MS) return cached.promise;
   const stop = new Date(now + HORIZON_HOURS * 3_600_000);
-  const promise = (async (): Promise<Forecast | null> => {
-    const reported = parseUtc(from.utc);
-    const starts = reported.getTime() < now
-      ? [reported, new Date(now)]
-      : [new Date(now)];
-    for (const start of starts) {
-      try {
-        const points = await predict(from, start, stop);
-        if (!points.length) return null;
-        return { from, startUtc: naiveUtc(start.toISOString()), points };
-      } catch (e) {
-        if (!(e instanceof PredictionError)) return null;
-      }
+  const promise = (async (): Promise<ForecastResult> => {
+    const start = new Date(Math.min(parseUtc(from.utc).getTime(), now));
+    try {
+      const points = await predict(from, start, stop);
+      if (!points.length) return null;
+      return { from, startUtc: naiveUtc(start.toISOString()), points };
+    } catch (e) {
+      return e instanceof TooOldError ? QUIET : null;
     }
-    return null;
   })();
   cached = { key, at: now, promise };
   return promise;

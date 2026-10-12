@@ -7,7 +7,7 @@ import "leaflet/dist/leaflet.css";
 import {
   fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
-import { dayMarks, FORECAST_ATTRIBUTION, HORIZON_HOURS, type Forecast } from "./forecast";
+import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtUtc } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
@@ -454,8 +454,8 @@ function drawForecast(
     dashArray: "1 7", lineCap: "round",
     attribution: FORECAST_ATTRIBUTION,
   }).bindTooltip(
-    `Forecast: ${HORIZON_HOURS / 24} days from the report of ` +
-    `${fmtUtc(f.from.utc)}<br>` +
+    `Forecast from the report of ${fmtUtc(f.from.utc)} ` +
+    `to ${fmtUtc(f.points.at(-1)!.utc)}<br>` +
     (f.from.climb_mps !== null
       ? `climbing at ${f.from.climb_mps.toFixed(1)} m/s to float at ` +
         `${fmtAltitude(f.from.float_m, units).text}`
