@@ -230,10 +230,13 @@ export function renderMap(
     // The two ends keep their full size at every zoom: they are the launch
     // and the balloon, and the pulse ring is drawn around the second one.
     const radius = spotRadiusFor(map.getZoom());
-    const shown = track.filter((_, i) =>
-      i === 0 || i === track.length - 1 || i % step === 0);
+    // By index, so each spot is drawn at the line's unwrapped longitude:
+    // past the antimeridian the raw one is a world away from the line.
+    const shown = track.flatMap((p, i) =>
+      i === 0 || i === track.length - 1 || i % step === 0
+        ? [{ p, latlng: latlngs[i]! }] : []);
     const sizeOf = (p: TrackPoint) =>
-      p === shown[0] || p === shown[shown.length - 1] ? SPOT_RADIUS : radius;
+      p === shown[0]!.p || p === shown[shown.length - 1]!.p ? SPOT_RADIUS : radius;
 
     // Ghosts go under everything: hollow, dim, a little smaller than a
     // spot, and never thinned -- there are only ever a handful. The one
@@ -259,8 +262,8 @@ export function renderMap(
     // into one silhouette around the run and the fills cover the inside of
     // it, so an outline is only ever seen where there is something to
     // outline: around the group, and around a spot standing on its own.
-    for (const p of shown) {
-      L.circleMarker([p.lat, p.lon], {
+    for (const { p, latlng } of shown) {
+      L.circleMarker(latlng, {
         radius: sizeOf(p) + SPOT_OUTLINE_PX,
         stroke: false,
         fillColor: SPOT_OUTLINE,
@@ -268,9 +271,9 @@ export function renderMap(
         interactive: false,
       }).addTo(spots);
     }
-    for (const p of shown) {
+    for (const { p, latlng } of shown) {
       const raw = metric.raw(p);
-      L.circleMarker([p.lat, p.lon], {
+      L.circleMarker(latlng, {
         radius: sizeOf(p),
         stroke: false,
         fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),

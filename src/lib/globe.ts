@@ -425,9 +425,8 @@ function addForecast(
 }
 
 /** Open on the flat map's framing: the whole track plus room around the
- * balloon (fitRegion, shared numbers). A track that has lapped the planet
- * cannot be fitted -- the fit is the planet -- so stand back and put the
- * balloon in the middle of the face instead. */
+ * balloon, or a wide view around the balloon once the track is too wide to
+ * fit (fitRegion, shared numbers). */
 function aimCamera(
   map: MapGL, meta: FlightMeta, pos: Positions, overlaid: boolean,
 ): void {
@@ -440,10 +439,6 @@ function aimCamera(
     return;
   }
   const r = fitRegion(pos.fitLats, pos.fitLons);
-  if (r.east - r.west >= 300) {
-    map.jumpTo({ center: [pos.here.lon, pos.here.lat], zoom: 1.3 });
-    return;
-  }
   map.fitBounds(
     [[r.west, Math.max(r.south, -85)], [r.east, Math.min(r.north, 85)]],
     {

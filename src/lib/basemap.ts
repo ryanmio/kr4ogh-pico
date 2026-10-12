@@ -52,6 +52,15 @@ const FIT_PAD = 0.06;
 const POS_ROOM = 0.25;
 const POS_ROOM_MAX_DEG = 12;
 
+/** Past this many degrees of longitude the whole flight stops being a
+ * useful opening view: it is most of the world at a zoom where the balloon
+ * is a speck, and once it laps the planet there is no box that holds it.
+ * The view then centres on the balloon instead, wide enough to show the
+ * weather system it is in and the ocean ahead of it. */
+const MAX_FIT_DEG = 180;
+const FOCUS_LON_DEG = 120;
+const FOCUS_LAT_DEG = 60;
+
 export interface Region {
   west: number;
   south: number;
@@ -60,20 +69,30 @@ export interface Region {
 }
 
 /** The opening view: the whole track, plus room around where the balloon is
- * now. Latitudes and (unwrapped) longitudes arrive in track order, so the
- * last entry of each is the balloon. */
+ * now, or just a wide view around the balloon once the track is too wide
+ * for that (MAX_FIT_DEG). Latitudes and (unwrapped) longitudes arrive in
+ * track order, so the last entry of each is the balloon. */
 export function fitRegion(lats: number[], lons: number[]): Region {
   let west = Math.min(...lons);
   let east = Math.max(...lons);
   let south = Math.min(...lats);
   let north = Math.max(...lats);
+  const lat = lats[lats.length - 1]!;
+  const lon = lons[lons.length - 1]!;
+  if (east - west > MAX_FIT_DEG) {
+    const midLat = Math.max(-80 + FOCUS_LAT_DEG / 2, Math.min(80 - FOCUS_LAT_DEG / 2, lat));
+    return {
+      west: lon - FOCUS_LON_DEG / 2,
+      east: lon + FOCUS_LON_DEG / 2,
+      south: midLat - FOCUS_LAT_DEG / 2,
+      north: midLat + FOCUS_LAT_DEG / 2,
+    };
+  }
   const padX = (east - west) * FIT_PAD;
   const padY = (north - south) * FIT_PAD;
   west -= padX; east += padX; south -= padY; north += padY;
   const span = Math.max(east - west, north - south);
   const r = Math.min(POS_ROOM * span, POS_ROOM_MAX_DEG);
-  const lat = lats[lats.length - 1]!;
-  const lon = lons[lons.length - 1]!;
   return {
     west: Math.min(west, lon - r),
     east: Math.max(east, lon + r),
