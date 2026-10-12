@@ -176,3 +176,21 @@ active = false
         load_site(write(tmp_path, SITE + 'featured = "T9"\n' + flights))
     with pytest.raises(ConfigError, match=r"\[site\]\.featured.*active = false"):
         load_site(write(tmp_path, SITE + 'featured = "T0"\n' + flights))
+
+
+def test_flight_setting_under_tracker_rejected(tmp_path):
+    # The README's way to close a flight, written at the bottom of an entry
+    # that ends with its tracker table: TOML files it under the table.
+    p = write(tmp_path, SITE + """
+[[flights]]
+flight_id = "T1"
+callsign = "N0CALL"
+band = "20m"
+channel = 42
+
+[flights.tracker]
+"Hardware" = "Traquito Jetpack"
+status = "closed"
+""")
+    with pytest.raises(ConfigError, match=r"T1.*tracker\.status.*Move it above"):
+        load_flights(str(p))

@@ -196,6 +196,14 @@ def _flight(entry: object, index: int) -> Flight:
     if tracker is not None:
         if not isinstance(tracker, dict):
             _fail(f"{where}.tracker", "must be a table of label = value lines")
+        # Same check as src/lib/config.ts: a flight setting written after the
+        # [flights.tracker] header belongs to that table and would not apply.
+        strayed = next((k for k in tracker if k in _FLIGHT_FIELDS), None)
+        if strayed is not None:
+            _fail(f"{where}.tracker.{strayed}",
+                  "this is a flight setting, but it sits under [flights.tracker], "
+                  "so it would be shown as a label instead of taking effect. "
+                  "Move it above the [flights.tracker] line")
         tracker = {str(k): str(v) for k, v in tracker.items()}
 
     return Flight(

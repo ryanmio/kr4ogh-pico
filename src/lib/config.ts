@@ -122,6 +122,19 @@ function flight(entry: unknown, index: number): FlightMeta {
     if (!isTable(entry.tracker)) {
       fail(`${where}.tracker`, "must be a table of label = value lines");
     }
+    // Every line after a [flights.tracker] header belongs to that table, so
+    // `status = "closed"` added at the bottom of an entry lands here and the
+    // flight would silently stay live. Labels are written capitalised and
+    // quoted ("Hardware"), so a bare flight setting here is that mistake.
+    const strayed = Object.keys(entry.tracker).find((k) => FLIGHT_FIELDS.has(k));
+    if (strayed !== undefined) {
+      fail(
+        `${where}.tracker.${strayed}`,
+        `this is a flight setting, but it sits under [flights.tracker], so it ` +
+        `would be shown as a label instead of taking effect. Move it above ` +
+        `the [flights.tracker] line`,
+      );
+    }
     tracker = Object.fromEntries(
       Object.entries(entry.tracker).map(([k, v]) => [k, String(v)]),
     );
