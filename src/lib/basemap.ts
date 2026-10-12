@@ -36,6 +36,60 @@ export function unwrapLons(track: { lon: number }[]): number[] {
   return lons;
 }
 
+/** Longest piece of a line, in degrees of arc, drawn as a straight segment. */
+const ARC_STEP_DEG = 1;
+
+/** A line through [lon, lat] points (longitudes unwrapped) that follows the
+ * great circle between each pair instead of the straight line on the map.
+ *
+ * Fixes a few minutes apart are already as good as straight. The pair that
+ * matters is the overnight one: the tracker is silent from dusk to dawn,
+ * the two fixes either side can be a thousand kilometres apart, and on
+ * Mercator a straight line between them is not a path anything takes. The
+ * great circle is the shortest way across, the least it is possible to
+ * claim about the night, so the line is bent along it and no further. The
+ * globe needs it too: MapLibre lays a segment straight in Mercator before
+ * wrapping it on the sphere. */
+export function greatCircleLine(pts: number[][]): number[][] {
+  const rad = Math.PI / 180;
+  const out: number[][] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [lon1, lat1] = pts[i]!;
+    if (i > 0) {
+      const [lon0, lat0] = pts[i - 1]!;
+      const a = unitVector(lon0! * rad, lat0! * rad);
+      const b = unitVector(lon1! * rad, lat1! * rad);
+      const d = Math.acos(Math.min(1, Math.max(-1,
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2])));
+      const n = Math.ceil(d / rad / ARC_STEP_DEG);
+      // Antipodes have no single great circle; they never occur in a track.
+      if (n > 1 && Math.sin(d) > 1e-9) {
+        let prevLon = lon0!;
+        for (let k = 1; k < n; k++) {
+          const f = k / n;
+          const s0 = Math.sin((1 - f) * d) / Math.sin(d);
+          const s1 = Math.sin(f * d) / Math.sin(d);
+          const x = s0 * a[0] + s1 * b[0];
+          const y = s0 * a[1] + s1 * b[1];
+          const z = s0 * a[2] + s1 * b[2];
+          const raw = Math.atan2(y, x) / rad;
+          // Kept next to the point before, so the arc stays on the same
+          // unwrapped world as its ends.
+          const lon = raw + 360 * Math.round((prevLon - raw) / 360);
+          out.push([lon, Math.atan2(z, Math.hypot(x, y)) / rad]);
+          prevLon = lon;
+        }
+      }
+    }
+    out.push([lon1!, lat1!]);
+  }
+  return out;
+}
+
+function unitVector(lon: number, lat: number): [number, number, number] {
+  return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+}
+
 // Fraction of the track's span added as breathing room around it.
 const FIT_PAD = 0.06;
 

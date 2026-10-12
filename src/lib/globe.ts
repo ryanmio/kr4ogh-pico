@@ -26,7 +26,7 @@ setWorkerUrl(workerUrl);
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 import {
-  fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
+  fitRegion, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
@@ -209,7 +209,7 @@ function addTrack(
         type: "Feature", properties: {},
         geometry: {
           type: "LineString",
-          coordinates: track.map((p, i) => [lons[i]!, p.lat]),
+          coordinates: greatCircleLine(track.map((p, i) => [lons[i]!, p.lat])),
         },
       },
     };
@@ -233,7 +233,7 @@ function addTrack(
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "LineString", coordinates: coords },
+        geometry: { type: "LineString", coordinates: greatCircleLine(coords) },
       },
     };
     style.layers.push(
@@ -312,7 +312,7 @@ function addOverlay(
         type: "Feature", properties: {},
         geometry: {
           type: "LineString",
-          coordinates: o.track.map((p, i) => [lons[i]!, p.lat]),
+          coordinates: greatCircleLine(o.track.map((p, i) => [lons[i]!, p.lat])),
         },
       },
     };
@@ -332,10 +332,10 @@ function addOverlay(
         type: "Feature", properties: {},
         geometry: {
           type: "LineString",
-          coordinates: [
+          coordinates: greatCircleLine([
             ...(o.track.length ? [[lons[lons.length - 1]!, o.track[o.track.length - 1]!.lat]] : []),
             ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
-          ],
+          ]),
         },
       },
     };

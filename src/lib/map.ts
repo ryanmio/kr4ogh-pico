@@ -5,7 +5,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  fitRegion, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
+  fitRegion, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtUtc } from "./format";
@@ -168,14 +168,15 @@ export function renderMap(
   // A dark casing under a light line: over satellite imagery, and over a
   // weather layer, a single thin grey line vanishes. The casing separates
   // the path from whatever is beneath it.
-  L.polyline(latlngs, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
-  L.polyline(latlngs, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
+  const line = arc(latlngs);
+  L.polyline(line, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
+  L.polyline(line, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
   // The tail is dashed and never joins the line: a grid square is a claim
   // of where the balloon was to within 80 km, and the solid line is a claim
   // of 4. From the last fix out to the newest ghost, or ghost to ghost when
   // no fix has been decoded at all yet.
   if (tailLatlngs.length) {
-    const tailLine = [...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs];
+    const tailLine = arc([...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs]);
     L.polyline(tailLine, { color: "#0b1020", weight: 6, opacity: 0.4 }).addTo(map);
     L.polyline(tailLine, {
       color: "#e2e8f0", weight: 2, opacity: 0.8, dashArray: "4 7",
@@ -387,6 +388,13 @@ function geometry(track: TrackPoint[], ghosts: GhostPoint[]): Geometry {
   };
 }
 
+/** A line through the points along the great circles between them; see
+ * greatCircleLine. */
+function arc(latlngs: L.LatLng[]): L.LatLng[] {
+  return greatCircleLine(latlngs.map((ll) => [ll.lng, ll.lat]))
+    .map(([lng, lat]) => L.latLng(lat!, lng!));
+}
+
 /** Another flight on this map: its line and its dashed tail in a quieter
  * grey, and a beacon with the flight's name on it. No spots, no square, no
  * ghosts -- those are the detail of the flight being read, and a second
@@ -395,11 +403,12 @@ function drawOverlay(map: L.Map, meta: FlightMeta, geo: Geometry): void {
   const { latlngs, tailLatlngs, here, hereLatlng } = geo;
   if (!here || !hereLatlng) return;
   if (latlngs.length) {
-    L.polyline(latlngs, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35 }).addTo(map);
-    L.polyline(latlngs, { color: OVERLAY_COLOR, weight: 2, opacity: 0.75 }).addTo(map);
+    const line = arc(latlngs);
+    L.polyline(line, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35 }).addTo(map);
+    L.polyline(line, { color: OVERLAY_COLOR, weight: 2, opacity: 0.75 }).addTo(map);
   }
   if (tailLatlngs.length) {
-    const tailLine = [...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs];
+    const tailLine = arc([...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs]);
     L.polyline(tailLine, {
       color: OVERLAY_COLOR, weight: 1.6, opacity: 0.7, dashArray: "4 7",
     }).addTo(map);
