@@ -69,6 +69,7 @@ jobs:
           --flights flights.toml
           --db "$RUNNER_TEMP/ingest.db"
           --window-hours 26
+          --site .
           ${{ (github.event_name == 'push' || inputs.from_launch) && '--from-launch' || '' }}
 
       # The export MERGES into the committed track, so this database extends

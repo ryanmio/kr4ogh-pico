@@ -6,7 +6,10 @@ picolog.export_site so the committed track stays current). Same code either
 way — the operator's local run is authoritative.
 
 Two ways to bound the window. `--window-hours` looks back a fixed span from
-now: the routine run. `--from-launch` looks back to each flight's
+now: the routine run. With `--site`, it also reaches back to just before the
+newest fix already committed there, so a run that GitHub delayed, skipped
+or failed leaves no hole: the next one picks up where the track ends, and
+the browser, which only catches up from that same point, never could. `--from-launch` looks back to each flight's
 launch_utc: the seeding run, for a site whose committed track is empty (a
 fresh fork) or a record being rebuilt, which needs the whole flight.
 wspr.live asks for bounded queries and allows 20 a minute, so a long window
@@ -25,11 +28,14 @@ nothing downstream needs credentials. See docs/architecture.md.
 """
 
 import argparse
+import json
 import time
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from .config import DEFAULT_PATH, load_flights
+from .config import DEFAULT_PATH, Flight, load_flights
+from .export_site import track_filename
 from .pipeline import pull_flight_window, rebuild_flight_telemetry
 from .store import Store
 
@@ -38,6 +44,10 @@ from .store import Store
 # pause that keeps a long walk under the rate limit.
 CHUNK = timedelta(days=7)
 PAUSE_S = 4.0
+
+# How far before the newest committed fix a run starts: the slots just
+# before it may have been completed since by slower stations.
+COMMITTED_OVERLAP = timedelta(hours=1)
 
 
 def chunks(start: datetime, end: datetime,
@@ -50,8 +60,19 @@ def chunks(start: datetime, end: datetime,
         a = b
 
 
+def newest_committed(site_dir: str, flight: Flight) -> datetime | None:
+    """The time of the newest fix in the flight's committed track, or None
+    when there is no track (or nothing readable in it)."""
+    path = Path(site_dir) / "src" / "data" / "tracks" / track_filename(flight)
+    try:
+        track = json.loads(path.read_text())
+        return datetime.fromisoformat(track[-1]["utc"].replace("Z", ""))
+    except (OSError, ValueError, LookupError, TypeError, AttributeError):
+        return None
+
+
 def run(flights_path: str, db_path: str, window_hours: float,
-        from_launch: bool = False) -> None:
+        from_launch: bool = False, site_dir: str | None = None) -> None:
     flights = [f for f in load_flights(flights_path)
                if f.active and f.status == "live"]
     if not flights:
@@ -64,6 +85,11 @@ def run(flights_path: str, db_path: str, window_hours: float,
     with Store(db_path) as store:
         for flight in flights:
             start = now - timedelta(hours=window_hours)
+            newest = newest_committed(site_dir, flight) if site_dir else None
+            if newest is not None and newest - COMMITTED_OVERLAP < start:
+                start = newest - COMMITTED_OVERLAP
+                print(f"{flight.flight_id}: committed track ends {newest}, "
+                      "pulling from just before it")
             if from_launch:
                 if flight.launch is None:
                     print(f"{flight.flight_id}: no launch_utc, "
@@ -98,8 +124,10 @@ def main() -> None:
     parser.add_argument("--from-launch", action="store_true",
                         help="pull back to each flight's launch_utc, "
                              "in chunks, when that is further than the window")
+    parser.add_argument("--site", help="site directory; also pull from just "
+                        "before the newest fix committed there")
     args = parser.parse_args()
-    run(args.flights, args.db, args.window_hours, args.from_launch)
+    run(args.flights, args.db, args.window_hours, args.from_launch, args.site)
 
 
 if __name__ == "__main__":
