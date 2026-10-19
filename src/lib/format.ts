@@ -35,7 +35,7 @@ export function fmtRelative(utc: string, now: Date = new Date()): string {
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
   const h = Math.floor(min / 60);
-  if (h < 48) return `${h}h ${min % 60}m ago`;
+  if (h < 48) return `${hm(h, min % 60)} ago`;
   return `${Math.floor(h / 24)} days ago`;
 }
 
@@ -49,8 +49,14 @@ export function fmtDuration(ms: number): string {
   const min = Math.max(0, Math.round(ms / 60_000));
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ${min % 60}m`;
-  return `${Math.floor(h / 24)}d ${h % 24}h`;
+  if (h < 24) return hm(h, min % 60);
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+}
+
+/** "1h 5m", or "1h" when the minutes are zero. */
+function hm(h: number, m: number): string {
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 /** Initial great-circle bearing from one point to the next, in degrees from
