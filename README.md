@@ -65,8 +65,9 @@ press the pencil, commit.
   gets `active = false` instead, which takes it off the site.
 - **Several flights at once** are several entries. The home page shows one
   of them: `featured = "F2B"` in the `[site]` table picks it, otherwise the
-  live flight that launched first. `/?feature=<flight_id>` shows another,
-  the **Next flight** button walks them, and every flight also has its own
+  live flight that launched first, or, with none live, the one that
+  launched last. `/?feature=<flight_id>` shows another, the **Next
+  flight** button walks them, and every flight also has its own
   address at `/live/<flight_id>/`. To see two at once, the **All flights**
   button draws the others' tracks on the same map (`?overlay=all`, or
   `?overlay=F2A` for a particular one).

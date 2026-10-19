@@ -65,12 +65,12 @@ export function liveFlights(): FlightMeta[] {
 
 /** The flight the home page shows when the address names none: the one
  * flights.toml features, else the live flight that launched first, else
- * the first shown flight, else nothing. */
+ * the flight that launched last, else nothing. */
 export function featuredFlight(): FlightMeta | undefined {
   const shown = shownFlights();
   return shown.find((f) => f.flight_id === siteConfig.featured)
     ?? liveFlights()[0]
-    ?? shown[0];
+    ?? shown.at(-1);
 }
 
 /** The committed track for a flight, with speeds above the telemetry

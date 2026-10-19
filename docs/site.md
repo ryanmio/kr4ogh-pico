@@ -42,10 +42,10 @@ better, including Traquito's own dashboard.
 The home page **is** the flight: while something is up, there is nothing to
 click through to. With several flights on the site it is built around the
 featured one (`[site].featured` in `flights.toml`, else the live flight that
-launched first) and switches to another in place when the address says
-`?feature=<flight_id>`: the asked-for flight's committed track is fetched
-from `/live/<flight_id>/track.json` and the live refresh proceeds from
-there. A **Next flight** button walks the flights. `/live/<flight_id>/` is
+launched first, else the flight that launched last) and switches to another
+in place when the address says `?feature=<flight_id>`: the asked-for
+flight's committed track is fetched from `/live/<flight_id>/track.json` and
+the live refresh proceeds from there. A **Next flight** button walks the flights. `/live/<flight_id>/` is
 the permalink for a particular flight and renders the same component.
 
 The view is one flight, but the map can carry others for comparison:

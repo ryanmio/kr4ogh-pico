@@ -12,8 +12,8 @@ callsign = "KR4OGH"
 # Optional: the flight the home page shows. Any flight on the site can be
 # reached at /?feature=<flight_id>; this is the one shown when the address
 # names none. Left out, the home page shows the live flight that launched
-# first.
-featured = "F2B"
+# first, or, with none live, the flight that launched last.
+# featured = "F2A"
 # Optional: where the site is served, e.g. "https://n0call-pico.vercel.app".
 # Vercel fills this in by itself, so it is only needed for a deploy
 # elsewhere. Share cards need it: og:image and canonical are absolute URLs.
