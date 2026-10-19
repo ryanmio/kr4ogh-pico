@@ -688,7 +688,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
             ? "--"
             : `${compassPoint(heading)} · ${Math.round(heading)}°`),
           mini("Time aloft",
-            fmtDuration(Date.parse(s.lastUtc) - Date.parse(s.firstUtc))),
+            fmtDuration(parseUtc(s.lastUtc).getTime() - parseUtc(s.firstUtc).getTime())),
         ].join("");
       }
       if (key === "altitude") {

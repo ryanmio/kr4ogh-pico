@@ -4,7 +4,7 @@
 
 import {
   bearingDeg, compassPoint, fmtDuration, fmtInt, fmtRelative, fmtUtc, haversineKm,
-  trackStats,
+  parseUtc, trackStats,
 } from "./format";
 import { heardBounds } from "./ghosts";
 import { METRICS, type MetricKey } from "./metrics";
@@ -61,7 +61,7 @@ export function statsHtml(
     ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
     : null;
 
-  const aloftMs = Date.parse(s.lastUtc) - Date.parse(s.firstUtc);
+  const aloftMs = parseUtc(s.lastUtc).getTime() - parseUtc(s.firstUtc).getTime();
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
@@ -232,7 +232,7 @@ export function sidebarHtml(
   const heading = prev
     ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
     : null;
-  const aloftMs = Date.parse(heard.lastUtc) - Date.parse(heard.firstUtc);
+  const aloftMs = parseUtc(heard.lastUtc).getTime() - parseUtc(heard.firstUtc).getTime();
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
 
