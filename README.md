@@ -166,8 +166,6 @@ format the decoder implements.
 
 - `flights.toml` — the configuration. The one file an instance edits.
 - `src/`, `public/` — the site. Astro, static output.
-- `flights/` — archived flights, one directory each, rendered statically
-  forever. Empty is fine.
 - `tool/` — `picolog`, the Python package that ingests and decodes the
   telemetry into SQLite and exports each track. Not the liveness path; the
   browser is.

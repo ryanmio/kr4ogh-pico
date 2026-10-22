@@ -7,7 +7,7 @@
  * dev/verify-port.ts.
  *
  * Emits the site's shared TrackPoint, so a track decoded here and a track
- * read from a committed archive are the same shape and feed the same
+ * read from the committed file are the same shape and feed the same
  * renderer. The Python's internal `speed_knots` is `speed_kt` here, the same
  * rename tool/picolog/export_site.py performs on its way out.
  */

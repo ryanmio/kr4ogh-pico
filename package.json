@@ -16,7 +16,6 @@
     "browser-check": "node dev/browser-check.mjs"
   },
   "dependencies": {
-    "@astrojs/mdx": "^4.3.13",
     "@vercel/analytics": "^2.0.1",
     "astro": "^5.17.1",
     "leaflet": "^1.9.4",

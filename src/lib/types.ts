@@ -1,7 +1,7 @@
-/** Shared shapes. TrackPoint matches the track.json entries specified in
- * docs/architecture.md; FlightMeta the flight header fields. The same types
- * serve every path — archived flights from git, the track committed for a
- * live flight, and rows decoded in the browser from wspr.live. */
+/** Shared shapes. TrackPoint is one fix as tool/picolog/export_site.py writes
+ * it to src/data/tracks/; FlightMeta the flight header fields. The same types
+ * serve both paths — the track committed for a flight, and rows decoded in
+ * the browser from wspr.live. */
 
 export interface TrackPoint {
   utc: string; // ISO 8601, always UTC
@@ -45,8 +45,7 @@ export interface FlightMeta {
   callsign: string;
   band: string;
   channel: number;
-  /** false parks a flight: off the site, not pulled. Absent in an archive,
-   * which is a closed flight by definition. */
+  /** false parks a flight: off the site, not pulled. */
   active?: boolean;
   launch_utc: string | null;
   /** When the flight was last heard, or declared over. Nothing after it
@@ -59,8 +58,7 @@ export interface FlightMeta {
   close_reason: string | null;
   /** Metres the balloon is expected to float at, from flights.toml. It is
    * what lets the forecast model the climb (lib/forecast.ts); without it
-   * the line can only float at the altitude last reported. Absent in
-   * older archives. */
+   * the line can only float at the altitude last reported. */
   float_m?: number | null;
   /** Build details for the Tracker panel, label -> value, in the order
    * written in flights.toml. */
@@ -87,11 +85,4 @@ export interface SiteConfig {
   url: string | null;
   /** The "Source & data" link. */
   repo: string;
-}
-
-/** The whole track.json object. */
-export interface FlightArchive extends FlightMeta {
-  matcher_name: string;
-  matcher_version: number;
-  track: TrackPoint[];
 }

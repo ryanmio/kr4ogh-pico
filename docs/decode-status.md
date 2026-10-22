@@ -118,6 +118,5 @@ generated from it, frozen, and is the only thing the lookup path reads.
 
 ## Not done here (by design)
 
-CLI UX, program-condition flags, the diagnosis report, the website, and the
-flight-archive exporter (specified in `docs/architecture.md`) are out of scope
-for this layer and intentionally not started.
+CLI UX, program-condition flags, the diagnosis report and the website are out
+of scope for this layer and intentionally not started.

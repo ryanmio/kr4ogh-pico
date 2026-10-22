@@ -1,6 +1,6 @@
 /* Pico balloon site. Dark, quiet, telemetry-first. System fonts only:
-   archived pages must render forever with no runtime dependencies beyond map
-   tiles. */
+   a closed flight's page must render forever with no runtime dependencies
+   beyond map tiles. */
 
 :root {
   --bg: #0b1020;
@@ -13,9 +13,6 @@
   --accent: #7dd3fc;
   --accent-deep: #38bdf8;
   --live: #34d399;  /* a flight that is up is good news, so green */
-  --pass: #34d399;
-  --fail: #f87171;
-  --wounded: #fb923c;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -142,39 +139,6 @@ main { padding: 2.2rem 0 3.5rem; }
   overflow: hidden;
 }
 
-.badge {
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  padding: 0.18rem 0.55rem;
-  border-radius: 99px;
-  border: 1px solid;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-/* Green, not amber: amber reads as "degraded" when the flight is fine. */
-.badge-live {
-  color: var(--live); border-color: rgba(52, 211, 153, 0.45);
-  background: rgba(52, 211, 153, 0.09);
-}
-.badge-live::before {
-  content: "";
-  display: inline-block;
-  width: 7px; height: 7px;
-  margin-right: 0.4rem;
-  border-radius: 50%;
-  background: var(--live);
-  animation: pulse 1.8s ease-out infinite;
-}
-.badge-pass { color: var(--pass); border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.07); }
-.badge-fail { color: var(--fail); border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.07); }
-.badge-wounded { color: var(--wounded); border-color: rgba(251, 146, 60, 0.4); background: rgba(251, 146, 60, 0.07); }
-.badge-closed, .badge-sample {
-  color: var(--text-dim); border-color: var(--border); background: var(--bg-panel);
-}
-
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
   100% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
@@ -195,20 +159,6 @@ main { padding: 2.2rem 0 3.5rem; }
 .empty-note { color: var(--text-dim); font-size: 0.95rem; }
 .loading { color: var(--text-faint); font-size: 0.9rem; }
 
-/* ---------- flight page ---------- */
-
-.flight-title-row {
-  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
-  margin-bottom: 0.2rem;
-}
-.flight-title-row h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 1.9rem); }
-.flight-subtitle {
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  margin: 0 0 0.4rem;
-}
-
 .prose { max-width: 46rem; color: var(--text-dim); }
 .prose p { margin: 0.8rem 0; }
 .prose strong { color: var(--text); }
@@ -218,52 +168,7 @@ main { padding: 2.2rem 0 3.5rem; }
   border-radius: 4px; padding: 0.08em 0.35em;
 }
 
-/* ---------- stat strip ---------- */
-
-/* Fixed column counts rather than auto-fit: with eight cards, 2 / 4 always
-   divide evenly, so the last row is never a single stranded card. */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
-}
-@media (min-width: 760px) {
-  .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-.stat {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.65rem 0.85rem;
-}
-.stat-label {
-  font-size: 0.68rem; font-weight: 600;
-  letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--text-faint);
-}
-.stat-value {
-  font-family: var(--mono); font-size: 1.06rem; font-weight: 600;
-  color: var(--text); margin-top: 0.15rem;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.stat-sub {
-  font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint);
-  margin-top: 0.1rem;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-/* On the narrowest phones a card is about 140px wide and subtitles like
-   "329 km from launch" do not fit. Wrapping to a second line keeps the
-   information; an ellipsis throws it away. Grid rows stretch together, so
-   the cards stay level. */
-@media (max-width: 420px) {
-  .stat-value { font-size: 0.98rem; }
-  .stat-sub { white-space: normal; overflow: visible; }
-}
-
 /* ---------- flight view layout ---------- */
-
-.fv-stats { margin: 1rem 0; }
 
 /* The map is the point of a flight page: it breaks out past the text column
    on wide screens, and its height is set from the track's own shape once the
@@ -285,25 +190,6 @@ main { padding: 2.2rem 0 3.5rem; }
 
 @media (min-width: 1240px) {
   .fv-map { margin-inline: -72px; }
-}
-
-.fv-charts {
-  display: flex;
-  flex-direction: column;
-  gap: 1.6rem;
-  margin: 1.6rem 0;
-}
-/* Full width, one per row. Altitude and speed are most of why people open
-   this page; side by side they were half-size and hard to read. */
-.fv-chart { width: 100%; }
-.fv-chart svg { width: 100%; height: auto; display: block; }
-
-/* Narrative sits below the data, at reading width and visually secondary. */
-.flight-notes {
-  border-top: 1px solid var(--border);
-  padding-top: 1.2rem;
-  margin-top: 2rem;
-  font-size: 0.92rem;
 }
 
 /* ---------- map ---------- */
@@ -515,22 +401,6 @@ main { padding: 2.2rem 0 3.5rem; }
 
 /* ---------- controls ---------- */
 
-.toolbar {
-  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
-  margin: 1rem 0;
-}
-.button {
-  font: inherit; font-size: 0.85rem;
-  background: var(--bg-panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 0.4rem 0.9rem;
-  cursor: pointer;
-}
-.button:hover { border-color: var(--accent-deep); color: var(--accent); text-decoration: none; }
-.toolbar .updated { color: var(--text-faint); font-size: 0.8rem; font-family: var(--mono); }
-
 @media (max-width: 640px) {
   .site-header .container { flex-wrap: wrap; gap: 0.5rem 1rem; }
   .site-nav { margin-left: 0; }
@@ -594,7 +464,6 @@ main { padding: 2.2rem 0 3.5rem; }
   margin-top: 1.6rem;
 }
 .charts-head[hidden] { display: none; }
-.charts-head + .fv-charts { margin-top: 0.7rem; }
 
 .flight-updated {
   display: flex;
@@ -709,7 +578,7 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 /* The top strip is the map's control panel, a fifth larger than the
    corner-control defaults its pieces were designed at, so it reads at a
    glance without shouting. Scoped here: the same controls at a phone map's
-   bottom edge, and on archive pages, keep their compact size. */
+   bottom edge keep their compact size. */
 .fv-ctl-slot .weather-toggle button {
   font-size: 0.86rem;
   padding: 0.3rem 0.72rem;

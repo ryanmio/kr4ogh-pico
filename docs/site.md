@@ -95,9 +95,6 @@ URL as an explicit emptiness. `?p=none` is accepted anyway, for a link typed
 by hand. All three compose: `?u=i&w=c&p=speed`, and `?overlay=` composes
 with all of them.
 
-Archived flights are separate and unchanged: `flights/<flight_id>/`
-(`flight.mdx` + `track.json`), read at build time, fully static forever.
-
 ## Weather on the map
 
 A switch on the live map draws weather under the track. Two layers, because

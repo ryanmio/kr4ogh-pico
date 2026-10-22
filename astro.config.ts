@@ -1,4 +1,3 @@
-import mdx from "@astrojs/mdx";
 import { defineConfig } from "astro/config";
 import { siteConfig } from "./src/lib/config";
 
@@ -9,7 +8,6 @@ import { siteConfig } from "./src/lib/config";
 export default defineConfig({
   site: siteConfig.url ?? "http://localhost:4321",
   base: process.env.SITE_BASE || "/",
-  integrations: [mdx()],
   vite: {
     // maplibre is only ever loaded through a dynamic import (the globe
     // view). Left to discover it on first use, Vite's dev server optimizes

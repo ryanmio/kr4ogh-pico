@@ -1,7 +1,6 @@
 /** A flight's committed track, as a file: what the home page fetches when
  * `?feature=` names a flight other than the one built into it, and a plain
- * download of the record. The raw export, without derived speeds, the same
- * as /flights/<id>/track.json for an archived flight. */
+ * download of the record. The raw export, without derived speeds. */
 import type { APIRoute } from "astro";
 import { rawTrackFor, shownFlights } from "../../../lib/flights";
 import type { FlightMeta } from "../../../lib/types";

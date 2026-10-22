@@ -1,11 +1,11 @@
 /** Formatting and derived-stat helpers. Pure functions, used both at build
- * time (archived pages) and in the browser (live pages). All times are UTC —
+ * time and in the browser. All times are UTC —
  * WSPR data is UTC and mixing zones on a telemetry site invites confusion. */
 
 import type { TrackPoint } from "./types";
 
 export function parseUtc(utc: string): Date {
-  // Accepts "2026-08-18T00:04:00Z" (archives), "2026-08-18T00:04:00+00:00",
+  // Accepts "2026-08-18T00:04:00Z", "2026-08-18T00:04:00+00:00",
   // and the naive "2026-08-18 00:04:00" the exporter and the browser decoder
   // both produce.
   //

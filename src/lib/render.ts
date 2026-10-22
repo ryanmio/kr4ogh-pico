@@ -22,91 +22,9 @@ export function esc(s: string): string {
   );
 }
 
-function statCard(label: string, value: string, sub: string): string {
-  return `<div class="stat">
-    <div class="stat-label">${esc(label)}</div>
-    <div class="stat-value">${esc(value)}</div>
-    <div class="stat-sub">${esc(sub)}</div>
-  </div>`;
-}
-
-/** The stat strip under the map.
- *
- * Eight cards, so the grid divides evenly at every breakpoint instead of
- * leaving an orphan on its own row. Labels are written for someone who has
- * never heard of WSPR: "distance covered", not "track"; "battery", not
- * "volts". Position is deliberately absent -- the map above says where it is
- * far better than a grid square does.
- *
- * `live` switches "last heard" to relative time, which only makes sense
- * while a flight is still flying.
- */
-export function statsHtml(
-  track: TrackPoint[], live: boolean, units: Units = "metric",
-): string {
-  const s = trackStats(track);
-  if (!s) {
-    return '<p class="empty-note">No decoded telemetry yet.</p>';
-  }
-  const volts = track.map((p) => p.voltage_v);
-  const temps = track.map((p) => p.temperature_c);
-  const alt = (m: number) => u.altitude(m, units).text;
-  const spd = (kt: number) => u.speed(kt, units).text;
-  const tmp = (c: number) => u.temperature(c, units).text;
-
-  // Heading over the last leg. One fix is not a direction, so it stays blank
-  // rather than inventing one.
-  const prev = track.length >= 2 ? track[track.length - 2]! : null;
-  const heading = prev
-    ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
-    : null;
-
-  const aloftMs = parseUtc(s.lastUtc).getTime() - parseUtc(s.firstUtc).getTime();
-  const fromLaunchKm = haversineKm(
-    track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
-
-  const cards = [
-    statCard(
-      "Last heard",
-      live ? fmtRelative(s.lastUtc) : fmtUtc(s.lastUtc),
-      live ? `${s.lastUtc.slice(11, 16)} UTC` : `first ${fmtUtc(s.firstUtc)}`,
-    ),
-    statCard(
-      "Time in the air",
-      fmtDuration(aloftMs),
-      `since ${s.firstUtc.slice(11, 16)} UTC`,
-    ),
-    statCard("Altitude", alt(s.last.altitude_m), `highest ${alt(s.maxAltitudeM)}`),
-    statCard("Ground speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`),
-    statCard(
-      "Heading",
-      heading === null ? "--" : compassPoint(heading),
-      heading === null ? "needs two fixes" : `${Math.round(heading)}\u00b0 from north`,
-    ),
-    statCard(
-      "Distance flown",
-      u.distance(s.distanceKm, units).text,
-      `${u.distance(fromLaunchKm, units).text} from launch`,
-    ),
-    statCard(
-      "Battery",
-      `${s.last.voltage_v.toFixed(2)} V`,
-      `${Math.min(...volts).toFixed(2)}-${Math.max(...volts).toFixed(2)} V`,
-    ),
-    statCard(
-      "Tracker temp",
-      tmp(s.last.temperature_c),
-      `${u.temperature(Math.min(...temps), units).value} to ${tmp(Math.max(...temps))}`,
-    ),
-  ];
-  return `<div class="stats">${cards.join("")}</div>`;
-}
-
-
 // ---------- live sidebar ----------
 
-/** Small stroke icons, inline so archived pages keep rendering with no
- * runtime dependencies. Colored via currentColor from the metric. */
+/** Small stroke icons, inline so the page needs no icon font or sprite. Colored via currentColor from the metric. */
 const ICONS: Record<MetricKey, string> = {
   journey:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
@@ -304,7 +222,7 @@ function speedCell(p: TrackPoint): string {
 }
 
 /** Telemetry table, newest first. Long flights are capped so a two-month
- * archive page stays a reasonable download; the full track is always in the
+ * flight stays a reasonable download; the full track is always in the
  * flight's JSON. */
 export function tableHtml(track: TrackPoint[], maxRows = 500): string {
   if (track.length === 0) return "";
@@ -345,16 +263,3 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
     </table></div>
   </details>`;
 }
-
-export function outcomeBadgeClass(outcome: string): string {
-  return {
-    Pass: "badge-pass",
-    Fail: "badge-fail",
-    Wounded: "badge-wounded",
-    Closed: "badge-closed",
-    Sample: "badge-sample",
-  }[outcome] ?? "badge-closed";
-}
-
-/** A flight card for the home page. Used at build time for archived flights
- * and in the browser for live ones. */
