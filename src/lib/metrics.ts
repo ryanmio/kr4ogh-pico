@@ -81,8 +81,6 @@ export const METRICS: Record<MetricKey, Metric> = {
   },
 };
 
-export const METRIC_KEYS = Object.keys(METRICS) as MetricKey[];
-
 export function isMetricKey(v: unknown): v is MetricKey {
   return typeof v === "string" && v in METRICS;
 }

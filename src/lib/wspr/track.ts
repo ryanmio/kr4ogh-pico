@@ -94,12 +94,6 @@ export function decodeWindow(regularSpots: Spot[], telemetrySpots: Spot[]): Deco
   return { track, ghosts };
 }
 
-/** The full fixes alone, for callers that compare against the Python's
- * telemetry table (dev/verify-port.ts). */
-export function decodeSpots(regularSpots: Spot[], telemetrySpots: Spot[]): TrackPoint[] {
-  return decodeWindow(regularSpots, telemetrySpots).track;
-}
-
 /** Fetch and decode one window straight from wspr.live.
  *
  * The two queries are independent, so they go out together: one round trip

@@ -19,14 +19,6 @@ import type { TrackPoint } from "./types";
 
 export type Range = "all" | "ascent" | "recent";
 
-export const RANGE_LABELS: Record<Range, string> = {
-  all: "Whole flight",
-  ascent: "Ascent",
-  recent: "Last 24 h",
-};
-
-export const RANGES: Range[] = ["all", "ascent", "recent"];
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Below this the controls are pointless: the whole flight still *is* the
