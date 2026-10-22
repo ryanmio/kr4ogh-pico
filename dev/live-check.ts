@@ -1,21 +1,41 @@
-/** Fetch and decode the live flight straight from wspr.live, the way the page
+/** Fetch and decode a flight straight from wspr.live, the way the page
  * will, and print timings. Cross-check against the Python for the same window:
  *
  *   npx tsx dev/live-check.ts 6
  *
- * Run:  npx tsx dev/live-check.ts [hours]
+ * Run:  npx tsx dev/live-check.ts [hours] [flight_id]
+ *
+ * With no flight_id it takes the live flight that launched first. A closed
+ * flight can be named, and then the window is the last hours it was heard.
+ *
+ * The flight list comes from lib/config.ts, not lib/flights.ts: flights.ts
+ * bundles the committed tracks through import.meta.glob, which only exists
+ * under Vite, and this runs under tsx.
  */
-import { featuredFlight } from "../src/lib/flights";
+import { configuredFlights } from "../src/lib/config";
+import { parseUtc } from "../src/lib/format";
 import { channel20m } from "../src/lib/wspr/channels";
 import { fetchWindow } from "../src/lib/wspr/track";
 
 const hours = Number(process.argv[2] ?? 6);
-// The flight the home page shows.
-const flight = featuredFlight();
-if (!flight) throw new Error("flights.toml has no flight to show");
-if (flight.status === "closed") throw new Error(`${flight.flight_id} is closed`);
-console.log(`${flight.callsign} ${flight.flight_id}`);
-const end = new Date();
+const wanted = process.argv[3];
+const live = configuredFlights
+  .filter((f) => f.active !== false && f.status === "live")
+  .sort((a, b) => (a.launch_utc ?? "").localeCompare(b.launch_utc ?? ""));
+const flight = wanted
+  ? configuredFlights.find((f) => f.flight_id === wanted)
+  : live[0];
+if (!flight) {
+  throw new Error(wanted
+    ? `flights.toml has no flight ${wanted}`
+    : "no flight is live; name one: npx tsx dev/live-check.ts <hours> <flight_id>");
+}
+console.log(`${flight.callsign} ${flight.flight_id} (${flight.status})`);
+// Past the last slot by its telemetry message, which follows two minutes
+// later and has to fall inside the window's exclusive end.
+const end = flight.status === "closed" && flight.end_utc
+  ? new Date(parseUtc(flight.end_utc).getTime() + 4 * 60 * 1000)
+  : new Date();
 const start = new Date(end.getTime() - hours * 3600 * 1000);
 
 const ch = channel20m(flight.channel);

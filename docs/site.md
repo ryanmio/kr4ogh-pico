@@ -257,7 +257,8 @@ truth. It agrees to 3.5 kt RMS over 86 fixes.
 npm install
 npm run dev            # http://localhost:4321
 npm run build          # static output in dist/
-npm run live-check     # fetch + decode the live flight in the terminal
+npm run live-check     # fetch + decode the live flight in the terminal;
+                       # -- 6 F4B for a named flight, closed ones too
 npm run speed-check    # derived speeds above the telemetry ceiling
 npm run browser-check  # drive the page in Chrome: map draws, survives refresh
 ```

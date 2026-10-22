@@ -248,7 +248,8 @@ const linkOk =
   !linkClosed.open && linkClosed.search === "";
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 7
+  // six metrics, the Tracker card and the Signal card
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 8
   && panelOk && trackerOk && weatherOk && globeOk && linkOk && wheelOk
   && errors.length === 0;
 console.log(ok
