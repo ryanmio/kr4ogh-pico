@@ -215,3 +215,13 @@ float_m = 10500
 "Channel" = "549"
 "Schedule" = "every 10 min from :06"
 "Launched" = "2026-10-10 13:24 UTC · Summit Point, WV"
+
+# PT 01 launched 2026-10-24 14:55 UTC (10:55 AM EDT). First flight of Ryan's own manufactured/designed PCB. Reuses channel 206; F3B carries an end_utc so the two stay separate flights.
+[[flights]]
+flight_id = "PT01"
+callsign = "KR4OGH"
+band = "20m"
+channel = 206
+launch_utc = "2026-10-24 14:55:00"
+launch_lat = 39.2645
+launch_lon = -77.9759
