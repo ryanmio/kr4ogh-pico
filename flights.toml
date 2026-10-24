@@ -225,3 +225,4 @@ channel = 206
 launch_utc = "2026-10-24 14:55:00"
 launch_lat = 39.2645
 launch_lon = -77.9759
+float_m = 10500
