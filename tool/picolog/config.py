@@ -28,7 +28,12 @@ _LAUNCH_UTC = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 _FLIGHT_FIELDS = {
     "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
     "launch_lat", "launch_lon", "status", "close_reason", "float_m", "tracker",
+    "sensor",
 }
+
+# Sensors a tracker can declare. "bme280" is the Petrel tracker's board
+# sensor, sent as extended telemetry in slot 3 (decode.decode_bme280_slot3).
+SENSORS = ("bme280",)
 
 
 class ConfigError(ValueError):
@@ -65,6 +70,10 @@ class Flight:
     # Build details for the site's Tracker panel, label -> value, in the
     # order written. The tool carries it through untouched.
     tracker: dict[str, str] | None = None
+    # The sensor the tracker carries, or None for a stock tracker. With
+    # "bme280" the slot-3 message is pulled, decoded and attached to each
+    # fix as pressure, board temperature and humidity.
+    sensor: str | None = None
 
     @property
     def band_code(self) -> int:
@@ -192,6 +201,10 @@ def _flight(entry: object, index: int) -> Flight:
     if float_m is not None and not 0 < float_m < 50_000:
         _fail(f"{where}.float_m", "must be metres above sea level, e.g. 10700")
 
+    sensor = _optional_str(entry, where, "sensor")
+    if sensor is not None and sensor not in SENSORS:
+        _fail(f"{where}.sensor", f'must be one of {list(SENSORS)}, or left out')
+
     tracker = entry.get("tracker")
     if tracker is not None:
         if not isinstance(tracker, dict):
@@ -220,6 +233,7 @@ def _flight(entry: object, index: int) -> Flight:
         close_reason=_optional_str(entry, where, "close_reason"),
         float_m=float_m,
         tracker=tracker,
+        sensor=sensor,
     )
 
 

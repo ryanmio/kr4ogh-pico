@@ -13,8 +13,9 @@
  *
  * wspr.live is a free community service run by one person. Every query here is
  * bounded in time, filtered by band, and kept as narrow as the job allows. The
- * page issues two queries per refresh and refreshes on a timer measured in
- * minutes, which sits far inside that budget.
+ * page issues two queries per refresh, three for a tracker with a sensor,
+ * and refreshes on a timer measured in minutes, which sits far inside that
+ * budget.
  */
 
 export const ENDPOINT = "https://db1.wspr.live/";

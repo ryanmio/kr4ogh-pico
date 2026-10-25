@@ -10,7 +10,10 @@ from datetime import datetime, timedelta
 
 from .channels import channel_table_20m
 from .config import Flight
-from .decode import decode_callsign, decode_grid_power, maidenhead_to_latlon
+from .decode import (
+    BME280_SLOT, decode_bme280_slot3, decode_callsign, decode_grid_power,
+    maidenhead_to_latlon,
+)
 from .match import NAME as MATCHER_NAME
 from .match import VERSION as MATCHER_VERSION
 from .match import Match, RegularOnly, fingerprint_match, regular_only_slots
@@ -21,8 +24,9 @@ from .wsprlive import fetch_spots, regular_spots_query, telemetry_candidates_que
 def pull_flight_window(store: Store, flight: Flight,
                        window_start: datetime, window_end: datetime) -> int:
     """Fetch Regular spots and Telemetry candidates for one flight over a
-    bounded window; append raw rows and record both pulls. Returns the number
-    of newly stored spots."""
+    bounded window, and the slot-3 candidates too when the tracker carries a
+    sensor; append raw rows and record each pull. Returns the number of newly
+    stored spots."""
     channel = channel_table_20m()[flight.channel]
     new_rows = 0
 
@@ -40,6 +44,15 @@ def pull_flight_window(store: Store, flight: Flight,
     new_rows += store.insert_spots(rows)
     store.record_pull(window_start, window_end, flight.band_code,
                       f"telemetry:{flight.flight_id}", query, len(rows))
+
+    if flight.sensor == "bme280":
+        query = telemetry_candidates_query(channel.id13, flight.band_code,
+                                           channel.slot_minute(BME280_SLOT),
+                                           window_start, window_end)
+        rows = fetch_spots(query)
+        new_rows += store.insert_spots(rows)
+        store.record_pull(window_start, window_end, flight.band_code,
+                          f"sensor:{flight.flight_id}", query, len(rows))
     return new_rows
 
 
@@ -73,11 +86,34 @@ def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
                             (channel.id13[0], channel.id13[1],
                              flight.band_code, channel.telemetry_minute, *tel_params))
 
+    # The sensor message, six minutes after the Regular, paired the same
+    # way. It rides on the fix: a slot whose Basic Telemetry was not heard
+    # has no position for the reading to belong to, so a sensor-only slot
+    # is dropped, and a fix whose sensor message was not heard carries
+    # nulls. A reading of -70 / 0 / 0 is the sensor not answering, which
+    # is a fact about the sensor, not a measurement: dropped the same way.
+    sensor_by_slot: dict[str, dict] = {}
+    if flight.sensor == "bme280":
+        sen_where, sen_params = _span_clause(flight, timedelta(minutes=2 * BME280_SLOT))
+        sensor_candidates = _spot_rows(
+            store,
+            "substr(tx_sign, 1, 1) = ? AND substr(tx_sign, 3, 1) = ? "
+            "AND length(tx_sign) = 6 AND band = ? AND "
+            "CAST(strftime('%M', time) AS INTEGER) % 10 = ?" + sen_where,
+            (channel.id13[0], channel.id13[1], flight.band_code,
+             channel.slot_minute(BME280_SLOT), *sen_params))
+        for m in fingerprint_match(regulars, sensor_candidates,
+                                   offset_minutes=2 * BME280_SLOT):
+            reading = _decode_sensor_match(m)
+            if reading is not None:
+                sensor_by_slot[m.slot_utc] = reading
+
     records = []
     decoded = []
     for m in fingerprint_match(regulars, candidates):
         record = _decode_match(flight, m)
         if record is not None:
+            record.update(sensor_by_slot.get(m.slot_utc, _NO_SENSOR))
             records.append(record)
             decoded.append(m)
     store.upsert_telemetry(records)
@@ -88,6 +124,29 @@ def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
         _ghost_record(flight, g)
         for g in regular_only_slots(regulars, decoded)])
     return len(records)
+
+
+_NO_SENSOR = {"pressure_hpa": None, "board_temp_c": None, "humidity_pct": None,
+              "sensor_spot_id": None}
+
+
+def _decode_sensor_match(m: Match) -> dict | None:
+    """The sensor fields of a telemetry record from a matched slot-3 pair,
+    or None when the payload is not the Petrel BME280 message or the sensor
+    did not answer."""
+    spot = m.telemetry_spot
+    try:
+        reading = decode_bme280_slot3(spot["tx_sign"], spot["tx_loc"], int(spot["power"]))
+    except ValueError:
+        return None
+    if reading.sensor_failed:
+        return None
+    return {
+        "pressure_hpa": reading.pressure_hpa,
+        "board_temp_c": reading.temperature_c,
+        "humidity_pct": reading.humidity_pct,
+        "sensor_spot_id": int(spot["id"]),
+    }
 
 
 def _ghost_record(flight: Flight, g: RegularOnly) -> dict:

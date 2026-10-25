@@ -148,7 +148,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     trackStats,
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
-  import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
+  import {
+    METRICS, isMetricKey, lastSensorFix, metricAvailable, type MetricKey,
+  } from "../lib/metrics";
   import {
     overlaysFromSearch, resolveOverlays, urlWithOverlays, type OverlayChoice,
   } from "../lib/overlay";
@@ -472,6 +474,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function drawMap(): void {
+      // A link, or a flight switched in under a reader, can ask to color
+      // by a metric this flight never sent; altitude is the honest default.
+      if (!metricAvailable(metric, track)) metric = "altitude";
       // On desktop the map controls line up in the top bar beside the unit
       // toggle, leaving the right edge to the zoom control alone; on a
       // phone they sit along the bottom of the map.
@@ -649,19 +654,25 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
       const get: Record<string, (p: TrackPoint) => number> = {
         altitude: (p) => convert.altitude(p.altitude_m, units),
+        pressure: (p) => p.pressure_hpa ?? NaN,
         speed: (p) => convert.speed(groundSpeedKt(p), units),
         voltage: (p) => p.voltage_v,
         temperature: (p) => convert.temperature(p.temperature_c, units),
         receivers: (p) => p.rx_station_count,
       };
       const unit: Record<string, string> = {
-        altitude: labels.altitude, speed: labels.speed,
+        altitude: labels.altitude, pressure: "hPa", speed: labels.speed,
         voltage: "V", temperature: labels.temperature, receivers: "stations",
       };
+      // A fix without a reading is left out rather than plotted as a hole
+      // at zero; the chart breaks its line over any gap longer than an hour.
+      const values = pts.flatMap((p, i) => {
+        const v = get[key]!(p);
+        return Number.isFinite(v) ? [{ t: t[i]!, v }] : [];
+      });
       return {
         label: m.label, unit: unit[key]!, color: m.color,
-        values: pts.map((p, i) => ({ t: t[i]!, v: get[key]!(p) })),
-        domain, decimals: key === "voltage" ? 2 : 0,
+        values, domain, decimals: key === "voltage" ? 2 : 0,
       };
     }
 
@@ -711,6 +722,18 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           mini("Now", `${s.last.voltage_v.toFixed(2)} V`),
           mini("Lowest", `${Math.min(...volts).toFixed(2)} V`),
           mini("Highest", `${Math.max(...volts).toFixed(2)} V`),
+        ].join("");
+      }
+      if (key === "pressure") {
+        const read = track.filter((p) => p.pressure_hpa !== undefined);
+        const now = lastSensorFix(track)!;
+        const first = read[0]!;
+        return [
+          mini("Now", `${now.pressure_hpa} hPa`),
+          mini("Lowest", `${Math.min(...read.map((p) => p.pressure_hpa!))} hPa`),
+          mini("First reading", `${first.pressure_hpa} hPa`),
+          mini("Humidity", `${now.humidity_pct} %`),
+          mini("Board temp", tmp(now.board_temp_c!)),
         ].join("");
       }
       if (key === "receivers") {
@@ -794,15 +817,31 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           panelBody.innerHTML = '<p class="empty-note">No decoded telemetry yet.</p>';
           return;
         }
+        // A `?p=pressure` link opened on a flight whose tracker has no
+        // sensor: say so rather than draw an empty chart.
+        if (!metricAvailable(key, track)) {
+          panelBody.innerHTML =
+            '<p class="empty-note">This tracker carries no pressure sensor.</p>';
+          return;
+        }
         // Only the speed panel, and only on a flight that has actually
         // outrun its own telemetry: the reader is looking at a number the
         // tracker could not send and deserves to know where it came from.
+        // The pressure panel always says where its numbers come from: a
+        // sensor most trackers do not have, read on the board.
         const note = key === "speed" && hasSaturatedSpeed(track)
           ? `<p class="fv-panel-note">The tracker cannot encode more than
               ${u.speed(SPEED_CEILING_KT, units).text}. Above that, speed is
               measured from the distance flown either side of each
               report.</p>`
-          : "";
+          : key === "pressure"
+            ? `<p class="fv-panel-note">From a BME280 on the tracker board,
+              sent every cycle alongside the position. Absolute pressure,
+              not sea-level adjusted: a superpressure balloon floats at a
+              constant pressure level, so this holds steadier than GPS
+              altitude. The temperature is the board's, a few degrees above
+              the die; humidity below −40 °C is unvalidated.</p>`
+            : "";
         panelBody.innerHTML =
           `<div class="fv-minis">${metricMinis(key)}</div>` + note +
           '<div class="fv-panel-chart"></div>';

@@ -27,7 +27,17 @@ class Channel:
     def telemetry_minute(self) -> int:
         # Telemetry goes out in the slot after the Regular message
         # (https://traquito.github.io/channelmap/help/).
-        return (self.start_minute + 2) % 10
+        return self.slot_minute(1)
+
+    def slot_minute(self, slot: int) -> int:
+        """The minute of one of the cycle's five 2-minute slots, counted
+        from the Regular message's: slot 0 is the Regular message, slot 1
+        Basic Telemetry, slot 3 the Petrel sensor message. This is the
+        numbering the Traquito dashboard and Copilot use, and the one the
+        HdrSlot header carries on the air."""
+        if slot not in range(5):
+            raise ValueError(f"slot must be 0-4: {slot!r}")
+        return (self.start_minute + 2 * slot) % 10
 
 
 @cache

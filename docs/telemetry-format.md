@@ -193,6 +193,84 @@ and bone-stock Traquito hardware cannot supply it. This is recorded as a known g
 worked around: the trackers fly stock firmware (see repo hard guards) and the die sensor
 is what exists.
 
+## Extended Telemetry: the Petrel sensor message in slot 3
+
+Everything above is Basic Telemetry, one message per cycle. A tracker can send
+more: the slots at +4, +6 and +8 minutes carry **Extended Telemetry**
+messages, structurally the same Type 1 message with the callsign group and the
+grid+power group packed into *one* number, callsign group most significant,
+unpacked least significant field first
+(https://traquito.github.io/pro/telemetry/extended/). Every extended message
+starts with four header fields, in unpack order:
+
+| Field            | Values | Meaning                                                    |
+|------------------|--------|------------------------------------------------------------|
+| HdrTelemetryType | 2      | 0 = Extended Telemetry. Basic Telemetry's bit, 1, in the same place |
+| HdrRESERVED      | 4      | must be 0                                                  |
+| HdrType          | 16     | 0 = user-defined                                           |
+| HdrSlot          | 5      | which 2-minute slot the message is sent in                 |
+
+The user-defined fields follow, each a uniform field, packed in reverse order
+of their definition so that the first-defined field unpacks first after the
+header.
+
+The one extended message this project decodes is the
+[Petrel](https://github.com/ryanmio/petrel) tracker's BME280 reading, sent in
+slot 3 with this definition (the Traquito dashboard's Slot 3 message
+definition, from the Petrel repository's `firmware/slot3-definition.json`):
+
+| Field       | Unit | Low | High | Step | Values |
+|-------------|------|-----|------|------|--------|
+| Temperature | °C   | -70 | 50   | 1    | 121    |
+| Pressure    | hPa  | 0   | 1100 | 1    | 1101   |
+| Humidity    | %    | 0   | 100  | 1    | 101    |
+
+Value space: 2 × 4 × 16 × 5 × 121 × 1101 × 101 = 8,611,405,440, inside the
+632,736 × 615,600 the two field groups can carry (and inside a JavaScript
+double's exact integers). A packed value at or beyond it, or a header that is
+not extended / reserved 0 / user-defined / slot 3, means the message is not
+this one and is rejected. Known-good: `100ECD HP29 43` → 27 °C, 1016 hPa,
+19 %, the bench reading recorded in the Petrel notes; both decoders
+(`tool/picolog/decode.py`, `src/lib/wspr/decode.ts`) reproduce it and a
+frozen 90-minute slice of the first flight
+(`tool/tests/vectors/petrel_slot3.json`), checked by `dev/verify-port.ts`.
+
+Interpretation, from the Petrel notes:
+
+- **The temperature is the board's**, measured 3 to 6 °C above the RP2040 die
+  on the first flight, not the air's. The air-temperature gap recorded above
+  stays open.
+- **Pressure is absolute**, not sea-level adjusted. A superpressure balloon
+  floats at a constant pressure level, and on the first flight the reading
+  held 250 to 252 hPa across a float where GPS altitude wandered 80 m.
+- **Humidity** read zero above about 2,800 m on the first flight, with a
+  brief moist layer between 3,700 and 5,200 m on the way up. The sensor is
+  rated to about -40 °C; below that the reading is unvalidated.
+- **-70 / 0 / 0 is the sensor not answering**, the Copilot script's failure
+  path sending the field minimums. It is dropped, never shown as a reading.
+
+### Slot numbering
+
+Traquito's extended telemetry page numbers slots from the first telemetry
+slot (its "slot 0" is the Regular message's minute plus two). The Copilot
+editor and the Flight Search Dashboard number them from the Regular message
+itself (slot 0 Regular, slot 1 Basic Telemetry, slot 3 at +6 minutes), and
+that is the number the HdrSlot header carries on the air: PT-01's messages at
+the Regular minute plus six decode with HdrSlot = 3. This project uses the
+dashboard's numbering (`slot_minute` / `slotMinute`), because it is what the
+received data says.
+
+### How the reading reaches a fix
+
+The slot-3 message is paired to a Regular message exactly as Basic Telemetry
+is, by receiver fingerprint (`tool/picolog/match.py`, `src/lib/wspr/match.ts`),
+with the slot offset at six minutes instead of two. The reading then rides on
+the fix: a slot whose Basic Telemetry was not heard has no position for it,
+so a sensor-only slot is dropped, and a fix whose sensor message was not heard
+simply lacks the three fields. The message is only looked for on a flight
+whose flights.toml entry says `sensor = "bme280"`: any other tracker's slot 3
+would pass the header checks and decode into nonsense.
+
 ## The channel system — four dimensions
 
 600 channels per band, from https://qrp-labs.com/u4b/u4bdecoding.html and

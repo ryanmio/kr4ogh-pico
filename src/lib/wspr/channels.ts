@@ -17,6 +17,18 @@ export interface Channel {
   telemetryMinute: number;
 }
 
+/** The minute of one of the cycle's five 2-minute slots, counted from the
+ * Regular message's: slot 0 is the Regular message, slot 1 Basic Telemetry,
+ * slot 3 the Petrel sensor message. This is the numbering the Traquito
+ * dashboard and Copilot use, and the one the HdrSlot header carries on the
+ * air. Mirrors tool/picolog/channels.py's slot_minute. */
+export function slotMinute(ch: Channel, slot: number): number {
+  if (!Number.isInteger(slot) || slot < 0 || slot > 4) {
+    throw new Error(`slot must be 0-4: ${slot}`);
+  }
+  return (ch.startMinute + 2 * slot) % 10;
+}
+
 // The generated JSON widens to (string | number)[]; the generator validates
 // the shape of every row, so narrowing here is safe.
 const raw = table as unknown as Record<string, [string, number, number]>;

@@ -18,6 +18,10 @@ are from https://traquito.github.io/pro/telemetry/basic/.
 Implemented behaviour is Traquito's: values were CLAMPED at encode time, not
 rolled over, so a decoded boundary value (e.g. altitude 21,340 m) may mean
 "at or beyond the boundary".
+
+Extended Telemetry, the second half of this file, uses the same two field
+groups as one combined number. The only extended message decoded here is the
+Petrel tracker's BME280 sensor reading in slot 3; see decode_bme280_slot3.
 """
 
 from dataclasses import dataclass
@@ -64,12 +68,19 @@ class GridPowerTelemetry:
     hdr_type: int  # 1 = standard Basic Telemetry; anything else is not
 
 
-def decode_callsign(callsign: str) -> CallsignTelemetry:
-    """Unpack grid5, grid6, and altitude from a telemetry callsign.
+# What the two field groups can hold at most, before any message's own value
+# space is applied: callsign chars 2,4,5,6 at bases 36,26,26,26 and
+# grid1-4 + power at bases 18,18,10,10,19 (https://traquito.github.io/pro/telemetry/).
+CALLSIGN_FIELD_VALUES = 36 * 26 * 26 * 26  # 632,736
+GRID_POWER_FIELD_VALUES = 18 * 18 * 10 * 10 * 19  # 615,600
 
-    Raises ValueError if the callsign is not a well-formed telemetry callsign
-    or the packed value falls outside the Basic Telemetry value space (a
-    false WSPR decode, or not Basic Telemetry).
+
+def callsign_value(callsign: str) -> int:
+    """The number packed into a telemetry callsign's data characters 2,4,5,6,
+    most significant first. Validates the field, not the message: every
+    telemetry message, basic or extended, is read through this.
+
+    Raises ValueError if the callsign is not a well-formed telemetry callsign.
     """
     cs = callsign.strip().upper()
     if len(cs) != 6:
@@ -88,7 +99,35 @@ def decode_callsign(callsign: str) -> CallsignTelemetry:
     n = _BASE36.index(c2)
     for c in (c4, c5, c6):
         n = n * 26 + (ord(c) - ord("A"))
+    return n
 
+
+def grid_power_value(grid: str, power_dbm: int) -> int:
+    """The number packed into a telemetry message's grid and power fields,
+    most significant first. Raises ValueError if either field is malformed."""
+    g = grid.strip().upper()
+    if len(g) != 4 or not ("A" <= g[0] <= "R" and "A" <= g[1] <= "R"
+                           and g[2].isdigit() and g[3].isdigit()):
+        raise ValueError(f"not a WSPR Type 1 grid: {grid!r}")
+    if power_dbm not in POWER_DBM_LEVELS:
+        raise ValueError(f"not a legal WSPR power level: {power_dbm!r}")
+
+    n = ord(g[0]) - ord("A")
+    n = n * 18 + (ord(g[1]) - ord("A"))
+    n = n * 10 + int(g[2])
+    n = n * 10 + int(g[3])
+    n = n * 19 + POWER_DBM_LEVELS.index(power_dbm)
+    return n
+
+
+def decode_callsign(callsign: str) -> CallsignTelemetry:
+    """Unpack grid5, grid6, and altitude from a telemetry callsign.
+
+    Raises ValueError if the callsign is not a well-formed telemetry callsign
+    or the packed value falls outside the Basic Telemetry value space (a
+    false WSPR decode, or not Basic Telemetry).
+    """
+    n = callsign_value(callsign)
     if n >= CALLSIGN_GROUP_VALUES:
         raise ValueError(f"callsign value {n} outside Basic Telemetry space: {callsign!r}")
 
@@ -110,19 +149,7 @@ def decode_grid_power(grid: str, power_dbm: int) -> GridPowerTelemetry:
     Raises ValueError if the fields are malformed or the packed value falls
     outside the Basic Telemetry value space.
     """
-    g = grid.strip().upper()
-    if len(g) != 4 or not ("A" <= g[0] <= "R" and "A" <= g[1] <= "R"
-                           and g[2].isdigit() and g[3].isdigit()):
-        raise ValueError(f"not a WSPR Type 1 grid: {grid!r}")
-    if power_dbm not in POWER_DBM_LEVELS:
-        raise ValueError(f"not a legal WSPR power level: {power_dbm!r}")
-
-    n = ord(g[0]) - ord("A")
-    n = n * 18 + (ord(g[1]) - ord("A"))
-    n = n * 10 + int(g[2])
-    n = n * 10 + int(g[3])
-    n = n * 19 + POWER_DBM_LEVELS.index(power_dbm)
-
+    n = grid_power_value(grid, power_dbm)
     if n >= GRID_POWER_GROUP_VALUES:
         raise ValueError(f"grid+power value {n} outside Basic Telemetry space: "
                          f"{grid!r} {power_dbm}")
@@ -173,3 +200,90 @@ def _decode_voltage(index: int) -> float:
     if index < 20:
         return round(4.0 + index * 0.05, 2)
     return round(2.0 + index * 0.05, 2)
+
+
+# ---------- Extended Telemetry: the Petrel BME280 message, slot 3 ----------
+#
+# An Extended Telemetry message packs the callsign group and the grid+power
+# group into ONE number, callsign group most significant, and peels fields
+# off it least significant first. Every extended message starts with four
+# header fields; the user-defined fields follow in the order of the
+# message definition (https://traquito.github.io/pro/telemetry/extended/).
+#
+#   HdrTelemetryType  radix 2   0 = extended (1 is Basic Telemetry's bit)
+#   HdrRESERVED       radix 4   0
+#   HdrType           radix 16  0 = user-defined
+#   HdrSlot           radix 5   which of the five 2-minute slots carries it
+#
+# The Petrel tracker (https://github.com/ryanmio/petrel) sends its BME280
+# reading in slot 3, the Regular message's slot plus six minutes, with this
+# message definition, each a uniform field of step 1:
+#
+#   Temperature  -70 .. 50 C     radix 121   board temperature, not air
+#   Pressure       0 .. 1100 hPa radix 1101  absolute, not sea-level adjusted
+#   Humidity       0 .. 100 %    radix 101
+#
+# A reading of -70 / 0 / 0 is the tracker saying the sensor did not answer
+# (the script's failure path sends the field minimums), never a measurement.
+#
+# Any other tracker's slot-3 message would pass the header checks and decode
+# into nonsense here, so this is only applied to flights whose flights.toml
+# entry says the tracker carries the sensor.
+
+EXTENDED_HEADER_RADICES = (2, 4, 16, 5)  # HdrTelemetryType, HdrRESERVED, HdrType, HdrSlot
+BME280_RADICES = (121, 1101, 101)  # Temperature, Pressure, Humidity
+BME280_SLOT = 3
+BME280_TEMPERATURE_LOW_C = -70
+
+# Value space of the whole message: headers times fields, 8,611,405,440,
+# well inside the 389,512,281,600 the two field groups can carry.
+BME280_MESSAGE_VALUES = 2 * 4 * 16 * 5 * 121 * 1101 * 101
+
+
+@dataclass(frozen=True)
+class Bme280Telemetry:
+    temperature_c: int  # board temperature, -70 to 50 C
+    pressure_hpa: int  # absolute pressure, 0 to 1100 hPa
+    humidity_pct: int  # relative humidity, 0 to 100 %
+
+    @property
+    def sensor_failed(self) -> bool:
+        """The tracker was alive but the sensor did not answer."""
+        return (self.temperature_c, self.pressure_hpa, self.humidity_pct) == (-70, 0, 0)
+
+
+def decode_bme280_slot3(callsign: str, grid: str, power_dbm: int) -> Bme280Telemetry:
+    """Unpack the Petrel BME280 reading from a slot-3 telemetry message.
+
+    Raises ValueError if the fields are malformed, the packed value lies
+    outside the message's value space, or the header is not an extended,
+    user-defined, slot-3 message: the message is not this one.
+    """
+    n = callsign_value(callsign) * GRID_POWER_FIELD_VALUES + grid_power_value(grid, power_dbm)
+    if n >= BME280_MESSAGE_VALUES:
+        raise ValueError(f"value {n} outside the BME280 message space: "
+                         f"{callsign!r} {grid!r} {power_dbm}")
+
+    header = []
+    for radix in EXTENDED_HEADER_RADICES:
+        header.append(n % radix)
+        n //= radix
+    telemetry_type, reserved, hdr_type, slot = header
+    if telemetry_type != 0:
+        raise ValueError(f"not extended telemetry (HdrTelemetryType {telemetry_type}): {callsign!r}")
+    if reserved != 0 or hdr_type != 0:
+        raise ValueError(f"not a user-defined message (reserved {reserved}, type {hdr_type}): "
+                         f"{callsign!r}")
+    if slot != BME280_SLOT:
+        raise ValueError(f"slot {slot}, not slot {BME280_SLOT}: {callsign!r}")
+
+    fields = []
+    for radix in BME280_RADICES:
+        fields.append(n % radix)
+        n //= radix
+    temperature_index, pressure_hpa, humidity_pct = fields
+    return Bme280Telemetry(
+        temperature_c=BME280_TEMPERATURE_LOW_C + temperature_index,
+        pressure_hpa=pressure_hpa,
+        humidity_pct=humidity_pct,
+    )

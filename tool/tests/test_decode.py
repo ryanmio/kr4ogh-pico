@@ -1,9 +1,13 @@
 import pytest
 
 from picolog.decode import (
+    BME280_MESSAGE_VALUES,
+    CALLSIGN_FIELD_VALUES,
     CALLSIGN_GROUP_VALUES,
+    GRID_POWER_FIELD_VALUES,
     GRID_POWER_GROUP_VALUES,
     POWER_DBM_LEVELS,
+    decode_bme280_slot3,
     decode_callsign,
     decode_grid_power,
 )
@@ -119,3 +123,98 @@ def test_rejects_malformed_fields():
         decode_grid_power("SA11", 10)  # grid char 1 beyond R
     with pytest.raises(ValueError):
         decode_grid_power("AB12", 11)  # 11 dBm is not a legal WSPR level
+
+
+# ---------- Extended Telemetry: the Petrel BME280 message ----------
+
+def encode_bme280_slot3(id13: str, temp_c: int, pressure_hpa: int, humidity_pct: int,
+                        telemetry_type: int = 0, reserved: int = 0, hdr_type: int = 0,
+                        slot: int = 3) -> tuple[str, str, int]:
+    """Test-side encoder from the message definition: fields packed in
+    reverse order of definition, then the headers in reverse order, so that
+    unpacking peels HdrTelemetryType first and Humidity last."""
+    n = humidity_pct
+    n = n * 1101 + pressure_hpa
+    n = n * 121 + (temp_c + 70)
+    n = n * 5 + slot
+    n = n * 16 + hdr_type
+    n = n * 4 + reserved
+    n = n * 2 + telemetry_type
+    callsign_n, grid_power_n = divmod(n, GRID_POWER_FIELD_VALUES)
+    p = grid_power_n % 19
+    grid_power_n //= 19
+    g4 = grid_power_n % 10
+    grid_power_n //= 10
+    g3 = grid_power_n % 10
+    grid_power_n //= 10
+    g2 = grid_power_n % 18
+    g1 = grid_power_n // 18
+    ar = "ABCDEFGHIJKLMNOPQR"
+    c6 = callsign_n % 26
+    callsign_n //= 26
+    c5 = callsign_n % 26
+    callsign_n //= 26
+    c4 = callsign_n % 26
+    c2 = callsign_n // 26
+    az = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    callsign = id13[0] + BASE36[c2] + id13[1] + az[c4] + az[c5] + az[c6]
+    return callsign, f"{ar[g1]}{ar[g2]}{g3}{g4}", POWER_DBM_LEVELS[p]
+
+
+def test_bme280_message_fits_the_field_space():
+    assert BME280_MESSAGE_VALUES == 2 * 4 * 16 * 5 * 121 * 1101 * 101
+    assert BME280_MESSAGE_VALUES <= CALLSIGN_FIELD_VALUES * GRID_POWER_FIELD_VALUES
+
+
+def test_known_good_petrel_message():
+    # Bench reading recorded in the Petrel notes: 100ECD HP29 43 dBm is
+    # slot 3, 27 C, 1016 hPa, 19 %.
+    t = decode_bme280_slot3("100ECD", "HP29", 43)
+    assert (t.temperature_c, t.pressure_hpa, t.humidity_pct) == (27, 1016, 19)
+    assert not t.sensor_failed
+
+
+def test_first_flight_message():
+    # PT-01 at float, 2026-10-24 20:06 UTC: 100ABF NM72 53 dBm.
+    t = decode_bme280_slot3("100ABF", "NM72", 53)
+    assert (t.temperature_c, t.pressure_hpa, t.humidity_pct) == (-12, 252, 0)
+
+
+def test_bme280_roundtrip_over_field_extremes():
+    for temp in (-70, -40, 0, 50):
+        for pressure in (0, 252, 1016, 1100):
+            for humidity in (0, 19, 100):
+                cs, grid, power = encode_bme280_slot3("10", temp, pressure, humidity)
+                t = decode_bme280_slot3(cs, grid, power)
+                assert (t.temperature_c, t.pressure_hpa, t.humidity_pct) == (temp, pressure, humidity)
+
+
+def test_sensor_failure_sentinel():
+    cs, grid, power = encode_bme280_slot3("10", -70, 0, 0)
+    assert decode_bme280_slot3(cs, grid, power).sensor_failed
+
+
+def test_bme280_rejects_other_headers():
+    # Basic Telemetry's bit set, a reserved bit set, another message type,
+    # another slot: each is somebody else's message, never a reading.
+    for kw in ({"telemetry_type": 1}, {"reserved": 1}, {"hdr_type": 1},
+               {"hdr_type": 15}, {"slot": 2}, {"slot": 4}):
+        cs, grid, power = encode_bme280_slot3("10", 20, 1000, 50, **kw)
+        with pytest.raises(ValueError):
+            decode_bme280_slot3(cs, grid, power)
+
+
+def test_bme280_rejects_values_outside_the_message_space():
+    # 0Z9ZZZ RR99 60 is the largest value the fields can carry, far beyond
+    # the message's 8.6e9.
+    with pytest.raises(ValueError):
+        decode_bme280_slot3("0Z9ZZZ", "RR99", 60)
+    with pytest.raises(ValueError):
+        decode_bme280_slot3("KR4OGH", "FM09", 13)  # a real callsign
+
+
+def test_basic_telemetry_is_not_a_sensor_reading():
+    # A real Basic Telemetry message has HdrTelemetryType 1 in the same bit.
+    grid, power = encode_grid_power(10, 25, 20, 1, 1)
+    with pytest.raises(ValueError):
+        decode_bme280_slot3(encode_callsign("10", "J", "K", 10000), grid, power)

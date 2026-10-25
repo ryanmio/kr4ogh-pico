@@ -108,3 +108,23 @@ def test_nothing_pulled_keeps_the_committed_track(tmp_path):
 
     assert json.loads((tracks / "N0CALL-F1.json").read_text()) == committed
     assert json.loads((tracks / "N0CALL-F1.ghosts.json").read_text()) == []
+
+
+def test_sensor_fields_are_written_only_where_read(tmp_path):
+    (tmp_path / "flights.toml").write_text(CONFIG)
+    with Store(tmp_path / "t.db") as store:
+        base = {"flight_id": "F1", "grid6": "FN41aa", "lat": 41.0, "lon": -71.9,
+                "altitude_m": 1, "speed_knots": 0, "voltage_v": 4.0,
+                "temperature_c": 0, "gps_valid": 1, "rx_station_count": 2,
+                "regular_spot_id": 1, "telemetry_spot_id": 2,
+                "matcher_name": "fingerprint", "matcher_version": 1}
+        store.upsert_telemetry([
+            {**base, "utc": "2026-09-01 00:10:00"},
+            {**base, "utc": "2026-09-01 00:20:00", "pressure_hpa": 252,
+             "board_temp_c": -12, "humidity_pct": 0, "sensor_spot_id": 9},
+        ])
+    export(tmp_path / "flights.toml", tmp_path / "t.db", tmp_path)
+    track = json.loads((tmp_path / "src" / "data" / "tracks" / "N0CALL-F1.json").read_text())
+    assert "pressure_hpa" not in track[0]
+    assert (track[1]["pressure_hpa"], track[1]["board_temp_c"], track[1]["humidity_pct"]) == (252, -12, 0)
+    assert "sensor_spot_id" not in track[1]

@@ -26,7 +26,11 @@ const LAUNCH_UTC = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const FLIGHT_FIELDS = new Set([
   "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
   "launch_lat", "launch_lon", "status", "close_reason", "float_m", "tracker",
+  "sensor",
 ]);
+/** Sensors a tracker can declare. "bme280" is the Petrel tracker's board
+ * sensor, sent as extended telemetry in slot 3 (lib/wspr/decode.ts). */
+const SENSORS = ["bme280"] as const;
 
 type Table = Record<string, unknown>;
 
@@ -117,6 +121,11 @@ function flight(entry: unknown, index: number): FlightMeta {
     fail(`${where}.float_m`, "must be metres above sea level, e.g. 10700");
   }
 
+  const sensor = optionalText(entry, where, "sensor");
+  if (sensor !== null && !(SENSORS as readonly string[]).includes(sensor)) {
+    fail(`${where}.sensor`, `must be one of ${JSON.stringify(SENSORS)}, or left out`);
+  }
+
   let tracker: Record<string, string> | undefined;
   if (entry.tracker !== undefined) {
     if (!isTable(entry.tracker)) {
@@ -154,6 +163,7 @@ function flight(entry: unknown, index: number): FlightMeta {
     close_reason: optionalText(entry, where, "close_reason"),
     float_m: floatM,
     ...(tracker ? { tracker } : {}),
+    ...(sensor ? { sensor: sensor as (typeof SENSORS)[number] } : {}),
   };
 }
 

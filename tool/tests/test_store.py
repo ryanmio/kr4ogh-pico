@@ -92,3 +92,37 @@ def test_uncovered_windows_merges_overlapping_pulls(tmp_path):
         s.record_pull(T0, T2, 14, kind, "q", 5)
         s.record_pull(T1, T3, 14, kind, "q", 5)
         assert s.uncovered_windows(14, kind, T0, T3) == []
+
+
+def test_opening_an_older_file_adds_the_sensor_columns(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE telemetry (
+            flight_id TEXT NOT NULL, utc TEXT NOT NULL, grid6 TEXT NOT NULL,
+            lat REAL NOT NULL, lon REAL NOT NULL, altitude_m INTEGER NOT NULL,
+            speed_knots INTEGER NOT NULL, voltage_v REAL NOT NULL,
+            temperature_c INTEGER NOT NULL, gps_valid INTEGER NOT NULL,
+            rx_station_count INTEGER NOT NULL, regular_spot_id INTEGER NOT NULL,
+            telemetry_spot_id INTEGER NOT NULL, matcher_name TEXT NOT NULL,
+            matcher_version INTEGER NOT NULL, PRIMARY KEY (flight_id, utc));
+        INSERT INTO telemetry VALUES ('F1', '2026-09-01 00:10:00', 'FN41aa', 41.0,
+            -71.9, 1, 0, 4.0, 0, 1, 2, 1, 2, 'fingerprint', 1);
+    """)
+    conn.commit()
+    conn.close()
+    with Store(path) as store:
+        cols = {r[1] for r in store.conn.execute("PRAGMA table_info(telemetry)")}
+        assert {"pressure_hpa", "board_temp_c", "humidity_pct", "sensor_spot_id"} <= cols
+        row = store.conn.execute(
+            "SELECT pressure_hpa, board_temp_c, humidity_pct FROM telemetry").fetchone()
+        assert row == (None, None, None)
+        # A record without the new keys still writes (the columns take null).
+        store.upsert_telemetry([{
+            "flight_id": "F1", "utc": "2026-09-01 00:20:00", "grid6": "FN41aa",
+            "lat": 41.0, "lon": -71.9, "altitude_m": 1, "speed_knots": 0,
+            "voltage_v": 4.0, "temperature_c": 0, "gps_valid": 1,
+            "rx_station_count": 2, "regular_spot_id": 3, "telemetry_spot_id": 4,
+            "matcher_name": "fingerprint", "matcher_version": 1}])
+        assert store.conn.execute("SELECT count(*) FROM telemetry").fetchone()[0] == 2

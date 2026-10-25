@@ -1,8 +1,9 @@
 """Pair Regular and Telemetry spots by receiver fingerprint.
 
 A pairing requires the SAME receiving station to have reported both messages,
-in consecutive 2-minute slots, with reported frequencies within tolerance OF
-EACH OTHER — not within tolerance of the channel's nominal frequency.
+in the Regular slot and the telemetry slot a fixed number of minutes after it
+(two for Basic Telemetry, six for the Petrel sensor message), with reported
+frequencies within tolerance OF EACH OTHER — not within tolerance of the channel's nominal frequency.
 Receiver calibration error is routine and shifts both reports by the same
 amount, so it cancels in the comparison; matching against nominal instead
 would silently discard good data and pollute other operators' flights
@@ -39,8 +40,12 @@ class Match:
 
 
 def fingerprint_match(regular_spots: list[dict], telemetry_spots: list[dict],
-                      tolerance_hz: int = DEFAULT_TOLERANCE_HZ) -> list[Match]:
+                      tolerance_hz: int = DEFAULT_TOLERANCE_HZ,
+                      offset_minutes: int = 2) -> list[Match]:
     """Pair Regular spots with Telemetry spots, one Match per Regular slot.
+
+    `offset_minutes` is how long after the Regular slot the telemetry slot
+    falls: 2 for Basic Telemetry, 6 for an extended message in slot 3.
 
     Inputs are raw wspr.live rows. The telemetry payload identity is the
     decoded WSPR content (tx_sign, tx_loc, power): every station that heard
@@ -59,7 +64,7 @@ def fingerprint_match(regular_spots: list[dict], telemetry_spots: list[dict],
 
     matches = []
     for slot, reg_by_rx in sorted(reg_by_slot.items()):
-        tel_slot = _plus_two_minutes(slot)
+        tel_slot = _plus_minutes(slot, offset_minutes)
         votes: Counter = Counter()
         evidence: dict[tuple, tuple[dict, dict]] = {}
         seen_rx: dict[tuple, set] = {}
@@ -87,9 +92,9 @@ def fingerprint_match(regular_spots: list[dict], telemetry_spots: list[dict],
     return matches
 
 
-def _plus_two_minutes(slot: str) -> str:
+def _plus_minutes(slot: str, minutes: int) -> str:
     t = datetime.fromisoformat(slot)
-    return (t + timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+    return (t + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @dataclass(frozen=True)

@@ -24,6 +24,14 @@ export interface TrackPoint {
   temperature_c: number;
   gps_valid: boolean;
   rx_station_count: number;
+  /** From the BME280 on a Petrel tracker, sent as extended telemetry in
+   * slot 3 and paired to the fix by the same fingerprint. Present together,
+   * and only on fixes whose cycle carried a decodable reading; a stock
+   * tracker's track never has them. The temperature is the board's, a few
+   * degrees above the die, not the air's. */
+  pressure_hpa?: number;
+  board_temp_c?: number;
+  humidity_pct?: number;
 }
 
 /** A slot where only the Regular message was heard: the callsign, a 4-char
@@ -63,6 +71,10 @@ export interface FlightMeta {
   /** Build details for the Tracker panel, label -> value, in the order
    * written in flights.toml. */
   tracker?: Record<string, string>;
+  /** The sensor the tracker carries, or absent for a stock tracker. With
+   * "bme280" the slot-3 message is fetched and decoded onto each fix, and
+   * the Air pressure card appears once there is a reading to show. */
+  sensor?: "bme280" | null;
 }
 
 /** Another flight drawn on the same map for comparison (lib/overlay.ts):

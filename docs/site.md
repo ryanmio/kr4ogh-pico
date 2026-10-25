@@ -17,7 +17,13 @@ callsign.
 2. **Live tail, about a second later.** The page then queries
    [wspr.live](https://wspr.live/) directly from the browser for anything
    newer than the bundled track, decodes it in place, and merges. wspr.live
-   sends `access-control-allow-origin: *`, so this needs no proxy.
+   sends `access-control-allow-origin: *`, so this needs no proxy. Two
+   queries per refresh, the Regular messages and the telemetry candidates;
+   a flight whose tracker carries a sensor (`sensor = "bme280"` in
+   flights.toml) sends a third for the slot-3 message, and its reading
+   rides on each fix as `pressure_hpa`, `board_temp_c` and `humidity_pct`.
+   The Air pressure card, chart and map coloring exist only on a flight
+   that has sent a reading; every other flight's sidebar is unchanged.
 
 The page refreshes every two minutes, on the Refresh button, and whenever a
 backgrounded tab becomes visible again.

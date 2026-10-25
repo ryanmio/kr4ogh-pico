@@ -57,7 +57,16 @@ _TRACK_FIELDS = (
     ("temperature_c", "temperature_c"),
     ("gps_valid", "gps_valid"),
     ("rx_station_count", "rx_station_count"),
+    ("pressure_hpa", "pressure_hpa"),
+    ("board_temp_c", "board_temp_c"),
+    ("humidity_pct", "humidity_pct"),
 )
+
+# The sensor fields are left out of a point that has none, rather than
+# written as null: a track from a stock tracker then looks exactly as it
+# always did, and the site tells "no sensor" from "no reading" by the
+# key's absence.
+_SENSOR_FIELDS = ("pressure_hpa", "board_temp_c", "humidity_pct")
 
 
 # The site's GhostPoint shape (src/lib/types.ts).
@@ -88,6 +97,9 @@ def _track_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
     for row in rows:
         point = dict(zip((dst for dst, _ in _TRACK_FIELDS), row))
         point["gps_valid"] = bool(point["gps_valid"])
+        for key in _SENSOR_FIELDS:
+            if point[key] is None:
+                del point[key]
         out.append(point)
     return out
 

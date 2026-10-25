@@ -16,6 +16,10 @@ from picolog.pipeline import rebuild_flight_telemetry
 from picolog.store import Store
 
 VECTOR_PATH = Path(__file__).parent / "vectors" / "basic_telemetry.json"
+PETREL_PATH = Path(__file__).parent / "vectors" / "petrel_slot3.json"
+
+NO_SENSOR = {"pressure_hpa": None, "board_temp_c": None, "humidity_pct": None,
+             "sensor_spot_id": None}
 
 
 @pytest.fixture(scope="module")
@@ -38,8 +42,9 @@ def test_full_pipeline_reproduces_verified_day(vector, tmp_path_factory):
         rec = dict(zip(columns, row))
         got[rec["utc"]] = rec
 
+    # A stock tracker: the sensor columns exist on every row and hold nothing.
     for expected in vector["expected_telemetry"]:
-        assert expected == got[expected["utc"]]
+        assert got[expected["utc"]] == {**expected, **NO_SENSOR}
     store.close()
 
 
@@ -70,4 +75,47 @@ def test_rebuild_is_idempotent(vector, tmp_path_factory):
     assert first == second
     count = store.conn.execute("SELECT count(*) FROM telemetry").fetchone()[0]
     assert count == first
+    store.close()
+
+
+# ---------- the Petrel sensor message ----------
+
+@pytest.fixture(scope="module")
+def petrel():
+    return json.loads(PETREL_PATH.read_text())
+
+
+def _telemetry_rows(store):
+    cur = store.conn.execute("SELECT * FROM telemetry ORDER BY utc")
+    columns = [d[0] for d in cur.description]
+    return {row[1]: dict(zip(columns, row)) for row in cur.fetchall()}
+
+
+def test_petrel_slice_reproduces_sensor_readings(petrel, tmp_path_factory):
+    store = Store(tmp_path_factory.mktemp("db") / "petrel.db")
+    assert store.insert_spots(petrel["raw_spots"]) == len(petrel["raw_spots"])
+    flight = Flight(**petrel["flight"])
+    assert flight.sensor == "bme280"
+    written = rebuild_flight_telemetry(store, flight)
+    assert written == len(petrel["expected_telemetry"])
+    got = _telemetry_rows(store)
+    for expected in petrel["expected_telemetry"]:
+        assert got[expected["utc"]] == expected
+    # The slice was chosen so that the reading rode on every fix; the
+    # pressure falls monotonically through the climb.
+    pressures = [r["pressure_hpa"] for r in (got[e["utc"]] for e in petrel["expected_telemetry"])]
+    assert all(p is not None for p in pressures)
+    assert pressures == sorted(pressures, reverse=True)
+    store.close()
+
+
+def test_without_the_sensor_declared_the_same_spots_decode_to_nulls(petrel, tmp_path_factory):
+    # The slot-3 message is only read for a flight that says it carries the
+    # sensor: another tracker's slot 3 would decode into nonsense.
+    store = Store(tmp_path_factory.mktemp("db") / "petrel.db")
+    store.insert_spots(petrel["raw_spots"])
+    flight = Flight(**{**petrel["flight"], "sensor": None})
+    rebuild_flight_telemetry(store, flight)
+    for row in _telemetry_rows(store).values():
+        assert {k: row[k] for k in NO_SENSOR} == NO_SENSOR
     store.close()

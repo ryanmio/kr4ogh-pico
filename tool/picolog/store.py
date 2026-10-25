@@ -85,6 +85,10 @@ CREATE TABLE IF NOT EXISTS telemetry (
     telemetry_spot_id  INTEGER NOT NULL,
     matcher_name       TEXT NOT NULL,
     matcher_version    INTEGER NOT NULL,
+    pressure_hpa       INTEGER,
+    board_temp_c       INTEGER,
+    humidity_pct       INTEGER,
+    sensor_spot_id     INTEGER,
     PRIMARY KEY (flight_id, utc)
 );
 
@@ -117,7 +121,19 @@ _SPOT_REAL = {"rx_lat", "rx_lon", "tx_lat", "tx_lon"}
 TELEMETRY_COLUMNS = ("flight_id", "utc", "grid6", "lat", "lon", "altitude_m",
                      "speed_knots", "voltage_v", "temperature_c", "gps_valid",
                      "rx_station_count", "regular_spot_id", "telemetry_spot_id",
-                     "matcher_name", "matcher_version")
+                     "matcher_name", "matcher_version",
+                     "pressure_hpa", "board_temp_c", "humidity_pct", "sensor_spot_id")
+
+# Columns added to `telemetry` after the first files were written, with
+# their types: the sensor reading from a Petrel tracker's slot-3 message,
+# null on a fix whose cycle carried none. CREATE TABLE IF NOT EXISTS leaves
+# an existing table alone, so these are added to an older file on open.
+_TELEMETRY_ADDED = {
+    "pressure_hpa": "INTEGER",
+    "board_temp_c": "INTEGER",
+    "humidity_pct": "INTEGER",
+    "sensor_spot_id": "INTEGER",
+}
 
 GHOST_COLUMNS = ("flight_id", "utc", "grid4", "lat", "lon", "rx_station_count",
                  "matcher_name", "matcher_version")
@@ -133,6 +149,17 @@ class Store:
     def __init__(self, path: str | Path):
         self.conn = sqlite3.connect(path)
         self.conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Bring a file written by an earlier version up to the schema.
+        Only derived tables are ever changed; `spots` is append-only and
+        has never changed shape."""
+        have = {row[1] for row in self.conn.execute("PRAGMA table_info(telemetry)")}
+        for column, kind in _TELEMETRY_ADDED.items():
+            if column not in have:
+                self.conn.execute(f"ALTER TABLE telemetry ADD COLUMN {column} {kind}")
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
@@ -184,7 +211,7 @@ class Store:
         sql = (f"INSERT OR REPLACE INTO telemetry "
                f"({', '.join(TELEMETRY_COLUMNS)}) VALUES ({placeholders})")
         for rec in records:
-            self.conn.execute(sql, [rec[c] for c in TELEMETRY_COLUMNS])
+            self.conn.execute(sql, [rec.get(c) for c in TELEMETRY_COLUMNS])
         self.conn.commit()
 
     def replace_ghosts(self, flight_id: str, records: list[dict]) -> None:

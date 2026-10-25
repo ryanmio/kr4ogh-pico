@@ -51,6 +51,14 @@ callsign = "KR4OGH"
 #               levelled off. Your envelope's usual float, or an earlier
 #               flight's.
 #
+#   sensor      optional, "bme280" for a Petrel tracker, which sends its
+#               board sensor (pressure, board temperature, humidity) as
+#               extended telemetry in slot 3. The site then fetches and
+#               decodes that message too, and the flight gets an Air
+#               pressure card once there is a reading. Leave it out for a
+#               stock tracker: another tracker's slot 3 would decode into
+#               nonsense.
+#
 # An optional [flights.tracker] table right after a flight holds build
 # details for the Tracker panel: any labels you like, in the order written.
 
@@ -226,3 +234,4 @@ launch_utc = "2026-10-24 14:55:00"
 launch_lat = 39.2645
 launch_lon = -77.9759
 float_m = 10500
+sensor = "bme280"

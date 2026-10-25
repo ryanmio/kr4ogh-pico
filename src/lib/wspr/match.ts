@@ -1,9 +1,10 @@
 /** Pair Regular and Telemetry spots by receiver fingerprint.
  *
  * A direct port of tool/picolog/match.py. A pairing requires the SAME
- * receiving station to have reported both messages, in consecutive 2-minute
- * slots, with reported frequencies within tolerance OF EACH OTHER, not of the
- * channel's nominal frequency. Receiver calibration error shifts both reports
+ * receiving station to have reported both messages, in the Regular slot and
+ * the telemetry slot a fixed number of minutes after it (two for Basic
+ * Telemetry, six for the Petrel sensor message), with reported frequencies
+ * within tolerance OF EACH OTHER, not of the channel's nominal frequency. Receiver calibration error shifts both reports
  * equally and cancels; matching against nominal would discard good data and
  * pollute other operators' flights.
  *
@@ -40,6 +41,9 @@ export function fingerprintMatch(
   regularSpots: Spot[],
   telemetrySpots: Spot[],
   toleranceHz: number = DEFAULT_TOLERANCE_HZ,
+  /** How long after the Regular slot the telemetry slot falls: 2 for Basic
+   * Telemetry, 6 for an extended message in slot 3. */
+  offsetMinutes = 2,
 ): Match[] {
   // one report per receiver per slot; wsprnet data can contain duplicates
   const regBySlot = new Map<string, Map<string, Spot>>();
@@ -59,7 +63,7 @@ export function fingerprintMatch(
   const matches: Match[] = [];
   for (const slot of [...regBySlot.keys()].sort()) {
     const regByRx = regBySlot.get(slot)!;
-    const telSlot = plusTwoMinutes(slot);
+    const telSlot = plusMinutes(slot, offsetMinutes);
     const votes = new Map<string, number>();
     const evidence = new Map<string, [Spot, Spot]>();
     const seenRx = new Map<string, Set<string>>();
@@ -99,9 +103,9 @@ export function fingerprintMatch(
   return matches;
 }
 
-function plusTwoMinutes(slot: string): string {
+function plusMinutes(slot: string, minutes: number): string {
   const t = new Date(slot.replace(" ", "T") + "Z");
-  t.setUTCMinutes(t.getUTCMinutes() + 2);
+  t.setUTCMinutes(t.getUTCMinutes() + minutes);
   return t.toISOString().slice(0, 19).replace("T", " ");
 }
 

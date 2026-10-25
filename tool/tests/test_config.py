@@ -194,3 +194,30 @@ status = "closed"
 """)
     with pytest.raises(ConfigError, match=r"T1.*tracker\.status.*Move it above"):
         load_flights(str(p))
+
+
+def test_sensor_field(tmp_path):
+    flights = load_flights(write(tmp_path, SITE + """
+[[flights]]
+flight_id = "P1"
+callsign = "N0CALL"
+band = "20m"
+channel = 206
+sensor = "bme280"
+
+[[flights]]
+flight_id = "F1"
+callsign = "N0CALL"
+band = "20m"
+channel = 348
+"""))
+    assert flights[0].sensor == "bme280" and flights[1].sensor is None
+    with pytest.raises(ConfigError, match=r"P1\.sensor"):
+        load_flights(write(tmp_path, SITE + """
+[[flights]]
+flight_id = "P1"
+callsign = "N0CALL"
+band = "20m"
+channel = 206
+sensor = "dht22"
+"""))

@@ -81,6 +81,18 @@ def test_duplicate_reports_from_one_station_count_once():
     assert matches[0].rx_station_count == 1
 
 
+def test_offset_selects_the_slot():
+    # The sensor message is six minutes after the Regular. With the default
+    # two-minute offset it is nobody's; with six it pairs.
+    sensor = tel("K1ABC", 14097061, time="2025-06-01 10:06:00")
+    assert fingerprint_match([reg("K1ABC", 14097061)], [sensor]) == []
+    matches = fingerprint_match([reg("K1ABC", 14097061)], [sensor], offset_minutes=6)
+    assert len(matches) == 1 and matches[0].slot_utc == SLOT
+    # And a six-minute match ignores the Basic Telemetry two minutes on.
+    assert fingerprint_match([reg("K1ABC", 14097061)], [tel("K1ABC", 14097061)],
+                             offset_minutes=6) == []
+
+
 # ---------- Regular-only slots ----------
 
 from picolog.match import regular_only_slots  # noqa: E402

@@ -14,7 +14,8 @@ import type { Units } from "./units";
 import type { TrackPoint } from "./types";
 
 export type MetricKey =
-  | "journey" | "altitude" | "speed" | "voltage" | "temperature" | "receivers";
+  | "journey" | "altitude" | "pressure" | "speed" | "voltage" | "temperature"
+  | "receivers";
 
 export interface Metric {
   key: MetricKey;
@@ -28,6 +29,11 @@ export interface Metric {
   raw(p: TrackPoint): number;
   /** A raw value formatted for the legend ends. */
   fmt(raw: number, units: Units): string;
+  /** Whether the track carries this metric at all. Left out, it always
+   * does. Pressure comes from a sensor only some trackers have, so its
+   * card, chart and coloring exist only on a flight that has sent a
+   * reading; `raw` is NaN on a fix without one. */
+  available?(track: TrackPoint[]): boolean;
 }
 
 export const METRICS: Record<MetricKey, Metric> = {
@@ -46,6 +52,17 @@ export const METRICS: Record<MetricKey, Metric> = {
     color: "#7dd3fc",
     raw: (p) => p.altitude_m,
     fmt: (raw, units) => u.altitude(raw, units).text,
+  },
+  pressure: {
+    key: "pressure",
+    label: "Air pressure",
+    // Low pressure is high altitude, so the ramp runs the altitude ramp's
+    // way round: the warm end is near the ground.
+    ramp: ["#c4b5fd", "#5eead4", "#fbbf24"],
+    color: "#5eead4",
+    raw: (p) => p.pressure_hpa ?? NaN,
+    fmt: (raw) => `${Math.round(raw)} hPa`,
+    available: (track) => track.some((p) => p.pressure_hpa !== undefined),
   },
   speed: {
     key: "speed",
@@ -83,6 +100,19 @@ export const METRICS: Record<MetricKey, Metric> = {
 
 export function isMetricKey(v: unknown): v is MetricKey {
   return typeof v === "string" && v in METRICS;
+}
+
+/** Whether a flight's track has anything to show for a metric. */
+export function metricAvailable(key: MetricKey, track: TrackPoint[]): boolean {
+  return METRICS[key].available?.(track) ?? true;
+}
+
+/** The newest fix that carries a sensor reading, or null when none does. */
+export function lastSensorFix(track: TrackPoint[]): TrackPoint | null {
+  for (let i = track.length - 1; i >= 0; i--) {
+    if (track[i]!.pressure_hpa !== undefined) return track[i]!;
+  }
+  return null;
 }
 
 function hexRgb(hex: string): [number, number, number] {

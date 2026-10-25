@@ -17,6 +17,11 @@
  * https://traquito.github.io/pro/telemetry/basic/. Values were CLAMPED at
  * encode time, not rolled over, so a decoded boundary value may mean "at or
  * beyond the boundary".
+ *
+ * Extended Telemetry, the second half of this file, uses the same two field
+ * groups as one combined number. The only extended message decoded here is
+ * the Petrel tracker's BME280 sensor reading in slot 3; see
+ * decodeBme280Slot3.
  */
 
 // Value spaces of the two encode groups. If an unpack disagrees, the radix is wrong.
@@ -55,7 +60,16 @@ export class DecodeError extends Error {}
 
 const isDigit = (c: string) => c >= "0" && c <= "9";
 
-export function decodeCallsign(callsign: string): CallsignTelemetry {
+/** What the two field groups can hold at most, before any message's own
+ * value space is applied: callsign chars 2,4,5,6 at bases 36,26,26,26 and
+ * grid1-4 + power at bases 18,18,10,10,19. */
+export const CALLSIGN_FIELD_VALUES = 36 * 26 * 26 * 26; // 632,736
+export const GRID_POWER_FIELD_VALUES = 18 * 18 * 10 * 10 * 19; // 615,600
+
+/** The number packed into a telemetry callsign's data characters 2,4,5,6,
+ * most significant first. Validates the field, not the message: every
+ * telemetry message, basic or extended, is read through this. */
+export function callsignValue(callsign: string): number {
   const cs = callsign.trim().toUpperCase();
   if (cs.length !== 6) {
     throw new DecodeError(`telemetry callsign must be 6 chars: ${callsign}`);
@@ -79,6 +93,31 @@ export function decodeCallsign(callsign: string): CallsignTelemetry {
   for (const c of [c4, c5, c6]) {
     n = n * 26 + (c.charCodeAt(0) - 65);
   }
+  return n;
+}
+
+/** The number packed into a telemetry message's grid and power fields,
+ * most significant first. Throws DecodeError if either field is malformed. */
+export function gridPowerValue(grid: string, powerDbm: number): number {
+  const g = grid.trim().toUpperCase();
+  if (g.length !== 4 || !(g[0] >= "A" && g[0] <= "R") || !(g[1] >= "A" && g[1] <= "R")
+      || !isDigit(g[2]) || !isDigit(g[3])) {
+    throw new DecodeError(`not a WSPR Type 1 grid: ${grid}`);
+  }
+  if (!POWER_DBM_LEVELS.includes(powerDbm)) {
+    throw new DecodeError(`not a legal WSPR power level: ${powerDbm}`);
+  }
+
+  let n = g.charCodeAt(0) - 65;
+  n = n * 18 + (g.charCodeAt(1) - 65);
+  n = n * 10 + Number(g[2]);
+  n = n * 10 + Number(g[3]);
+  n = n * 19 + POWER_DBM_LEVELS.indexOf(powerDbm);
+  return n;
+}
+
+export function decodeCallsign(callsign: string): CallsignTelemetry {
+  const n = callsignValue(callsign);
   if (n >= CALLSIGN_GROUP_VALUES) {
     throw new DecodeError(`callsign value ${n} outside Basic Telemetry space: ${callsign}`);
   }
@@ -95,21 +134,7 @@ export function decodeCallsign(callsign: string): CallsignTelemetry {
 }
 
 export function decodeGridPower(grid: string, powerDbm: number): GridPowerTelemetry {
-  const g = grid.trim().toUpperCase();
-  if (g.length !== 4 || !(g[0] >= "A" && g[0] <= "R") || !(g[1] >= "A" && g[1] <= "R")
-      || !isDigit(g[2]) || !isDigit(g[3])) {
-    throw new DecodeError(`not a WSPR Type 1 grid: ${grid}`);
-  }
-  if (!POWER_DBM_LEVELS.includes(powerDbm)) {
-    throw new DecodeError(`not a legal WSPR power level: ${powerDbm}`);
-  }
-
-  let n = g.charCodeAt(0) - 65;
-  n = n * 18 + (g.charCodeAt(1) - 65);
-  n = n * 10 + Number(g[2]);
-  n = n * 10 + Number(g[3]);
-  n = n * 19 + POWER_DBM_LEVELS.indexOf(powerDbm);
-
+  let n = gridPowerValue(grid, powerDbm);
   if (n >= GRID_POWER_GROUP_VALUES) {
     throw new DecodeError(`grid+power value ${n} outside Basic Telemetry space: ${grid} ${powerDbm}`);
   }
@@ -166,4 +191,97 @@ function decodeVoltage(index: number): number {
 function round(x: number, places: number): number {
   const f = 10 ** places;
   return Math.round((x + Number.EPSILON * Math.sign(x)) * f) / f;
+}
+
+// ---------- Extended Telemetry: the Petrel BME280 message, slot 3 ----------
+//
+// An Extended Telemetry message packs the callsign group and the grid+power
+// group into ONE number, callsign group most significant, and peels fields
+// off it least significant first. Every extended message starts with four
+// header fields; the user-defined fields follow in the order of the message
+// definition (https://traquito.github.io/pro/telemetry/extended/).
+//
+//   HdrTelemetryType  radix 2   0 = extended (1 is Basic Telemetry's bit)
+//   HdrRESERVED       radix 4   0
+//   HdrType           radix 16  0 = user-defined
+//   HdrSlot           radix 5   which of the five 2-minute slots carries it
+//
+// The Petrel tracker (https://github.com/ryanmio/petrel) sends its BME280
+// reading in slot 3, the Regular message's slot plus six minutes, with this
+// message definition, each a uniform field of step 1:
+//
+//   Temperature  -70 .. 50 C     radix 121   board temperature, not air
+//   Pressure       0 .. 1100 hPa radix 1101  absolute, not sea-level adjusted
+//   Humidity       0 .. 100 %    radix 101
+//
+// A reading of -70 / 0 / 0 is the tracker saying the sensor did not answer
+// (the script's failure path sends the field minimums), never a measurement.
+//
+// Any other tracker's slot-3 message would pass the header checks and decode
+// into nonsense here, so this is only applied to flights whose flights.toml
+// entry says the tracker carries the sensor. A direct port of
+// tool/picolog/decode.py's decode_bme280_slot3.
+
+const EXTENDED_HEADER_RADICES = [2, 4, 16, 5]; // HdrTelemetryType, HdrRESERVED, HdrType, HdrSlot
+const BME280_RADICES = [121, 1101, 101]; // Temperature, Pressure, Humidity
+export const BME280_SLOT = 3;
+const BME280_TEMPERATURE_LOW_C = -70;
+
+/** Value space of the whole message: headers times fields, 8,611,405,440,
+ * well inside the 389,512,281,600 the two field groups can carry, and well
+ * inside a double's exact integers. */
+export const BME280_MESSAGE_VALUES = 2 * 4 * 16 * 5 * 121 * 1101 * 101;
+
+export interface Bme280Telemetry {
+  temperatureC: number; // board temperature, -70 to 50 C
+  pressureHpa: number; // absolute pressure, 0 to 1100 hPa
+  humidityPct: number; // relative humidity, 0 to 100 %
+}
+
+/** The tracker was alive but the sensor did not answer. */
+export function sensorFailed(t: Bme280Telemetry): boolean {
+  return t.temperatureC === -70 && t.pressureHpa === 0 && t.humidityPct === 0;
+}
+
+/** Unpack the Petrel BME280 reading from a slot-3 telemetry message. Throws
+ * DecodeError if the fields are malformed, the packed value lies outside the
+ * message's value space, or the header is not an extended, user-defined,
+ * slot-3 message: the message is not this one. */
+export function decodeBme280Slot3(
+  callsign: string, grid: string, powerDbm: number,
+): Bme280Telemetry {
+  let n = callsignValue(callsign) * GRID_POWER_FIELD_VALUES + gridPowerValue(grid, powerDbm);
+  if (n >= BME280_MESSAGE_VALUES) {
+    throw new DecodeError(
+      `value ${n} outside the BME280 message space: ${callsign} ${grid} ${powerDbm}`);
+  }
+
+  const header: number[] = [];
+  for (const radix of EXTENDED_HEADER_RADICES) {
+    header.push(n % radix);
+    n = Math.floor(n / radix);
+  }
+  const [telemetryType, reserved, hdrType, slot] = header as [number, number, number, number];
+  if (telemetryType !== 0) {
+    throw new DecodeError(`not extended telemetry (HdrTelemetryType ${telemetryType}): ${callsign}`);
+  }
+  if (reserved !== 0 || hdrType !== 0) {
+    throw new DecodeError(
+      `not a user-defined message (reserved ${reserved}, type ${hdrType}): ${callsign}`);
+  }
+  if (slot !== BME280_SLOT) {
+    throw new DecodeError(`slot ${slot}, not slot ${BME280_SLOT}: ${callsign}`);
+  }
+
+  const fields: number[] = [];
+  for (const radix of BME280_RADICES) {
+    fields.push(n % radix);
+    n = Math.floor(n / radix);
+  }
+  const [temperatureIndex, pressureHpa, humidityPct] = fields as [number, number, number];
+  return {
+    temperatureC: BME280_TEMPERATURE_LOW_C + temperatureIndex,
+    pressureHpa,
+    humidityPct,
+  };
 }
