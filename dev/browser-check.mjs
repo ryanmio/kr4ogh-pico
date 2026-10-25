@@ -101,7 +101,12 @@ const tracker = await page.evaluate(() => ({
 }));
 console.log(`tracker card     : open=${tracker.open} minis=${tracker.minis} ` +
   `rangeHidden=${tracker.rangeHidden}`);
-const trackerOk = tracker.open && tracker.minis > 5 && tracker.rangeHidden;
+// Build details come from the flight's [flights.tracker] table, which a
+// freshly launched flight may not have yet; then the panel is rightly empty.
+const hasDetails = await page.evaluate(() =>
+  !!JSON.parse(document.querySelector(".fv").dataset.flight).tracker);
+const trackerOk = tracker.open && tracker.rangeHidden
+  && (hasDetails ? tracker.minis > 5 : tracker.minis === 0);
 await page.evaluate(() => document.getElementById("panel-close").click());
 
 // The weather layer is the other thing a rebuilt map can lose. Its control
@@ -118,7 +123,10 @@ const weatherProbe = async (label) => {
   const r = await page.evaluate(() => ({
     // :not(.view-toggle): the flat/globe switch wears the same pill class.
     on: document.querySelector('.weather-toggle:not(.view-toggle) button[aria-pressed="true"]')?.textContent,
-    buttons: document.querySelectorAll(".weather-toggle:not(.view-toggle) button").length,
+    // The view and forecast toggles share the weather toggle's styling
+    // class; only the weather one is counted.
+    buttons: document.querySelectorAll(
+      ".weather-toggle:not(.view-toggle):not(.forecast-toggle) button").length,
     tiles: document.querySelectorAll(".weather-tiles .leaflet-tile-loaded").length,
   }));
   console.log(`${label}: on=${r.on} buttons=${r.buttons} weatherTiles=${r.tiles}`);
@@ -155,7 +163,8 @@ const viewProbe = async (label) => {
     on: document.querySelector('.view-toggle button[aria-pressed="true"]')?.textContent,
     canvas: !!document.querySelector(".maplibregl-canvas"),
     leaflet: !!document.querySelector(".leaflet-map-pane"),
-    weatherButtons: document.querySelectorAll(".weather-toggle:not(.view-toggle) button").length,
+    weatherButtons: document.querySelectorAll(
+      ".weather-toggle:not(.view-toggle):not(.forecast-toggle) button").length,
     search: location.search,
   }));
   console.log(`${label}: on=${r.on} canvas=${r.canvas} leaflet=${r.leaflet} ` +
@@ -248,12 +257,23 @@ const linkOk =
   !linkClosed.open && linkClosed.search === "";
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  // six metrics, the Tracker card and the Signal card
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 8
+  // The metrics, the Tracker card and the Signal card: six or seven metrics
+  // depending on whether the tracker carries a sensor, so the check is that
+  // a refresh keeps every card it started with.
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards >= 8
+  && twice.cards === first.cards
   && panelOk && trackerOk && weatherOk && globeOk && linkOk && wheelOk
   && errors.length === 0;
+// Name what failed: a bare "broken" sends the reader back through the log.
+const failed = Object.entries({
+  map: after.hasLeafletPane && after.height > 200 && after.tiles > 0,
+  cards: twice.hasLeafletPane && twice.tiles > 0 && twice.cards >= 8
+    && twice.cards === first.cards,
+  panel: panelOk, tracker: trackerOk, weather: weatherOk, globe: globeOk,
+  link: linkOk, wheel: wheelOk, errors: errors.length === 0,
+}).filter(([, pass]) => !pass).map(([name]) => name);
 console.log(ok
   ? "\nRESULT: map, panel, weather and globe survive refreshes; links share the panel"
-  : "\nRESULT: STILL BROKEN");
+  : `\nRESULT: STILL BROKEN (${failed.join(", ")})`);
 await browser.close();
 process.exit(ok ? 0 : 1);
