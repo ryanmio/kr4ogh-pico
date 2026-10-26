@@ -473,7 +473,9 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   z-index: 1050; width: 288px;
   display: flex; flex-direction: column;
   overflow-y: auto; scrollbar-width: none;
-  pointer-events: none;  /* gaps between cards still pan the map */
+  /* The column catches the wheel everywhere, gaps included, so scrolling
+     between two cards moves the cards instead of zooming the map behind. */
+  pointer-events: auto;
 }
 .fv-side::-webkit-scrollbar { display: none; }
 
