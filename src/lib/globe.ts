@@ -26,7 +26,8 @@ setWorkerUrl(workerUrl);
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 import {
-  fitRegion, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
+  fitRegion, flightLine, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL,
+  unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
@@ -209,7 +210,7 @@ function addTrack(
         type: "Feature", properties: {},
         geometry: {
           type: "LineString",
-          coordinates: greatCircleLine(track.map((p, i) => [lons[i]!, p.lat])),
+          coordinates: flightLine(track, lons),
         },
       },
     };
@@ -312,7 +313,7 @@ function addOverlay(
         type: "Feature", properties: {},
         geometry: {
           type: "LineString",
-          coordinates: greatCircleLine(o.track.map((p, i) => [lons[i]!, p.lat])),
+          coordinates: flightLine(o.track, lons),
         },
       },
     };

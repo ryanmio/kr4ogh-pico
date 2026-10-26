@@ -91,6 +91,22 @@ frame — the newest fix is by definition the end of the line — which leaves
 whatever it is flying into off the map. That is the half a reader wants, and
 with the weather layer on it is the storm ahead.
 
+The line across a night is a guess, and drawn as the best one. The tracker
+is silent from dusk to dawn, so the fixes either side of a night can be a
+thousand kilometres apart, and the straight line between them — the great
+circle, on the globe as on the flat map — is a path the balloon almost
+certainly did not take: a balloon drifting south-east at dusk and north-east
+at dawn turned somewhere in between. So the line leaves the last fix before
+the silence on the heading the balloon was flying then, and arrives at the
+first fix after on the heading it was flying when it reappeared, as the
+smoothest curve that agrees with both (`flightLine` in `src/lib/basemap.ts`).
+Each heading is read over about 20 km of fixes rather than the last two
+alone, since two fixes one grid square apart can point almost anywhere. With
+fixes on one side of the gap only, the curve follows the one heading it has;
+with none it falls back to the great circle. Any silence over two hours is
+treated this way, a night and an afternoon out of range of every receiver
+alike.
+
 What is on screen travels in the link. `?u=i` pins imperial, `?w=c` the
 cloud layer, and `?p=speed` the open panel — a card's own name (`journey`,
 `altitude`, `speed`, `voltage`, `temperature`, `receivers`), or `status`

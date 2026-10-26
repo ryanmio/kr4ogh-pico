@@ -5,7 +5,8 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  fitRegion, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL, unwrapLons,
+  fitRegion, flightLine, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL,
+  unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtUtc } from "./format";
@@ -95,7 +96,7 @@ export function renderMap(
   const ghosts = opts.ghosts ?? [];
 
   const geo = geometry(track, ghosts);
-  const { latlngs, ghostLatlngs, tailLatlngs, here, hereLatlng, lons: allLons } = geo;
+  const { latlngs, line, ghostLatlngs, tailLatlngs, here, hereLatlng, lons: allLons } = geo;
   // Overlaid flights are fitted too, with this flight's balloon still last
   // (fitRegion's contract), so a comparison opens with both in view.
   const overlays = (opts.overlays ?? [])
@@ -171,7 +172,6 @@ export function renderMap(
   // A dark casing under a light line: over satellite imagery, and over a
   // weather layer, a single thin grey line vanishes. The casing separates
   // the path from whatever is beneath it.
-  const line = arc(latlngs);
   L.polyline(line, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
   L.polyline(line, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
   // The tail is dashed and never joins the line: a grid square is a claim
@@ -358,6 +358,8 @@ export function renderMap(
  * the last fix, and where the balloon was last heard. */
 interface Geometry {
   latlngs: L.LatLng[];
+  /** The line drawn through the fixes, bent across the nights: flightLine. */
+  line: L.LatLng[];
   ghostLatlngs: L.LatLng[];
   /** The ghosts newer than the last fix, in order. */
   tailLatlngs: L.LatLng[];
@@ -372,6 +374,7 @@ interface Geometry {
 function geometry(track: TrackPoint[], ghosts: GhostPoint[]): Geometry {
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
+  const line = flightLine(track, lons).map(([lng, lat]) => L.latLng(lat!, lng!));
   const ghostLons = unwrapGhostLons(track, lons, ghosts);
   const ghostLatlngs = ghosts.map((g, i) => L.latLng(g.lat, ghostLons[i]!));
   // Ghosts newer than the last fix: the balloon has been heard along them
@@ -386,13 +389,13 @@ function geometry(track: TrackPoint[], ghosts: GhostPoint[]): Geometry {
     ? [...latlngs, ...ghostLatlngs].filter((ll) => ll !== hereLatlng).concat(hereLatlng)
     : [];
   return {
-    latlngs, ghostLatlngs, tailLatlngs, here, hereLatlng,
+    latlngs, line, ghostLatlngs, tailLatlngs, here, hereLatlng,
     lons: [...lons, ...ghostLons], fitPts,
   };
 }
 
-/** A line through the points along the great circles between them; see
- * greatCircleLine. */
+/** A line through the points along the great circles between them, for
+ * the dashed tail; see greatCircleLine. */
 function arc(latlngs: L.LatLng[]): L.LatLng[] {
   return greatCircleLine(latlngs.map((ll) => [ll.lng, ll.lat]))
     .map(([lng, lat]) => L.latLng(lat!, lng!));
@@ -406,7 +409,7 @@ function drawOverlay(
   map: L.Map, meta: FlightMeta, geo: Geometry,
   onClick?: (flightId: string) => void,
 ): void {
-  const { latlngs, tailLatlngs, here, hereLatlng } = geo;
+  const { latlngs, line, tailLatlngs, here, hereLatlng } = geo;
   if (!here || !hereLatlng) return;
   // Everything of this overlay's is a way to switch to it; the cursor and
   // the tooltip say so.
@@ -420,8 +423,7 @@ function drawOverlay(
     });
     return layer;
   };
-  if (latlngs.length) {
-    const line = arc(latlngs);
+  if (line.length) {
     L.polyline(line, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false })
       .addTo(map);
     wire(L.polyline(line, {
