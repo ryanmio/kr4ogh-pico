@@ -9,7 +9,7 @@ import {
   unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
-import { fmtUtc } from "./format";
+import { fmtLocal } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { speedText } from "./speed";
@@ -147,7 +147,7 @@ export function renderMap(
     L.circleMarker([meta.launch_lat, meta.launch_lon], {
       radius: 8, color: "#e2e8f0", weight: 2, fillColor: "#0b1020",
       fillOpacity: 1,
-    }).bindTooltip(`Launch${meta.launch_utc ? " · " + fmtUtc(meta.launch_utc) : ""}`)
+    }).bindTooltip(`Launch${meta.launch_utc ? " · " + fmtLocal(meta.launch_utc) : ""}`)
       .addTo(map);
   }
 
@@ -253,7 +253,7 @@ export function renderMap(
         color: GHOST_STROKE, weight: 1.2, opacity: 0.8,
         fillColor: SPOT_OUTLINE, fillOpacity: 0.45,
       }).bindTooltip(
-        `${fmtUtc(g.utc)}<br>heard in ${g.grid4} by ` +
+        `${fmtLocal(g.utc)}<br>heard in ${g.grid4} by ` +
         `${g.rx_station_count} station${g.rx_station_count === 1 ? "" : "s"}` +
         " · no telemetry",
       ).addTo(spots);
@@ -283,7 +283,7 @@ export function renderMap(
         fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
         fillOpacity: 1,
       }).bindTooltip(
-        `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
+        `${fmtLocal(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
         ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V`,
       ).addTo(spots);
     }
@@ -442,7 +442,7 @@ function drawOverlay(
     radius: 4.5, color: SPOT_OUTLINE, weight: 1.5, fillColor: OVERLAY_COLOR,
     fillOpacity: 1, bubblingMouseEvents: false,
   })).bindTooltip(
-    `${meta.callsign} ${meta.flight_id} · ${fmtUtc(here.utc)}` +
+    `${meta.callsign} ${meta.flight_id} · ${fmtLocal(here.utc)}` +
     (here.coarse ? " · grid square only" : "") + hint,
   ).addTo(map);
   const beacon = L.marker(hereLatlng, {
@@ -498,8 +498,8 @@ function drawForecast(
     dashArray: "1 7", lineCap: "round",
     attribution: FORECAST_ATTRIBUTION,
   }).bindTooltip(
-    `Forecast from the report of ${fmtUtc(f.from.utc)} ` +
-    `to ${fmtUtc(f.points.at(-1)!.utc)}<br>` +
+    `Forecast from the report of ${fmtLocal(f.from.utc)} ` +
+    `to ${fmtLocal(f.points.at(-1)!.utc)}<br>` +
     (f.from.climb_mps !== null
       ? `climbing at ${f.from.climb_mps.toFixed(1)} m/s to float at ` +
         `${fmtAltitude(f.from.float_m, units).text}`
@@ -514,7 +514,7 @@ function drawForecast(
       radius: 3.5, color: SPOT_OUTLINE, weight: 1.5,
       fillColor: FORECAST_COLOR, fillOpacity: 1,
     }).bindTooltip(
-      `Forecast +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtUtc(m.point.utc)}`,
+      `Forecast +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtLocal(m.point.utc)}`,
     ).addTo(map);
   }
 }

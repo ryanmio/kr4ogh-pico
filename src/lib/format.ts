@@ -1,6 +1,9 @@
 /** Formatting and derived-stat helpers. Pure functions, used both at build
- * time and in the browser. All times are UTC —
- * WSPR data is UTC and mixing zones on a telemetry site invites confusion. */
+ * time and in the browser. Anything rendered at build time (the Data table,
+ * the header) is UTC: WSPR data is UTC and the server does not know where
+ * the reader is. Things drawn only in the browser (map tooltips, chart
+ * hovers and axes, the Journey legend) use the viewer's own zone and say
+ * which one it is. */
 
 import type { TrackPoint } from "./types";
 
@@ -23,9 +26,44 @@ export function fmtUtc(utc: string | Date): string {
   return d.toISOString().slice(0, 16).replace("T", " ") + " UTC";
 }
 
-export function fmtUtcShort(d: Date): string {
-  return d.toISOString().slice(5, 16).replace("T", " ");
+/** "Oct 26, 14:32 EDT" in the viewer's zone. Browser only: at build time
+ * there is no viewer, so the zone would be the build machine's. */
+export function fmtLocal(utc: string | Date): string {
+  const d = typeof utc === "string" ? parseUtc(utc) : utc;
+  return LOCAL_FULL.format(d).replace(",", "");
 }
+
+/** "Oct 26 14:32", no zone: for the legend ends, where the full form does
+ * not fit and the tooltips beside it already name the zone. */
+export function fmtLocalShort(d: Date): string {
+  return LOCAL_SHORT.format(d).replace(",", "");
+}
+
+/** "14:32" in the viewer's zone. */
+export function fmtLocalTime(d: Date): string {
+  return LOCAL_TIME.format(d);
+}
+
+/** "Oct 26" in the viewer's zone. */
+export function fmtLocalDay(d: Date): string {
+  return LOCAL_DAY.format(d);
+}
+
+// en-US spelling for the month, like the rest of the site's numbers, but the
+// zone is left unset so Intl picks up the browser's. h23 keeps the 24-hour
+// clock the UTC strings use, without the "24:05" that hour12:false produces
+// in some engines.
+const LOCAL_FULL = new Intl.DateTimeFormat("en-US", {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  hourCycle: "h23", timeZoneName: "short",
+});
+const LOCAL_SHORT = new Intl.DateTimeFormat("en-US", {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+const LOCAL_TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+const LOCAL_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 /** Compact on purpose: this lands in a stat card that is half a phone screen
  * wide, and "5 h 20 min ago" does not fit there. */

@@ -7,7 +7,7 @@
  * shows which way the balloon went, which is the first thing anyone asks of
  * a track. */
 
-import { fmtUtcShort, parseUtc } from "./format";
+import { fmtLocalShort, parseUtc } from "./format";
 import { groundSpeedKt } from "./speed";
 import * as u from "./units";
 import type { Units } from "./units";
@@ -37,7 +37,7 @@ export const METRICS: Record<MetricKey, Metric> = {
     ramp: ["#64748b", "#38bdf8", "#f8fafc"],
     color: "#38bdf8",
     raw: (p) => parseUtc(p.utc).getTime(),
-    fmt: (raw) => fmtUtcShort(new Date(raw)),
+    fmt: (raw) => fmtLocalShort(new Date(raw)),
   },
   altitude: {
     key: "altitude",

@@ -1,11 +1,11 @@
 /** Small hand-rolled SVG time-series charts. No chart library: the needs are
- * four line charts with UTC axes, and a dependency-light site is the point.
+ * four line charts with time axes in the viewer's zone, and a dependency-light site is the point.
  *
  * Lines break wherever the gap between records exceeds an hour, so nightly
  * silence from the solar-only payload shows as an honest gap instead of a
  * fabricated straight line across the night. */
 
-import { fmtInt } from "./format";
+import { fmtInt, fmtLocal, fmtLocalDay, fmtLocalTime } from "./format";
 
 export interface ChartSpec {
   label: string;
@@ -46,20 +46,35 @@ const TIME_STEPS_MS = [
   10, 30, 60, 180, 360, 720, 1440, 2880, 10080, 20160, 43200,
 ].map((min) => min * 60_000);
 
+const DAY_MS = 86_400_000;
+
+/** Ticks fall on round local times: midnight, noon, the top of an hour.
+ * Counted from UTC midnight they would land at 20:00 and 02:00 for a reader
+ * on the US east coast, which is where the labels now say they are. */
 function xTicks(t0: number, t1: number): number[] {
   const span = t1 - t0;
   const step = TIME_STEPS_MS.find((s) => span / s <= 7) ??
     TIME_STEPS_MS[TIME_STEPS_MS.length - 1]!;
   const ticks = [];
-  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
-    ticks.push(t);
+  const base = new Date(t0);
+  base.setHours(0, 0, 0, 0);
+  if (step >= DAY_MS) {
+    // Stride by calendar days so a tick stays on midnight across a DST change.
+    const days = Math.round(step / DAY_MS);
+    for (const d = base; d.getTime() <= t1; d.setDate(d.getDate() + days)) {
+      if (d.getTime() >= t0) ticks.push(d.getTime());
+    }
+  } else {
+    for (let t = base.getTime(); t <= t1; t += step) {
+      if (t >= t0) ticks.push(t);
+    }
   }
   return ticks;
 }
 
 function fmtTick(t: number, spanMs: number): string {
-  const iso = new Date(t).toISOString();
-  return spanMs <= 36 * 3_600_000 ? iso.slice(11, 16) : iso.slice(5, 10);
+  const d = new Date(t);
+  return spanMs <= 36 * 3_600_000 ? fmtLocalTime(d) : fmtLocalDay(d);
 }
 
 function fmtValue(v: number, decimals: number): string {
@@ -147,7 +162,7 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
     cursor.setAttribute("cy", String(y(best.v)));
     cursor.setAttribute("opacity", "1");
     tooltip.hidden = false;
-    tooltip.textContent = `${new Date(best.t).toISOString().slice(5, 16).replace("T", " ")}Z · ` +
+    tooltip.textContent = `${fmtLocal(new Date(best.t))} · ` +
       `${fmtValue(best.v, decimals)} ${spec.unit}`;
     const px = (x(best.t) / W) * rect.width;
     tooltip.style.left = `${Math.min(Math.max(px, 60), rect.width - 60)}px`;
