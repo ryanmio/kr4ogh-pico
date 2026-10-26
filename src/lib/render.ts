@@ -7,7 +7,7 @@ import {
   parseUtc, trackStats,
 } from "./format";
 import { heardBounds } from "./ghosts";
-import { lastSensorFix, METRICS, metricAvailable, type MetricKey } from "./metrics";
+import { METRICS, type MetricKey } from "./metrics";
 import {
   groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
 } from "./speed";
@@ -35,12 +35,6 @@ const ICONS: Record<MetricKey, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
     ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M3 18l6-11 4 7 3-4 5 8z"/></svg>',
-  pressure:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
-    ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
-    '<circle cx="12" cy="12" r="8.5"/><path d="M12 12l3.2-4.6"/>' +
-    '<path d="M7 15.5h1.2M15.8 15.5H17M12 5.5v1.2"/>' +
-    '<circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>',
   speed:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
     ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
@@ -193,7 +187,6 @@ export function sidebarHtml(
       active,
     ),
     metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active),
-    ...pressureCard(track, s.last, units, active),
     metricCard("speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`, active),
     metricCard(
       "voltage",
@@ -217,25 +210,6 @@ export function sidebarHtml(
   return tracker + status + cards.join("");
 }
 
-/** The Air pressure card, on a flight whose tracker has sent a reading;
- * nothing at all on any other, so a stock tracker's sidebar is unchanged.
- *
- * One card carries the whole sensor: pressure is the value, because a
- * balloon floats at a pressure level and that is the number worth a chart,
- * and the sub line carries the other two readings. The newest reading may
- * be older than the newest fix, when the sensor message of the last cycle
- * was not heard; then the sub line says when it is from instead. */
-function pressureCard(
-  track: TrackPoint[], last: TrackPoint, units: Units, active: ActiveCard,
-): string[] {
-  if (!metricAvailable("pressure", track)) return [];
-  const p = lastSensorFix(track)!;
-  const sub = p === last
-    ? `${p.humidity_pct} % RH · board ${u.temperature(p.board_temp_c!, units).text}`
-    : `${p.humidity_pct} % RH · at ${p.utc.slice(11, 16)} UTC`;
-  return [metricCard("pressure", `${p.pressure_hpa} hPa`, sub, active)];
-}
-
 /** The speed column. A fix under the field's ceiling prints the integer the
  * tracker sent. At the ceiling the tracker only proved a lower bound, so the
  * cell prints either "82+" or the tilde-marked estimate the track measured,
@@ -253,9 +227,11 @@ function speedCell(p: TrackPoint): string {
 export function tableHtml(track: TrackPoint[], maxRows = 500): string {
   if (track.length === 0) return "";
   const capped = track.length > maxRows;
-  // The sensor columns exist only on a flight that has sent a reading, and
-  // a fix whose reading was not heard leaves them blank.
-  const sensor = metricAvailable("pressure", track);
+  // The sensor columns exist only on a flight whose tracker has sent a
+  // reading (a Petrel's BME280, see lib/wspr/decode.ts): the one place on
+  // the page the reading is shown. A fix whose reading was not heard
+  // leaves them blank.
+  const sensor = track.some((p) => p.pressure_hpa !== undefined);
   const sensorCells = (p: TrackPoint) => sensor
     ? `<td class="mono num">${p.pressure_hpa ?? ""}</td>
     <td class="mono num">${p.board_temp_c ?? ""}</td>

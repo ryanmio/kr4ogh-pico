@@ -199,9 +199,7 @@ export function renderMap(
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
-  // A fix without a value for the metric (a sensor reading that was not
-  // heard) takes no part in the range and is drawn in the no-data grey.
-  const raws = track.map((p) => metric.raw(p)).filter((v) => Number.isFinite(v));
+  const raws = track.map((p) => metric.raw(p));
   const lo = raws.length ? Math.min(...raws) : 0;
   const hi = raws.length ? Math.max(...raws) : 0;
   const spots = L.layerGroup().addTo(map);
@@ -279,13 +277,11 @@ export function renderMap(
       L.circleMarker(latlng, {
         radius: sizeOf(p),
         stroke: false,
-        fillColor: !Number.isFinite(raw) ? SPOT_NO_DATA
-          : rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
+        fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
         fillOpacity: 1,
       }).bindTooltip(
         `${fmtUtc(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
-        ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V` +
-        (p.pressure_hpa === undefined ? "" : ` · ${p.pressure_hpa} hPa`),
+        ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V`,
       ).addTo(spots);
     }
   };
@@ -514,10 +510,6 @@ const SPOT_OUTLINE = "#0b1020";
  * not a value on the metric ramp, so it takes no colour from it. */
 const GHOST_STROKE = "#e2e8f0";
 const GHOST_MIN_RADIUS = 2.5;
-
-/** A spot whose fix has no value for the chosen metric: the sensor message
- * of that cycle was not heard. Off the ramp, like a ghost. */
-const SPOT_NO_DATA = "#64748b";
 
 /** How many spots the canvas will carry before they start being sampled.
  * Each one is two circles, an outline and a fill. */

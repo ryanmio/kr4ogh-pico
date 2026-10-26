@@ -54,8 +54,8 @@ callsign = "KR4OGH"
 #   sensor      optional, "bme280" for a Petrel tracker, which sends its
 #               board sensor (pressure, board temperature, humidity) as
 #               extended telemetry in slot 3. The site then fetches and
-#               decodes that message too, and the flight gets an Air
-#               pressure card once there is a reading. Leave it out for a
+#               decodes that message too; the reading goes into the Data
+#               table and the JSON beside each fix. Leave it out for a
 #               stock tracker: another tracker's slot 3 would decode into
 #               nonsense.
 #

@@ -732,11 +732,6 @@ a.fv-chip { text-decoration: none; }
     padding: 0.7rem 0.8rem 0;
   }
   .fv-status, .fv-hint, .fv-card-wide { grid-column: 1 / -1; }
-  /* A flight with a sensor has seven metric cards, and seven in two
-     columns leaves one alone on the last row. Three full-width children
-     (tracker, signal, hint) precede the metrics, so an orphaned last card
-     is an even-numbered child; it takes the whole row rather than half. */
-  .fv-cards-slot > .fv-card:last-child:nth-child(even) { grid-column: 1 / -1; }
   .fv-hint { display: block; margin-top: -0.15rem; }
   .fv-card, div.fv-status, .fv-side-links {
     background: var(--bg-raised); border-color: var(--border);

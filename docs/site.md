@@ -22,8 +22,10 @@ callsign.
    a flight whose tracker carries a sensor (`sensor = "bme280"` in
    flights.toml) sends a third for the slot-3 message, and its reading
    rides on each fix as `pressure_hpa`, `board_temp_c` and `humidity_pct`.
-   The Air pressure card, chart and map coloring exist only on a flight
-   that has sent a reading; every other flight's sidebar is unchanged.
+   The reading is shown in the Data table, whose three sensor columns
+   exist only on a flight that has sent one, and in the JSON download. It
+   has no card: a pressure chart was built and judged not to add enough
+   beside altitude, so the sidebar is the same six metrics on every flight.
 
 The page refreshes every two minutes, on the Refresh button, and whenever a
 backgrounded tab becomes visible again.

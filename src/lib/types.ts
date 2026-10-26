@@ -73,7 +73,7 @@ export interface FlightMeta {
   tracker?: Record<string, string>;
   /** The sensor the tracker carries, or absent for a stock tracker. With
    * "bme280" the slot-3 message is fetched and decoded onto each fix, and
-   * the Air pressure card appears once there is a reading to show. */
+   * the Data table gains its three columns once there is a reading. */
   sensor?: "bme280" | null;
 }
 

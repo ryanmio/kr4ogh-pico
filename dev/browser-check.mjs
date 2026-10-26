@@ -257,17 +257,16 @@ const linkOk =
   !linkClosed.open && linkClosed.search === "";
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  // The metrics, the Tracker card and the Signal card: six or seven metrics
-  // depending on whether the tracker carries a sensor, so the check is that
-  // a refresh keeps every card it started with.
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards >= 8
+  // six metrics, the Tracker card and the Signal card, and a refresh keeps
+  // every card it started with
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 8
   && twice.cards === first.cards
   && panelOk && trackerOk && weatherOk && globeOk && linkOk && wheelOk
   && errors.length === 0;
 // Name what failed: a bare "broken" sends the reader back through the log.
 const failed = Object.entries({
   map: after.hasLeafletPane && after.height > 200 && after.tiles > 0,
-  cards: twice.hasLeafletPane && twice.tiles > 0 && twice.cards >= 8
+  cards: twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 8
     && twice.cards === first.cards,
   panel: panelOk, tracker: trackerOk, weather: weatherOk, globe: globeOk,
   link: linkOk, wheel: wheelOk, errors: errors.length === 0,
