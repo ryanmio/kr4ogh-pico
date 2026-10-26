@@ -238,6 +238,9 @@ main { padding: 2.2rem 0 3.5rem; }
   box-shadow: none;
 }
 .leaflet-tooltip.overlay-label::before { display: none; }
+/* When the overlay can be opened, its label and beacon say so on hover. */
+.overlay-label-link, .last-pos-icon:has(.overlay-label-link) { cursor: pointer; }
+.overlay-label-link:hover { color: var(--accent); border-color: var(--accent); }
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(226, 232, 240, 0.5); }
   100% { box-shadow: 0 0 0 12px rgba(226, 232, 240, 0); }
@@ -560,7 +563,8 @@ div.fv-status {
 }
 /* Two to a row, each filling its half: the sidebar is too narrow for four
    in a line, and half-width pills read as a set rather than a ragged wrap.
-   A single-flight site shows just the first row. */
+   The flight-switching pair sits above Data and About; a single-flight
+   site hides that pair and shows just the one row. */
 .fv-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
 .fv-chip {
   font: inherit; font-size: 0.76rem; font-weight: 600;

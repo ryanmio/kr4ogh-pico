@@ -22,6 +22,9 @@ export interface MapOptions {
   /** Other flights drawn under this one for comparison: a dimmer line and
    * a named beacon each, nothing else. See lib/overlay.ts. */
   overlays?: OverlayTrack[];
+  /** Called with the flight_id when a reader clicks an overlaid flight's
+   * line, beacon or name: the live view switches to that flight. */
+  onOverlayClick?: (flightId: string) => void;
   /** The predicted path ahead of the balloon, drawn dotted from the newest
    * report. See lib/forecast.ts. */
   forecast?: Forecast | null;
@@ -157,7 +160,7 @@ export function renderMap(
   }
 
   // Under everything of this flight's: context, not the subject.
-  for (const o of overlays) drawOverlay(map, o.meta, o.geo);
+  for (const o of overlays) drawOverlay(map, o.meta, o.geo, opts.onOverlayClick);
 
   if (!hereLatlng || !here) {
     // Nothing of this flight's to draw yet; the overlays are the view.
@@ -399,28 +402,48 @@ function arc(latlngs: L.LatLng[]): L.LatLng[] {
  * grey, and a beacon with the flight's name on it. No spots, no square, no
  * ghosts -- those are the detail of the flight being read, and a second
  * set would be noise over the first. */
-function drawOverlay(map: L.Map, meta: FlightMeta, geo: Geometry): void {
+function drawOverlay(
+  map: L.Map, meta: FlightMeta, geo: Geometry,
+  onClick?: (flightId: string) => void,
+): void {
   const { latlngs, tailLatlngs, here, hereLatlng } = geo;
   if (!here || !hereLatlng) return;
+  // Everything of this overlay's is a way to switch to it; the cursor and
+  // the tooltip say so.
+  const clickable = !!onClick;
+  const hint = clickable ? " · click to open" : "";
+  const wire = (layer: L.Layer) => {
+    if (!onClick) return layer;
+    layer.on("click", (e) => {
+      L.DomEvent.stopPropagation(e);
+      onClick(meta.flight_id);
+    });
+    return layer;
+  };
   if (latlngs.length) {
     const line = arc(latlngs);
-    L.polyline(line, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35 }).addTo(map);
-    L.polyline(line, { color: OVERLAY_COLOR, weight: 2, opacity: 0.75 }).addTo(map);
+    L.polyline(line, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false })
+      .addTo(map);
+    wire(L.polyline(line, {
+      color: OVERLAY_COLOR, weight: 2, opacity: 0.75,
+      interactive: clickable, bubblingMouseEvents: false,
+    })).bindTooltip(`${meta.callsign} ${meta.flight_id}${hint}`, { sticky: true }).addTo(map);
   }
   if (tailLatlngs.length) {
     const tailLine = arc([...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs]);
-    L.polyline(tailLine, {
+    wire(L.polyline(tailLine, {
       color: OVERLAY_COLOR, weight: 1.6, opacity: 0.7, dashArray: "4 7",
-    }).addTo(map);
+      interactive: clickable, bubblingMouseEvents: false,
+    })).bindTooltip(`${meta.callsign} ${meta.flight_id}${hint}`, { sticky: true }).addTo(map);
   }
-  L.circleMarker(hereLatlng, {
+  wire(L.circleMarker(hereLatlng, {
     radius: 4.5, color: SPOT_OUTLINE, weight: 1.5, fillColor: OVERLAY_COLOR,
-    fillOpacity: 1,
-  }).bindTooltip(
+    fillOpacity: 1, bubblingMouseEvents: false,
+  })).bindTooltip(
     `${meta.callsign} ${meta.flight_id} · ${fmtUtc(here.utc)}` +
-    (here.coarse ? " · grid square only" : ""),
+    (here.coarse ? " · grid square only" : "") + hint,
   ).addTo(map);
-  L.marker(hereLatlng, {
+  const beacon = L.marker(hereLatlng, {
     icon: L.divIcon({
       className: "last-pos-icon",
       html: '<span class="last-pos-pulse last-pos-pulse-overlay"></span>',
@@ -430,8 +453,15 @@ function drawOverlay(map: L.Map, meta: FlightMeta, geo: Geometry): void {
     interactive: false,
   }).bindTooltip(meta.flight_id, {
     permanent: true, direction: "right", offset: [14, 0],
-    className: "overlay-label",
+    className: "overlay-label" + (clickable ? " overlay-label-link" : ""),
+    interactive: clickable,
   }).addTo(map);
+  if (onClick) {
+    beacon.getTooltip()?.on("click", (e) => {
+      L.DomEvent.stopPropagation(e);
+      onClick(meta.flight_id);
+    });
+  }
 }
 
 /** An overlaid flight's grey: the ghosts' ring colour knocked back, so it

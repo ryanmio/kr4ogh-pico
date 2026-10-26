@@ -475,6 +475,9 @@ export interface GlobeOpts {
   ghosts?: GhostPoint[];
   /** Other flights drawn under this one, as on the flat map. */
   overlays?: OverlayTrack[];
+  /** Called with the flight_id when a reader clicks an overlaid flight's
+   * line, beacon or name, as on the flat map. */
+  onOverlayClick?: (flightId: string) => void;
   /** The predicted path ahead of the balloon, as on the flat map. */
   forecast?: Forecast | null;
 }
@@ -608,17 +611,32 @@ export function renderGlobe(
 
   aimCamera(map, meta, fit, !!opts.overlaid);
 
-  for (const x of overlays) {
+  const onOverlayClick = opts.onOverlayClick;
+  overlays.forEach((x, n) => {
+    const id = x.o.meta.flight_id;
     const icon = document.createElement("div");
     icon.className = "last-pos-icon";
     icon.style.width = icon.style.height = "22px";
     icon.innerHTML = '<span class="last-pos-pulse last-pos-pulse-overlay"></span>' +
-      `<span class="overlay-label" style="position:absolute;left:28px;top:3px">${
-        x.o.meta.flight_id.replace(/[<>&]/g, "")}</span>`;
+      `<span class="overlay-label${onOverlayClick ? " overlay-label-link" : ""}" ` +
+      `style="position:absolute;left:28px;top:3px">${id.replace(/[<>&]/g, "")}</span>`;
     new Marker({ element: icon })
       .setLngLat([x.pos.here!.lon, x.pos.here!.lat])
       .addTo(map);
-  }
+    if (!onOverlayClick) return;
+    icon.title = `${x.o.meta.callsign} ${id} · click to open`;
+    icon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onOverlayClick(id);
+    });
+    // The line and its dashed tail switch too, with a pointer to say so.
+    for (const layer of [`overlay-${n}`, `overlay-${n}-tail`, `overlay-${n}-here`]) {
+      if (!map.getLayer(layer)) continue;
+      map.on("click", layer, () => onOverlayClick(id));
+      map.on("mouseenter", layer, () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", layer, () => { map.getCanvas().style.cursor = ""; });
+    }
+  });
 
   if (pos.here) {
     // The pulsing "you are here", same CSS as the flat map's.

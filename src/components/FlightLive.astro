@@ -93,12 +93,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     <div class="fv-side-foot">
       <div class="fv-side-links">
         <div class="fv-chips">
-          <button type="button" class="fv-chip" data-panel="data">Data</button>
-          <button type="button" class="fv-chip" data-panel="about">About</button>
           <button type="button" class="fv-chip" id="overlay-toggle" hidden={flights.length < 2}
             aria-pressed="false" title="Draw the other flights on this map too">All flights</button>
           <a class="fv-chip" id="next-flight" href={nextHref} hidden={flights.length < 2}
             title={`${after!.callsign} ${after!.flight_id}`}>Next flight &rsaquo;</a>
+          <button type="button" class="fv-chip" data-panel="data">Data</button>
+          <button type="button" class="fv-chip" data-panel="about">About</button>
         </div>
         <p class="fv-updated" id="updated">
           {last
@@ -337,11 +337,22 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (flights.length < 2) return;
       const i = flights.findIndex((f) => f.flight_id === meta.flight_id);
       const next = flights[(i + 1) % flights.length]!;
-      nextLink.href = mode === "home"
-        ? urlWithFeature(location.href, next.flight_id)
-        : withBase(`/live/${encodeURIComponent(next.flight_id)}/`) + location.search + location.hash;
+      nextLink.href = flightHref(next.flight_id);
       nextLink.title = `${next.callsign} ${next.flight_id}`;
       nextLink.hidden = false;
+    }
+
+    /** The address of another flight with the reader's toggles along,
+     * the overlays included, so switching keeps the comparison up. */
+    function flightHref(flightId: string): string {
+      return mode === "home"
+        ? urlWithFeature(location.href, flightId)
+        : withBase(`/live/${encodeURIComponent(flightId)}/`) + location.search + location.hash;
+    }
+
+    /** An overlaid flight was clicked on the map: make it the subject. */
+    function openFlight(flightId: string) {
+      location.assign(flightHref(flightId));
     }
 
     let map: L.Map | null = null;
@@ -495,7 +506,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
-            ghosts, overlays, forecast,
+            ghosts, overlays, forecast, onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
             weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
@@ -515,6 +526,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
       const held = renderMapInto(mapSlot, meta, track, {
         units, metric, ghosts, overlays, forecast, sizing: "fill",
+        onOverlayClick: openFlight,
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return;
