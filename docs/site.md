@@ -325,6 +325,40 @@ fires on the minute and GitHub's runs tens of minutes late at busy hours,
 which is fine for refreshing a track and useless for a wrist-tap. README.md,
 "Alerts on your phone", is the walkthrough.
 
+## Analytics
+
+Vercel Web Analytics counts page views (one per load: toggles rewrite the
+address with replaceState and the Astro component does not auto-track, so
+they are not views). A view says nothing about whether anyone was there,
+so `src/lib/analytics.ts` sends custom events, and only after the page has
+felt a trusted pointer, touch, key or wheel input. A renderer that loads
+the page and leaves, or a script calling `.click()`, sends none of them.
+
+| Event | Properties | Sent when |
+| --- | --- | --- |
+| `Human` | `input` (touch/mouse/pen/key/wheel), `visit` (first/return) | the first real input on a page |
+| `Engaged` | `after` (30s/2m/10m), `flight` | that much visible time after it |
+| `Panel` | `panel`, `flight` | a card or chip opens a panel |
+| `Chart read` | `panel`, `flight` | the pointer crosses a chart; once per panel per load |
+| `Range` | `range`, `panel` | a chart range is picked |
+| `Map moved` | `view`, `flight` | the first pan or zoom of a load |
+| `Map spot` | `view`, `flight` | the first spot tooltip of a load |
+| `View` / `Weather` / `Forecast` / `Overlay` | the new setting, `flight` | that switch is flipped |
+| `Units` | `to` | the unit toggle |
+| `Switch flight` | `via` (next/map), `to` | another flight is opened |
+| `Download` | `flight` | the JSON download |
+| `Outbound` | `host`, `place` | a link off the site |
+
+Two properties each, because that is the Pro plan's limit; custom events
+are not recorded on Hobby at all. `visit` comes from a date in
+localStorage (`kr4ogh.seen`), so it is per browser. Visitors on `Human` is
+the count of people; the rest is what they did.
+
+The owner is left out: `?notrack=1` once in each browser sets a
+localStorage flag, and an inline script in `layouts/Base.astro` then hands
+the analytics a `beforeSend` that drops everything, page views included.
+`?notrack=0` undoes it.
+
 ## Deploy
 
 Vercel builds the repository root on push to `main`: Astro is detected,

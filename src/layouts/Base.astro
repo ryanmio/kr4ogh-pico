@@ -47,6 +47,21 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
       content="Pico balloon, live telemetry tracking: a dashed track climbing from a grey launch dot to a lit balloon."
     />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Leave the site's owner out of the analytics, page views and custom
+         events alike: open any page once with ?notrack=1 in each browser
+         you use, and ?notrack=0 to be counted again. Inline, so the hook
+         is in place before the analytics script starts. -->
+    <script is:inline>
+      try {
+        var nt = new URLSearchParams(location.search).get("notrack");
+        if (nt === "1") localStorage.setItem("notrack", "1");
+        if (nt === "0") localStorage.removeItem("notrack");
+        if (localStorage.getItem("notrack")) {
+          window.webAnalyticsBeforeSend = function () { return null; };
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     {chrome && (

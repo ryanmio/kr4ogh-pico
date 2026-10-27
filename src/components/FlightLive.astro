@@ -136,6 +136,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
 <script>
   import type L from "leaflet";
+  import { act, actOnce, startAnalytics } from "../lib/analytics";
   import { renderChart } from "../lib/charts";
   import { withBase } from "../lib/base";
   import { featureFromSearch, urlWithFeature } from "../lib/feature";
@@ -189,6 +190,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let ghosts = JSON.parse(root.dataset.ghosts!) as GhostPoint[];
     const flights = JSON.parse(root.dataset.flights!) as FlightMeta[];
     const mode = root.dataset.mode === "home" ? "home" : "permalink";
+    // Before anything awaits, so an early tap still marks the page human.
+    startAnalytics(() => meta.flight_id);
     /** A closed flight: the track is final and nothing is polled. */
     const ended = () => meta.status === "closed";
     // A `?u=i` link outranks the browser's remembered choice, so a shared
@@ -352,6 +355,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     /** An overlaid flight was clicked on the map: make it the subject. */
     function openFlight(flightId: string) {
+      act("Switch flight", { via: "map", to: flightId });
       location.assign(flightHref(flightId));
     }
 
@@ -438,6 +442,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     async function selectForecast(next: ForecastMode) {
       if (next === forecastMode) return;
+      act("Forecast", { to: next, flight: meta.flight_id });
       forecastMode = next;
       saveForecastMode(next);
       pinInUrl(urlWithForecast(location.href, next));
@@ -473,6 +478,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     async function selectView(next: ViewMode) {
       if (next === view) return;
       if (next === "globe" && !(await ensureGlobeMod())) return;
+      act("View", { to: next, flight: meta.flight_id });
       view = next;
       saveView(next);
       pinInUrl(urlWithView(location.href, next));
@@ -498,11 +504,15 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         initial: weather,
         onChange: (next: WeatherLayer) => {
           weather = next;
+          act("Weather", { layer: next, flight: meta.flight_id });
           saveWeather(next);
           pinInUrl(urlWithWeather(location.href, next));
         },
       };
-      const onInteract = () => { userMoved = true; };
+      const onInteract = () => {
+        userMoved = true;
+        actOnce("Map moved", { view, flight: meta.flight_id });
+      };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
@@ -532,6 +542,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (!held) return;
       map = held;
       held.on("dragstart", onInteract);
+      // A spot's tooltip: hovered with a mouse, tapped on a phone.
+      held.on("tooltipopen", () => actOnce("Map spot", { view, flight: meta.flight_id }));
       mapSlot.addEventListener("wheel", onInteract, { passive: true });
       held.getContainer().addEventListener("dblclick", onInteract);
       held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
@@ -904,6 +916,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function openPanel(kind: PanelKind) {
+      act("Panel", { panel: kind, flight: meta.flight_id });
       showPanel(kind);
       pinInUrl(urlWithPanel(location.href, kind));
       // On a phone the panel is below the cards, off screen: bring it up.
@@ -957,6 +970,19 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // waiting on wspr.live; the first refresh re-renders it either way.
     if (panel) showPanel(panel);
 
+    // Reading a chart's values: once per panel per page, since the hover
+    // fires on every pixel the pointer crosses.
+    panelBody.addEventListener("pointermove", (ev) => {
+      if (panel && (ev.target as HTMLElement).closest(".fv-panel-chart")) {
+        actOnce("Chart read", { panel, flight: meta.flight_id }, `chart:${panel}`);
+      }
+    }, { passive: true });
+
+    nextLink.addEventListener("click", () => {
+      const i = flights.findIndex((f) => f.flight_id === meta.flight_id);
+      act("Switch flight", { via: "next", to: flights[(i + 1) % flights.length]!.flight_id });
+    });
+
     // Cards re-render on refresh, so listen on the slot, not the buttons.
     cardsSlot.addEventListener("click", (ev) => {
       const panelBtn = (ev.target as HTMLElement)
@@ -1000,6 +1026,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       b.addEventListener("click", () => {
         const next = b.dataset.range as Range;
         if (next === range) return;
+        act("Range", { range: next, panel });
         range = next;
         renderPanel();
       });
@@ -1009,6 +1036,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       b.addEventListener("click", () => {
         const next = b.dataset.units as Units;
         if (next === units) return;
+        act("Units", { to: next });
         units = next;
         saveUnits(units);
         pinInUrl(urlWithUnits(location.href, units));
@@ -1025,6 +1053,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // The download button lives inside the re-rendered data panel.
     panelBody.addEventListener("click", (ev) => {
       if (!(ev.target as HTMLElement).closest("#download")) return;
+      act("Download", { flight: meta.flight_id });
       const blob = new Blob([JSON.stringify({ ...meta, track, ghosts }, null, 1)],
         { type: "application/json" });
       const a = document.createElement("a");
@@ -1113,6 +1142,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // Either every other flight is on the map or none is; a link can
       // name particular ones, the button does not need to.
       overlayChoice = overlays.length ? null : "all";
+      act("Overlay", { to: overlayChoice ? "on" : "off", flight: meta.flight_id });
       pinInUrl(urlWithOverlays(location.href, overlayChoice));
       await loadOverlays();
       // Adding a flight is a reason to see it: the view refits unless the
