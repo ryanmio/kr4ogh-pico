@@ -71,9 +71,13 @@ a:hover { text-decoration: underline; }
 
 main { padding: 2.2rem 0 3.5rem; }
 
+/* Pulses grow and fade a copy of their element rather than animating a
+   box-shadow: transform and opacity run on the compositor, where a shadow
+   is repainted every frame for as long as the page is open, which on a
+   phone is heat and battery. */
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
-  100% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(2.6); opacity: 0; }
 }
 
 /* ---------- notices ---------- */
@@ -212,23 +216,26 @@ main { padding: 2.2rem 0 3.5rem; }
    so it reads as "latest" and never as an altitude. */
 .last-pos-icon { background: none; border: none; }
 .last-pos-pulse {
-  display: block;
+  display: block; position: relative;
   box-sizing: border-box;
   width: 22px; height: 22px; border-radius: 50%;
   background: transparent;
   border: 2px solid rgba(226, 232, 240, 0.9);
+}
+/* The pulse is a second, thicker ring, laid over the first, that swells
+   outward and fades: it reads as the glow a spreading shadow gave. A ring
+   and not a disc, so the dot inside stays readable. */
+.last-pos-pulse::after, .fv-locating-ring::after {
+  content: ""; position: absolute; inset: -4px;
+  border-radius: 50%;
+  border: 4px solid; border-color: inherit;
   animation: pulse-ring 1.8s ease-out infinite;
 }
+/* A flight that is over is not anywhere now: its last ring holds still. */
+.last-pos-still::after { display: none; }
 /* An overlaid flight's beacon: the same ring in the overlay's own grey, so
    the featured flight's white one stays the one that means "this flight". */
-.last-pos-pulse-overlay {
-  border-color: rgba(148, 163, 184, 0.9);
-  animation-name: pulse-ring-overlay;
-}
-@keyframes pulse-ring-overlay {
-  0% { box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.5); }
-  100% { box-shadow: 0 0 0 12px rgba(148, 163, 184, 0); }
-}
+.last-pos-pulse-overlay { border-color: rgba(148, 163, 184, 0.9); }
 /* The flight id beside an overlaid beacon, on both renderers. */
 .overlay-label {
   font-family: var(--mono); font-size: 0.66rem; font-weight: 600;
@@ -242,8 +249,8 @@ main { padding: 2.2rem 0 3.5rem; }
 .overlay-label-link, .last-pos-icon:has(.overlay-label-link) { cursor: pointer; }
 .overlay-label-link:hover { color: var(--accent); border-color: var(--accent); }
 @keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(226, 232, 240, 0.5); }
-  100% { box-shadow: 0 0 0 12px rgba(226, 232, 240, 0); }
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.77); opacity: 0; }
 }
 
 /* ---------- charts ---------- */
@@ -411,10 +418,9 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
   letter-spacing: 0.14em; text-transform: uppercase;
 }
 .fv-locating-ring {
-  display: block; box-sizing: border-box;
+  display: block; position: relative; box-sizing: border-box;
   width: 18px; height: 18px; border-radius: 50%;
   border: 2px solid rgba(226, 232, 240, 0.9);
-  animation: pulse-ring 1.8s ease-out infinite;
 }
 .fv-map-fill { width: 100%; height: 100%; }
 
@@ -487,11 +493,15 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 /* The signal card is a metric card whose "icon" is a live dot, still
    pulsing. It stops when the flight is over. */
 .fv-status-dot {
-  display: block; width: 10px; height: 10px;
+  display: block; position: relative; width: 10px; height: 10px;
+  border-radius: 50%; background: currentColor;
+}
+.fv-status-dot::after {
+  content: ""; position: absolute; inset: 0;
   border-radius: 50%; background: currentColor;
   animation: pulse 1.8s ease-out infinite;
 }
-.fv-status-dot-ended { animation: none; }
+.fv-status-dot-ended::after { display: none; }
 /* Before there is anything to say, the card's slot holds a note instead. */
 div.fv-status {
   background: var(--glass); border: 1px solid var(--glass-border);

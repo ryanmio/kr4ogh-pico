@@ -297,7 +297,7 @@ export function renderMap(
   L.marker(hereLatlng, {
     icon: L.divIcon({
       className: "last-pos-icon",
-      html: '<span class="last-pos-pulse"></span>',
+      html: `<span class="last-pos-pulse${meta.status === "closed" ? " last-pos-still" : ""}"></span>`,
       iconSize: [22, 22],
     }),
     keyboard: false,
@@ -448,7 +448,8 @@ function drawOverlay(
   const beacon = L.marker(hereLatlng, {
     icon: L.divIcon({
       className: "last-pos-icon",
-      html: '<span class="last-pos-pulse last-pos-pulse-overlay"></span>',
+      html: `<span class="last-pos-pulse last-pos-pulse-overlay${
+        meta.status === "closed" ? " last-pos-still" : ""}"></span>`,
       iconSize: [22, 22],
     }),
     keyboard: false,

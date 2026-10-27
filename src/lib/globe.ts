@@ -618,7 +618,8 @@ export function renderGlobe(
     const icon = document.createElement("div");
     icon.className = "last-pos-icon";
     icon.style.width = icon.style.height = "22px";
-    icon.innerHTML = '<span class="last-pos-pulse last-pos-pulse-overlay"></span>' +
+    const still = x.o.meta.status === "closed" ? " last-pos-still" : "";
+    icon.innerHTML = `<span class="last-pos-pulse last-pos-pulse-overlay${still}"></span>` +
       `<span class="overlay-label${onOverlayClick ? " overlay-label-link" : ""}" ` +
       `style="position:absolute;left:28px;top:3px">${id.replace(/[<>&]/g, "")}</span>`;
     new Marker({ element: icon })
@@ -644,7 +645,8 @@ export function renderGlobe(
     const icon = document.createElement("div");
     icon.className = "last-pos-icon";
     icon.style.width = icon.style.height = "22px";
-    icon.innerHTML = '<span class="last-pos-pulse"></span>';
+    icon.innerHTML = `<span class="last-pos-pulse${
+      meta.status === "closed" ? " last-pos-still" : ""}"></span>`;
     new Marker({ element: icon })
       .setLngLat([pos.here.lon, pos.here.lat])
       .addTo(map);
