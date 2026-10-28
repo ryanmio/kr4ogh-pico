@@ -584,18 +584,12 @@ export function renderGlobe(
   const fc = opts.forecast && pos.lons.length
     ? forecastCoords(opts.forecast, pos.lons.at(-1)!) : [];
   if (fc.length) addForecast(style, opts.forecast!, fc);
-  // The fit covers the overlays and the forecast too, this flight's
-  // balloon still last.
+  // The fit covers the overlays too, this flight's balloon still last. Not
+  // the forecast: the opening view is the flight, as on the flat map.
   const fit: Positions = {
     ...pos,
-    fitLats: [
-      ...overlays.flatMap((x) => x.pos.fitLats),
-      ...pos.fitLats.slice(0, -1), ...fc.map((c) => c[1]), ...pos.fitLats.slice(-1),
-    ],
-    fitLons: [
-      ...overlays.flatMap((x) => x.pos.fitLons),
-      ...pos.fitLons.slice(0, -1), ...fc.map((c) => c[0]), ...pos.fitLons.slice(-1),
-    ],
+    fitLats: [...overlays.flatMap((x) => x.pos.fitLats), ...pos.fitLats],
+    fitLons: [...overlays.flatMap((x) => x.pos.fitLons), ...pos.fitLons],
     here: pos.here ?? overlays.at(-1)?.pos.here ?? null,
   };
 

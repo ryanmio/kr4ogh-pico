@@ -105,14 +105,12 @@ export function renderMap(
   // The forecast runs on from the last full fix, which is where it was
   // predicted from (a newer ghost is only a grid square), unwrapped point
   // by point from that fix's longitude so a line over the antimeridian
-  // stays one line. It is fitted too, ahead of the balloon in the list so
-  // the balloon stays last.
+  // stays one line. It is left out of the fit: the opening view is the
+  // flight and where the balloon is now, and a long prediction would pull
+  // it off towards somewhere the balloon has not been. Panning reaches it.
   const fc = opts.forecast && latlngs.length
     ? forecastLatlngs(opts.forecast, latlngs.at(-1)!.lng) : [];
-  const fitPts = [
-    ...overlays.flatMap((o) => o.geo.fitPts),
-    ...geo.fitPts.slice(0, -1), ...fc, ...geo.fitPts.slice(-1),
-  ];
+  const fitPts = [...overlays.flatMap((o) => o.geo.fitPts), ...geo.fitPts];
   // Worked out before the map exists, because on "fit" pages the box has to
   // be the right height before Leaflet measures it.
   const fitted = fitPts.length > 0 ? fitBoundsFor(fitPts) : null;
