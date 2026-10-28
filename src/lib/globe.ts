@@ -32,22 +32,20 @@ import {
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import {
-  buildWeatherToggle, cloudTiles, enhanceIrTile, rainTiles,
+  buildWeatherToggle, cloudTiles, rainTiles, renderCloudTile,
   type WeatherLayer, type WeatherTiles,
 } from "./weather";
 import type { FlightMeta, GhostPoint, OverlayTrack, TrackPoint } from "./types";
 
-/** Infrared tiles come through this scheme: `pico-ir://<satLon>|<url>`.
- * MapLibre substitutes {z}/{y}/{x} into the whole template before the
- * request reaches the handler, so the handler reads the tile coordinates
- * back off the end of the real URL, fetches it, runs the same per-pixel
- * work as the flat map's Leaflet layer, and hands back a PNG. */
+/** Infrared tiles come through this scheme: `pico-ir://<now>/{z}/{x}/{y}`.
+ * MapLibre substitutes the tile coordinates into the template before the
+ * request reaches the handler, which draws the tile with the same
+ * renderCloudTile as the flat map's Leaflet layer and hands back a PNG. */
 const IR_PROTOCOL = "pico-ir";
 
-/** A blank tile, for where GIBS has none. Tiles wholly off the disc are
- * simply absent from the product (a 404, not an empty image), which the
- * flat map's Leaflet layer swallows as an empty square; erroring here
- * instead would put a complaint in the console for every polar tile. */
+/** A blank tile, for where no satellite has anything. The flat map's
+ * Leaflet layer leaves an empty square there; erroring here instead would
+ * put a complaint in the console for every polar tile. */
 let emptyTile: Promise<ArrayBuffer> | null = null;
 function blankTile(): Promise<ArrayBuffer> {
   if (!emptyTile) {
@@ -61,26 +59,15 @@ function blankTile(): Promise<ArrayBuffer> {
 }
 
 addProtocol(IR_PROTOCOL, async (params, abort) => {
-  const body = params.url.slice(IR_PROTOCOL.length + 3);
-  const sep = body.indexOf("|");
-  const satLon = Number(body.slice(0, sep));
-  const src = body.slice(sep + 1);
-  const zyx = /\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(src);
-  const resp = await fetch(src, { signal: abort.signal });
-  if (resp.status === 404) return { data: await blankTile() };
-  if (!resp.ok) throw new Error(`tile HTTP ${resp.status}`);
-  const bmp = await createImageBitmap(await resp.blob());
-  const canvas = new OffscreenCanvas(bmp.width, bmp.height);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const m = /^pico-ir:\/\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url);
+  if (!m) throw new Error(`bad infrared tile ${params.url}`);
+  const data = await renderCloudTile(
+    { z: Number(m[2]), x: Number(m[3]), y: Number(m[4]) }, Number(m[1]),
+    abort.signal);
+  if (!data) return { data: await blankTile() };
+  const canvas = new OffscreenCanvas(data.width, data.height);
+  const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("no 2d context");
-  ctx.drawImage(bmp, 0, 0);
-  const data = ctx.getImageData(0, 0, bmp.width, bmp.height);
-  if (zyx) {
-    enhanceIrTile(
-      data.data, { x: bmp.width, y: bmp.height },
-      { z: Number(zyx[1]), y: Number(zyx[2]), x: Number(zyx[3]) }, satLon,
-    );
-  }
   ctx.putImageData(data, 0, 0);
   const blob = await canvas.convertToBlob({ type: "image/png" });
   return { data: await blob.arrayBuffer() };
@@ -457,8 +444,6 @@ function aimCamera(
 }
 
 export interface GlobeWeather {
-  /** Longitude of the balloon now: it picks the geostationary satellite. */
-  lon: number;
   /** Layer to start on, so a rebuilt globe comes back the way it went away. */
   initial: WeatherLayer;
   /** Called on every change, for the caller to remember across rebuilds. */
@@ -510,11 +495,8 @@ function cornerWrap(el: HTMLElement): IControl {
  * switched again or the globe may be gone. */
 function addGlobeWeather(map: MapGL, opts: GlobeWeather): void {
   const WEATHER_ID = "weather";
-  const clouds = cloudTiles(opts.lon);
-  // A remembered "clouds" is honoured only where there is a satellite to
-  // show; elsewhere the globe opens clean rather than blank-with-a-layer-on.
-  let current: WeatherLayer =
-    opts.initial === "clouds" && !clouds ? "off" : opts.initial;
+  const clouds = cloudTiles();
+  let current = opts.initial;
   let generation = 0;
   let dead = false;
   map.on("remove", () => { dead = true; });
@@ -523,7 +505,6 @@ function addGlobeWeather(map: MapGL, opts: GlobeWeather): void {
   const ready = new Promise<void>((res) => map.on("load", () => res()));
 
   const toggle = buildWeatherToggle({
-    cloudsAvailable: !!clouds,
     initial: current,
     onSelect: (next) => {
       current = next;
@@ -541,14 +522,12 @@ function addGlobeWeather(map: MapGL, opts: GlobeWeather): void {
     if (map.getLayer(WEATHER_ID)) map.removeLayer(WEATHER_ID);
     if (map.getSource(WEATHER_ID)) map.removeSource(WEATHER_ID);
     if (current === "off") return;
-    const t: WeatherTiles | null =
-      current === "rain" ? await rainTiles() : clouds;
+    const t: WeatherTiles | null = current === "rain"
+      ? await rainTiles()
+      : { ...clouds, url: `${IR_PROTOCOL}://${clouds.now}/{z}/{x}/{y}` };
     if (!t || dead || token !== generation) return;
-    const url = current === "clouds" && clouds
-      ? `${IR_PROTOCOL}://${clouds.satLon}|${t.url}`
-      : t.url;
     map.addSource(WEATHER_ID, {
-      type: "raster", tiles: [url], tileSize: 256,
+      type: "raster", tiles: [t.url], tileSize: 256,
       maxzoom: t.maxNativeZoom, attribution: t.attribution,
     });
     // Over the labels, under the track -- the flat map's stacking.

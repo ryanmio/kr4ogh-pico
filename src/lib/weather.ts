@@ -194,34 +194,122 @@ function hhmmUtc(unixSeconds: number): string {
 
 // ---------- infrared cloud tops ----------
 
-/** NASA GIBS serves band 13 ("clean infrared", cloud-top brightness
- * temperature) from three geostationary satellites, keyless, in the map's
- * own projection, on a ten-minute cadence about twenty minutes behind real
- * time.
+/** Longwave infrared (about 10.4 µm: cloud-top brightness temperature) from
+ * five geostationary satellites, all drawn at once, each over the slice of
+ * longitude it is nearest to. Between them they ring the planet, so the
+ * layer is there wherever the balloon is, and a balloon near a boundary
+ * sees the weather on both sides of it.
  *
- * The layer is already an enhanced infrared product, not a plain grey
- * picture. Its colour map (Clean_Longwave_Infrared_Window_Band) is grey from
- * about +57 C down to -19 C, and colour below that: cyan, blue, green,
- * yellow, orange, red, magenta, on down past -90 C. Those colours are the
- * storms, and they are the whole point of the layer. */
+ * Two servers, because neither has all five. NASA GIBS has the American
+ * and Japanese satellites as ready-cut epsg3857 tiles, and nothing from
+ * Meteosat. EUMETSAT's own WMS has the two Meteosats, rendered for any box
+ * it is asked for. Both are keyless and send `access-control-allow-origin:
+ * *`, so the pixels can be read back and reworked. */
 interface GeoSat {
-  layer: string;
   name: string;
   /** Sub-satellite longitude. */
   lon: number;
+  /** How far behind real time to ask for its frame; see IR_LAG_MIN. */
+  lagMin: number;
+  source:
+    | { kind: "gibs"; layer: string }
+    | { kind: "eumetsat"; layer: string; toC(grey: number): number };
 }
 
-const GEO_SATS: GeoSat[] = [
-  { layer: "GOES-East_ABI_Band13_Clean_Infrared", name: "GOES-East", lon: -75.2 },
-  { layer: "GOES-West_ABI_Band13_Clean_Infrared", name: "GOES-West", lon: -137.0 },
-  { layer: "Himawari_AHI_Band13_Clean_Infrared", name: "Himawari", lon: 140.7 },
+/** How far back to ask for, and the product's cadence.
+ *
+ * TIME=default is the obvious choice and the wrong one. It resolves to
+ * whatever the node serving the request has finished ingesting, which is not
+ * the same answer twice in a row -- two probes seconds apart came back 12:30
+ * and 12:50 -- so a single map ends up drawn from several different times,
+ * with a tile-shaped hole wherever one of them is not ready yet.
+ *
+ * Frames fill in from the newest backwards. Sampling nine GIBS tiles across
+ * zooms 3 to 6: the current slot and the one before it were entirely
+ * absent, the one 20 minutes back was three-ninths there, and everything 30
+ * minutes or older was complete. So take the newest slot at least this far
+ * back and ask for it by name. One frame, one moment, no holes, at the cost
+ * of half an hour of freshness -- which for cloud tops over an ocean is
+ * nothing, and a good trade for a picture that is all there.
+ *
+ * EUMETSAT ran 10 to 25 minutes behind when probed, so the same 40 is past
+ * it too. MTG has the same ten-minute cadence; Meteosat-9 scans every
+ * fifteen and the server answers with its nearest.
+ *
+ * Even an old slot is sometimes simply not there: GIBS' Himawari skips
+ * 02:40 and 14:40 every day, the GOES records have gaps, and either server
+ * can have a bad moment. A tile that fails steps back a slot at a time, up
+ * to IR_FALLBACK_SLOTS, rather than leave a hole. */
+const IR_LAG_MIN = 40;
+const IR_STEP_MIN = 10;
+const IR_FALLBACK_SLOTS = 2;
+/** GIBS ingests Himawari later: its newest frame was 54 minutes old when
+ * GOES-East's was 44. */
+const HIMAWARI_LAG_MIN = 60;
+
+/** The newest slot at least `lagMin` before `now`, as an ISO timestamp. */
+function irFrameTime(now: number, lagMin: number): string {
+  const step = IR_STEP_MIN * 60_000;
+  const slot = Math.floor((now - lagMin * 60_000) / step) * step;
+  return `${new Date(slot).toISOString().slice(0, 19)}Z`;
+}
+
+/** Meteosat-9's grey ramp is not linear in temperature -- it is a stretch
+ * of radiance, which flattens out at the cold end -- and the server
+ * publishes no legend for it. So it is carried across from MTG's, below, by
+ * percentile matching over the 0-45 E overlap at three times of day: the
+ * nth-percentile grey of one paired with the nth-percentile temperature of
+ * the other. Percentiles rather than pixel pairs, because the two see each
+ * cloud from 45 degrees apart and minutes apart, and paired pixels then
+ * regress toward the mean. Past -63 C the sample is too thin and the last
+ * point is extrapolated. */
+const IODC_GREY_C: [number, number][] = [
+  [0, 26], [11, 22.7], [27, 18.4], [36, 14.9], [57, 8.0], [79, 2.0],
+  [93, -2.4], [116, -11.8], [130, -17.0], [150, -23.9], [164, -28.7],
+  [176, -33.0], [193, -39.0], [201, -42.5], [214, -47.6], [225, -52.0],
+  [245, -63.2], [255, -69],
 ];
 
-/** Beyond this far from a satellite's sub-point the disc is edge-on and the
- * imagery is smeared to uselessness, or absent. GIBS carries nothing over
- * Europe, Africa or the Indian Ocean, so a flight there has no cloud layer
- * at all — better to say so than to offer a button that draws nothing. */
-const GEO_LIMIT_DEG = 65;
+const GEO_SATS: GeoSat[] = [
+  {
+    name: "GOES-West", lon: -137.0, lagMin: IR_LAG_MIN,
+    source: { kind: "gibs", layer: "GOES-West_ABI_Band13_Clean_Infrared" },
+  },
+  {
+    name: "GOES-East", lon: -75.2, lagMin: IR_LAG_MIN,
+    source: { kind: "gibs", layer: "GOES-East_ABI_Band13_Clean_Infrared" },
+  },
+  {
+    // MTG's published legend: white at -80 C to black at +30 C, linear.
+    // Checked against GOES-East over the mid-Atlantic, it agrees to within
+    // about 3 C from +16 C down to -64 C.
+    name: "Meteosat (MTG)", lon: 0, lagMin: IR_LAG_MIN,
+    source: {
+      kind: "eumetsat", layer: "mtg_fd:ir105_hrfi",
+      toC: (grey) => 30 - (grey * 110) / 255,
+    },
+  },
+  {
+    name: "Meteosat-9", lon: 45.5, lagMin: IR_LAG_MIN,
+    source: {
+      kind: "eumetsat", layer: "msg_iodc:ir108",
+      toC: (grey) => interpolate(IODC_GREY_C, grey)[0]!,
+    },
+  },
+  {
+    name: "Himawari", lon: 140.7, lagMin: HIMAWARI_LAG_MIN,
+    source: { kind: "gibs", layer: "Himawari_AHI_Band13_Clean_Infrared" },
+  },
+];
+
+/** Half-width of the blend at each seam, in degrees of longitude. Two
+ * satellites see a cloud from different angles and minutes apart, so it
+ * sits a little differently in each, and a hard cut would show as a line.
+ * The seams fall halfway between neighbours, so no slice reaches further
+ * than about 48 degrees from its own satellite. */
+const SEAM_FEATHER_DEG = 4;
+
+const TILE = 256;
 
 /** Where the drawn disc starts fading and where it ends.
  *
@@ -234,54 +322,144 @@ const GEO_LIMIT_DEG = 65;
  * away into warm grey when downsampled while the edge stays uniformly cold.
  * So the layer is cut by geometry, not temperature: full strength to 60°
  * from the sub-point, gone by 70°. Cold polar surfaces (Greenland, sea ice)
- * sit past 70° from every sub-point and are cut by the same knife. */
+ * sit past 70° from every sub-point and are cut by the same knife. The
+ * slices keep each satellite well inside its disc east to west; this is
+ * what still bites toward the poles. */
 const DISC_FULL_COS = Math.cos((60 * Math.PI) / 180);
 const DISC_EDGE_COS = Math.cos((70 * Math.PI) / 180);
 
-/** How far back to ask for, and the product's cadence.
- *
- * TIME=default is the obvious choice and the wrong one. It resolves to
- * whatever the node serving the request has finished ingesting, which is not
- * the same answer twice in a row -- two probes seconds apart came back 12:30
- * and 12:50 -- so a single map ends up drawn from several different times,
- * with a tile-shaped hole wherever one of them is not ready yet.
- *
- * Frames fill in from the newest backwards. Sampling nine tiles across zooms
- * 3 to 6: the current slot and the one before it were entirely absent, the
- * one 20 minutes back was three-ninths there, and everything 30 minutes or
- * older was complete. So take the newest slot at least this far back and ask
- * for it by name. One frame, one moment, no holes, at the cost of half an
- * hour of freshness -- which for cloud tops over an ocean is nothing, and a
- * good trade for a picture that is all there. */
-const GIBS_LAG_MIN = 40;
-const GIBS_STEP_MIN = 10;
-
-/** The newest frame old enough to be complete, as a WMTS timestamp. */
-function gibsFrameTime(now: number = Date.now()): string {
-  const step = GIBS_STEP_MIN * 60_000;
-  const slot = Math.floor((now - GIBS_LAG_MIN * 60_000) / step) * step;
-  return `${new Date(slot).toISOString().slice(0, 19)}Z`;
+/** Linear interpolation in a table sorted by its first column, clamped at
+ * both ends; returns the remaining columns. */
+function interpolate(table: number[][], x: number): number[] {
+  const first = table[0]!;
+  const last = table[table.length - 1]!;
+  if (x <= first[0]!) return first.slice(1);
+  if (x >= last[0]!) return last.slice(1);
+  let k = 1;
+  while (table[k]![0]! < x) k++;
+  const a = table[k - 1]!;
+  const b = table[k]!;
+  const t = (x - a[0]!) / (b[0]! - a[0]!);
+  return a.slice(1).map((v, j) => v + (b[j + 1]! - v) * t);
 }
 
-function pickSatellite(lon: number): GeoSat | null {
-  let best: GeoSat | null = null;
-  let bestOff = Infinity;
-  for (const sat of GEO_SATS) {
-    const off = Math.abs(((lon - sat.lon + 540) % 360) - 180);
-    if (off < bestOff) { best = sat; bestOff = off; }
+/** The slices: for each tile column, how much each satellite contributes.
+ * The nearest satellite in longitude has it outright, except within
+ * SEAM_FEATHER_DEG of a seam, where it shares with the one across. Only
+ * satellites with a share somewhere in the tile are returned, so most
+ * tiles fetch one source and only those on a seam fetch two. Column
+ * longitude is linear in tile x, and the distance is taken round the
+ * circle, so the antimeridian needs no special case. */
+function columnWeights(
+  coords: { x: number; z: number }, width: number,
+): { sat: GeoSat; w: Float32Array }[] {
+  const n = 2 ** coords.z;
+  const ws = GEO_SATS.map(() => new Float32Array(width));
+  for (let c = 0; c < width; c++) {
+    const lon = ((coords.x + (c + 0.5) / width) / n) * 360 - 180;
+    let k1 = 0, k2 = 0, d1 = Infinity, d2 = Infinity;
+    GEO_SATS.forEach((sat, k) => {
+      const d = Math.abs(((lon - sat.lon + 540) % 360) - 180);
+      if (d < d1) { k2 = k1; d2 = d1; k1 = k; d1 = d; }
+      else if (d < d2) { k2 = k; d2 = d; }
+    });
+    const w1 = Math.min(1, 0.5 + (d2 - d1) / (4 * SEAM_FEATHER_DEG));
+    ws[k1]![c] = w1;
+    ws[k2]![c] = 1 - w1;
   }
-  return bestOff <= GEO_LIMIT_DEG ? best : null;
+  return GEO_SATS.map((sat, k) => ({ sat, w: ws[k]! }))
+    .filter((s) => s.w.some((v) => v > 0));
 }
 
-/** Warmest cloud that gets drawn at all, and the coldest grey the colour map
- * uses before it starts colouring. Between the two the layer fades in as
- * white, which is the cloud field; below it GIBS' own colours take over,
- * which is the weather. */
+/** Half the width of the epsg3857 world, in metres. */
+const MERCATOR_HALF = 20037508.342789244;
+
+function tileUrl(
+  sat: GeoSat, coords: { x: number; y: number; z: number }, time: string,
+): string {
+  const { x, y, z } = coords;
+  if (sat.source.kind === "gibs") {
+    return "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/" +
+      `${sat.source.layer}/default/${time}/GoogleMapsCompatible_Level6/${z}/${y}/${x}.png`;
+  }
+  const span = (2 * MERCATOR_HALF) / 2 ** z;
+  const west = -MERCATOR_HALF + x * span;
+  const north = MERCATOR_HALF - y * span;
+  const bbox = [west, north - span, west + span, north].join(",");
+  return "https://view.eumetsat.int/geoserver/wms?service=WMS&version=1.3.0" +
+    `&request=GetMap&layers=${sat.source.layer}&styles=&crs=EPSG:3857` +
+    `&bbox=${bbox}&width=${TILE}&height=${TILE}&format=image/png` +
+    `&transparent=true&time=${time}`;
+}
+
+/** One source tile as raw pixels, or null when it could not be had: GIBS
+ * has no such frame (a 404), or either server had a bad moment. An abort is
+ * passed on, so the caller sees the cancellation it asked for. */
+async function fetchPixels(
+  url: string, signal?: AbortSignal,
+): Promise<Uint8ClampedArray | null> {
+  try {
+    const resp = await fetch(url, { signal });
+    if (!resp.ok) return null;
+    const bmp = await createImageBitmap(await resp.blob());
+    const canvas = new OffscreenCanvas(TILE, TILE);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0, TILE, TILE);
+    bmp.close();
+    return ctx.getImageData(0, 0, TILE, TILE).data;
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    return null;
+  }
+}
+
+/** One satellite's tile for this map, stepping back a slot at a time when
+ * its frame is missing. Null when none of them could be had: that slice is
+ * then absent from this one tile, and the rest of the tile still draws. */
+async function fetchSlice(
+  sat: GeoSat, coords: { x: number; y: number; z: number }, now: number,
+  signal?: AbortSignal,
+): Promise<Uint8ClampedArray | null> {
+  for (let back = 0; back <= IR_FALLBACK_SLOTS; back++) {
+    const time = irFrameTime(now, sat.lagMin + back * IR_STEP_MIN);
+    const px = await fetchPixels(tileUrl(sat, coords, time), signal);
+    if (px) return px;
+  }
+  return null;
+}
+
+/** False when the disc mask would clear the satellite's whole share of the
+ * tile, which then need not be fetched at all. Polar tiles are the common
+ * case; GIBS has no tile there anyway, and asking would only collect 404s
+ * and fall back through earlier slots that do not have one either. */
+function reachesDisc(
+  coords: { x: number; y: number; z: number }, satLon: number, w: Float32Array,
+): boolean {
+  const n = 2 ** coords.z;
+  const latAt = (y: number) => Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n)));
+  const north = latAt(coords.y);
+  const south = latAt(coords.y + 1);
+  const maxRowCos = north > 0 && south < 0
+    ? 1 : Math.max(Math.cos(north), Math.cos(south));
+  let maxColCos = -1;
+  for (let c = 0; c < w.length; c++) {
+    if (w[c] === 0) continue;
+    const lon = ((coords.x + (c + 0.5) / w.length) / n) * 360 - 180;
+    maxColCos = Math.max(maxColCos, Math.cos(((lon - satLon) * Math.PI) / 180));
+  }
+  return maxRowCos * maxColCos > DISC_EDGE_COS;
+}
+
+/** Warmest cloud that gets drawn at all, and the coldest grey the GIBS
+ * colour map uses before it starts colouring. Between the two the layer
+ * fades in as cloud; below it the storm colours take over. */
 const GREY_CLEAR_C = 5;
 const GREY_COLD_C = -18.4;
 
-/** Grey level to brightness temperature, from the published colour map: it
- * is linear over the grey range, 196 at -18.4 C down to 9 at +53.6 C. */
+/** GIBS grey level to brightness temperature, from the published colour
+ * map: it is linear over the grey range, 196 at -18.4 C down to 9 at
+ * +53.6 C. */
 const GREY_AT_COLD = 196;
 const C_PER_GREY = (53.6 - GREY_COLD_C) / (GREY_AT_COLD - 9);
 
@@ -293,6 +471,33 @@ function greyToC(grey: number): number {
  * this: cloud is context, a storm is the message. */
 const CLOUD_ALPHA = 0.62;
 const STORM_ALPHA = 0.92;
+
+/** Opacity of the cloud field at a temperature: clear at GREY_CLEAR_C,
+ * full cloud by GREY_COLD_C. */
+function cloudAlpha(c: number): number {
+  const t = (GREY_CLEAR_C - c) / (GREY_CLEAR_C - GREY_COLD_C);
+  return t <= 0 ? 0 : Math.round(255 * CLOUD_ALPHA * Math.min(t, 1));
+}
+
+/** The GIBS colour map (Clean_Longwave_Infrared_Window_Band) from where
+ * this layer starts colouring, -32 C, down: green, yellow, red, a grey
+ * band, pink to magenta, white past -91 C. It is linear between these
+ * points, taken at the centre of each published one-degree step. GIBS tiles
+ * arrive already painted in it; EUMETSAT's are grey, and are painted in it
+ * here so a storm looks the same on either side of a seam. */
+const STORM_FROM_C = -32.1;
+const STORM_COLOURS: [number, number, number, number][] = [
+  [-91.6, 255, 255, 255],
+  [-90.6, 127, 0, 127],
+  [-80.6, 255, 127, 203],
+  [-79.6, 230, 230, 230],
+  [-70.6, 5, 5, 5],
+  [-69.6, 26, 0, 0],
+  [-60.6, 255, 0, 0],
+  [-50.6, 255, 255, 0],
+  [-40.6, 0, 255, 0],
+  [-32.6, 0, 85, 77],
+];
 
 /** True for the colour map's first band, cyan through blue to teal, which
  * runs -19.4 C to -32 C.
@@ -313,8 +518,13 @@ function isBlueBand(r: number, g: number, b: number): boolean {
   return b >= g && r <= g;
 }
 
-/** Turn a tile of the published product into something that can be laid over
- * a map without burying it.
+/** Turn a GIBS tile into something that can be laid over a map without
+ * burying it.
+ *
+ * The GIBS layer is already an enhanced infrared product, not a plain grey
+ * picture: grey from about +57 C down to -19 C, and colour below that --
+ * cyan, blue, green, yellow, orange, red, magenta, on down past -90 C.
+ * Those colours are the storms, and they are the whole point of the layer.
  *
  * The tile arrives fully opaque — sea, land and sky all painted some shade
  * of grey — so laid on flat it hides the coastlines the map exists to show.
@@ -335,7 +545,6 @@ function isBlueBand(r: number, g: number, b: number): boolean {
  * and about 60 degrees, where these balloons fly, it does not come up.
  */
 function enhance(px: Uint8ClampedArray): void {
-  const span = GREY_CLEAR_C - GREY_COLD_C;
   for (let i = 0; i < px.length; i += 4) {
     const r = px[i]!;
     const g = px[i + 1]!;
@@ -357,8 +566,48 @@ function enhance(px: Uint8ClampedArray): void {
       px[i + 3] = Math.round(255 * STORM_ALPHA);
       continue;
     }
-    const t = (GREY_CLEAR_C - greyToC(r)) / span;
-    px[i + 3] = t <= 0 ? 0 : Math.round(255 * CLOUD_ALPHA * Math.min(t, 1));
+    px[i + 3] = cloudAlpha(greyToC(r));
+  }
+}
+
+/** What enhance would have made of a temperature, had GIBS painted it:
+ * GIBS' grey and the cloud fade above -18 C, white cloud through the
+ * dropped blue band, the storm colours below. Built once per EUMETSAT
+ * source as a 256-entry lookup on its grey level, since that is all a
+ * pixel's colour depends on. */
+const luts = new Map<GeoSat, Uint8ClampedArray>();
+function eumetsatLut(sat: GeoSat, toC: (grey: number) => number): Uint8ClampedArray {
+  let lut = luts.get(sat);
+  if (lut) return lut;
+  lut = new Uint8ClampedArray(256 * 4);
+  for (let grey = 0; grey < 256; grey++) {
+    const c = toC(grey);
+    const i = grey * 4;
+    if (c <= STORM_FROM_C) {
+      lut.set(interpolate(STORM_COLOURS, c), i);
+      lut[i + 3] = Math.round(255 * STORM_ALPHA);
+    } else if (c <= GREY_COLD_C) {
+      lut.set([255, 255, 255, Math.round(255 * CLOUD_ALPHA)], i);
+    } else {
+      const g = Math.round(GREY_AT_COLD - (c - GREY_COLD_C) / C_PER_GREY);
+      lut.set([g, g, g, cloudAlpha(c)], i);
+    }
+  }
+  luts.set(sat, lut);
+  return lut;
+}
+
+/** The EUMETSAT counterpart of enhance. Off the disc the server answers
+ * transparent, and that is kept. */
+function paintEumetsat(px: Uint8ClampedArray, lut: Uint8ClampedArray): void {
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3]!;
+    if (a === 0) continue;
+    const j = px[i]! * 4;
+    px[i] = lut[j]!;
+    px[i + 1] = lut[j + 1]!;
+    px[i + 2] = lut[j + 2]!;
+    px[i + 3] = Math.round((lut[j + 3]! * a) / 255);
   }
 }
 
@@ -396,88 +645,104 @@ function maskDisc(
   }
 }
 
-/** A tile layer that runs `enhance` and the disc mask over every tile
- * before it is shown.
+/** One finished infrared tile at epsg3857 tile coordinates, or null where
+ * no source had anything for it.
  *
- * GIBS sends `access-control-allow-origin: *`, so an anonymous crossOrigin
- * image does not taint the canvas and the pixels can be read back. If a
- * browser refuses anyway the tile is dropped rather than drawn raw: a blank
- * square is better than an opaque grey one over the whole map.
- */
-const EnhancedIrLayer = L.TileLayer.extend({
-  createTile(this: L.TileLayer, coords: L.Coords, done: L.DoneCallback) {
-    const size = this.getTileSize();
-    const canvas = document.createElement("canvas");
-    canvas.width = size.x;
-    canvas.height = size.y;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) return done(undefined, canvas);
-      ctx.drawImage(img, 0, 0, size.x, size.y);
-      let data: ImageData;
-      try {
-        data = ctx.getImageData(0, 0, size.x, size.y);
-      } catch {
-        ctx.clearRect(0, 0, size.x, size.y);
-        return done(undefined, canvas);
+ * Each satellite whose slice touches the tile is fetched, given the
+ * per-pixel treatment for its source and cut to its disc, and the results
+ * are mixed by their column weights: a weighted average of colour by
+ * opacity, so where the slices overlap at a seam one fades into the other
+ * rather than stacking up twice as opaque. Shared by both renderers: the
+ * flat map runs it in a Leaflet layer, the globe in a tile protocol. */
+export async function renderCloudTile(
+  coords: { x: number; y: number; z: number }, now: number,
+  signal?: AbortSignal,
+): Promise<ImageData | null> {
+  const slices = columnWeights(coords, TILE)
+    .filter((s) => reachesDisc(coords, s.sat.lon, s.w));
+  const tiles = await Promise.all(
+    slices.map((s) => fetchSlice(s.sat, coords, now, signal)));
+  const acc = new Float32Array(TILE * TILE * 4);
+  let any = false;
+  slices.forEach(({ sat, w }, k) => {
+    const px = tiles[k];
+    if (!px) return;
+    any = true;
+    if (sat.source.kind === "gibs") enhance(px);
+    else paintEumetsat(px, eumetsatLut(sat, sat.source.toC));
+    maskDisc(px, { x: TILE, y: TILE }, coords, sat.lon);
+    for (let r = 0; r < TILE; r++) {
+      for (let c = 0; c < TILE; c++) {
+        const i = (r * TILE + c) * 4;
+        const a = (px[i + 3]! / 255) * w[c]!;
+        if (a === 0) continue;
+        acc[i] += px[i]! * a;
+        acc[i + 1] += px[i + 1]! * a;
+        acc[i + 2] += px[i + 2]! * a;
+        acc[i + 3] += a;
       }
-      enhance(data.data);
-      const satLon = (this.options as { satLon?: number }).satLon;
-      if (satLon !== undefined) maskDisc(data.data, size, coords, satLon);
-      ctx.putImageData(data, 0, 0);
-      done(undefined, canvas);
-    };
-    img.onerror = () => done(new Error("tile failed"), canvas);
-    img.src = this.getTileUrl(coords);
-    return canvas;
-  },
-}) as new (
-  url: string, options?: L.TileLayerOptions & { satLon?: number },
-) => L.TileLayer;
-
-export interface CloudTiles extends WeatherTiles {
-  /** Sub-satellite longitude, for the disc mask. */
-  satLon: number;
+    }
+  });
+  if (!any) return null;
+  const out = new ImageData(TILE, TILE);
+  for (let i = 0; i < acc.length; i += 4) {
+    const a = acc[i + 3]!;
+    if (a === 0) continue;
+    out.data[i] = acc[i]! / a;
+    out.data[i + 1] = acc[i + 1]! / a;
+    out.data[i + 2] = acc[i + 2]! / a;
+    out.data[i + 3] = a * 255;
+  }
+  return out;
 }
 
-/** The infrared product for this part of the world, or null where no
- * geostationary satellite covers it. The tiles still need the per-pixel
- * treatment: enhanceIrTile, which the flat map runs in a Leaflet layer and
- * the globe runs in a tile protocol. */
-export function cloudTiles(lon: number): CloudTiles | null {
-  const sat = pickSatellite(lon);
-  if (!sat) return null;
-  const time = gibsFrameTime();
+/** The infrared layer's settings for one map. The tiles themselves come
+ * from renderCloudTile, asked with this `now`. */
+export interface CloudTiles extends Omit<WeatherTiles, "url"> {
+  /** The moment every frame time is reckoned back from. Fixed for the
+   * life of the layer, so every tile of one source is the same frame. */
+  now: number;
+}
+
+export function cloudTiles(now: number = Date.now()): CloudTiles {
+  const hhmm = (lagMin: number) => irFrameTime(now, lagMin).slice(11, 16);
   return {
-    url:
-      "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/" +
-      `${sat.layer}/default/${time}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`,
-    satLon: sat.lon,
+    now,
     opacity: 1,
-    // The product itself stops at zoom 6.
+    // The GIBS products stop at zoom 6, and EUMETSAT's are no sharper.
     maxNativeZoom: 6,
     attribution:
-      `${sat.name} infrared ${time.slice(11, 16)} UTC &copy; ` +
-      '<a href="https://worldview.earthdata.nasa.gov/">NASA GIBS</a>',
+      `Infrared UTC: GOES ${hhmm(IR_LAG_MIN)}, ` +
+      `Himawari ${hhmm(HIMAWARI_LAG_MIN)} via ` +
+      '<a href="https://worldview.earthdata.nasa.gov/">NASA GIBS</a>; ' +
+      `Meteosat ${hhmm(IR_LAG_MIN)} ` +
+      '&copy; <a href="https://view.eumetsat.int/">EUMETSAT</a>',
   };
 }
 
-/** The whole treatment for one epsg3857 infrared tile: per-pixel alpha from
- * the data, then the disc mask. */
-export function enhanceIrTile(
-  px: Uint8ClampedArray, size: { x: number; y: number },
-  coords: { x: number; y: number; z: number }, satLon: number,
-): void {
-  enhance(px);
-  maskDisc(px, size, coords, satLon);
-}
+/** A Leaflet layer that draws each tile with renderCloudTile. A tile with
+ * nothing to show is left blank rather than failed: a blank square is
+ * better than an error, and better still than an opaque one. */
+const CloudLayer = L.GridLayer.extend({
+  createTile(this: L.GridLayer, coords: L.Coords, done: L.DoneCallback) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = TILE;
+    const { now } = this.options as { now: number };
+    renderCloudTile(coords, now).then(
+      (data) => {
+        if (data) canvas.getContext("2d")?.putImageData(data, 0, 0);
+        done(undefined, canvas);
+      },
+      (err: Error) => done(err, canvas),
+    );
+    return canvas;
+  },
+}) as new (options: L.GridLayerOptions & { now: number }) => L.GridLayer;
 
-function cloudLayer(t: CloudTiles): L.TileLayer {
-  return new EnhancedIrLayer(t.url, {
+function cloudLayer(t: CloudTiles): L.GridLayer {
+  return new CloudLayer({
     className: "weather-tiles weather-clouds",
-    satLon: t.satLon,
+    now: t.now,
     maxNativeZoom: t.maxNativeZoom,
     maxZoom: 16,
     attribution: t.attribution,
@@ -487,8 +752,6 @@ function cloudLayer(t: CloudTiles): L.TileLayer {
 // ---------- the control ----------
 
 export interface WeatherOpts {
-  /** Longitude of the balloon now: it picks the geostationary satellite. */
-  lon: number;
   /** Where the switch sits; default top right. The phone layout puts it at
    * the bottom, where it does not stack halfway down a short map. */
   position?: L.ControlPosition;
@@ -525,7 +788,6 @@ const BUTTONS: { id: WeatherLayer; label: string; title: string }[] = [
  * own corner. It owns its pressed state; applying the layers is the
  * caller's half. */
 export function buildWeatherToggle(opts: {
-  cloudsAvailable: boolean;
   initial: WeatherLayer;
   onSelect(layer: WeatherLayer): void;
 }): HTMLElement {
@@ -544,12 +806,7 @@ export function buildWeatherToggle(opts: {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = b.label;
-    // Nowhere on earth for it to draw: shown, so the reason is visible in
-    // the title, but not offered.
-    btn.title = b.id === "clouds" && !opts.cloudsAvailable
-      ? "No geostationary infrared covers this part of the world"
-      : b.title;
-    btn.disabled = b.id === "clouds" && !opts.cloudsAvailable;
+    btn.title = b.title;
     btn.addEventListener("click", () => {
       if (b.id === current) return;
       current = b.id;
@@ -569,12 +826,9 @@ export function buildWeatherToggle(opts: {
  * path is never buried by the weather it is flying through.
  */
 export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
-  const clouds = cloudTiles(opts.lon);
-  // A remembered "clouds" is honoured only where there is a satellite to
-  // show; elsewhere the map opens clean rather than blank-with-a-layer-on.
-  let current: WeatherLayer =
-    opts.initial === "clouds" && !clouds ? "off" : opts.initial;
-  let layer: L.TileLayer | null = null;
+  const clouds = cloudTiles();
+  let current = opts.initial;
+  let layer: L.GridLayer | null = null;
   // A tile layer arrives asynchronously. By then the reader may have
   // switched again, or the whole map may have been torn down by a refresh,
   // and adding it either way would be wrong.
@@ -583,7 +837,6 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
   map.on("unload", () => { dead = true; });
 
   const toggle = buildWeatherToggle({
-    cloudsAvailable: !!clouds,
     initial: current,
     onSelect: (next) => {
       current = next;
@@ -608,9 +861,7 @@ export function addWeatherControl(map: L.Map, opts: WeatherOpts): void {
     layer?.remove();
     layer = null;
     if (current === "off") return;
-    const built = current === "rain"
-      ? await rainLayer()
-      : clouds ? cloudLayer(clouds) : null;
+    const built = current === "rain" ? await rainLayer() : cloudLayer(clouds);
     // Stale by the time it resolved, or the map is gone: drop it.
     if (!built || dead || token !== generation) return;
     built.addTo(map);

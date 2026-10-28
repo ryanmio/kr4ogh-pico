@@ -127,14 +127,35 @@ neither one covers a whole flight:
 - **Rain** — the RainViewer radar mosaic, newest frame, about ten minutes
   old. It is built from national radar networks, so it stops a couple of
   hundred km off any coast and is blank for most of an ocean crossing.
-- **Clouds** — band 13 infrared (cloud-top temperature) from whichever
-  geostationary satellite is nearest the balloon's longitude, via NASA GIBS,
-  about forty minutes old. This is the layer that works over open ocean.
-  GIBS carries GOES-East, GOES-West and Himawari and nothing over Europe,
-  Africa or the Indian Ocean; a flight out there gets the button greyed out
-  rather than a layer that draws nothing.
+- **Clouds** — longwave infrared (cloud-top temperature) from five
+  geostationary satellites at once, about forty minutes old, covering the
+  whole planet from the tropics to about 60°. This is the layer that works
+  over open ocean.
 
-Two things about the infrared are worth knowing before touching it.
+**Five satellites, two servers, one layer.** NASA GIBS has GOES-West,
+GOES-East and Himawari as ready-cut tiles, and nothing from Meteosat.
+EUMETSAT's own WMS (`view.eumetsat.int`) fills the gap with MTG at 0° and
+Meteosat-9 at 45.5° E. Every satellite is drawn at the same time, each over
+the longitudes it is nearest to. The seams fall halfway between neighbours
+(106° W, 37.6° W, 22.75° E, 93° E, 178° W), so no slice is more than about
+48° from its satellite. Across 4° either side of a seam one satellite fades
+into the next. A hard cut would show as a line, because the two see each
+cloud from different angles and minutes apart. `renderCloudTile()` in
+`weather.ts` builds each finished tile by fetching only the satellites whose
+slice touches it, so a tile away from a seam costs one request. The flat map
+calls it from a Leaflet `GridLayer` and the globe from a MapLibre tile
+protocol.
+
+**EUMETSAT's tiles are grey, so they are painted to match.** MTG's grey is
+linear from white at −80 °C to black at +30 °C. That is its published
+legend, and it agreed with GOES-East to within about 3 °C over the
+mid-Atlantic. Meteosat-9 publishes no legend, and its grey follows radiance,
+not temperature. Its table was carried across from MTG by percentile
+matching over the 0–45° E overlap. Each grey level is then painted the way
+the GIBS tiles are: the same grey and fade for cloud, the same colours for
+cold tops. A storm therefore looks the same on either side of a seam.
+
+Three more things about the infrared are worth knowing before touching it.
 
 **It is already an enhanced product, not a grey picture.** Its colour map is
 grey from about +57 °C down to −19 °C and colour below that — cyan, blue,
@@ -145,8 +166,8 @@ and any contrast curve steep enough to clear the warm background then erases
 it, keeping the harmless mid-level cloud instead. So `enhance()` in
 `weather.ts` computes the alpha per pixel from the data — grey is converted
 back to a temperature and fades in as cloud, colour is kept as published —
-over a canvas tile layer, which works because GIBS sends CORS headers and so
-does not taint the canvas. The one band that is dropped is the warmest
+on a canvas, which works because both servers send CORS headers and so do
+not taint it. The one band that is dropped is the warmest
 colours, cyan through teal, −19 °C to −32 °C: GIBS starts colouring well
 before convection does, and that band otherwise outlines every cloud edge on
 the map. Colour therefore starts at green, near −33 °C.
@@ -156,9 +177,18 @@ the node answering has finished ingesting, which is not the same answer
 twice — two probes seconds apart returned 12:30 and 12:50 — so one map gets
 drawn from several moments with a tile-shaped hole wherever one is not ready.
 Sampling nine tiles across zooms 3–6 showed frames complete from about 30
-minutes old and ragged before that, so `gibsFrameTime()` asks for the newest
+minutes old and ragged before that, so `irFrameTime()` asks for the newest
 ten-minute slot at least 40 minutes back. That is the whole reason the layer
-is 40 minutes old rather than 20.
+is 40 minutes old rather than 20. GIBS ingests Himawari later (54 minutes
+behind when GOES-East was 44), so Himawari is asked for 60 minutes back.
+EUMETSAT ran 10–25 minutes behind, so 40 is past it too.
+
+**A missing frame steps back.** Even a pinned slot is sometimes not there.
+GIBS' Himawari skips 02:40 and 14:40 every day, the GOES records have gaps,
+and EUMETSAT answers the odd request with a 500. A tile that fails tries up
+to two earlier slots before leaving that slice blank. Tiles that the disc
+mask would clear completely (the polar ones) are never requested. So a 404
+means a missing frame, not an empty patch of space.
 
 The chosen layer is remembered per browser and can be pinned to a link:
 `?w=c` for clouds, `?w=r` for rain, `?w=n` for none, with the long forms
@@ -167,10 +197,10 @@ same reason — a link sent because of the storm has to arrive with the storm
 on it, so the link outranks the recipient's stored preference, and following
 it does not overwrite that preference. The two compose: `?u=i&w=c`.
 
-Both sources are keyless and send `access-control-allow-origin: *`, so this
+Every source is keyless and sends `access-control-allow-origin: *`, so this
 keeps the site's rule: no proxy, no secrets in the build, nothing of ours
-awake. If a source is down the layer does not appear and the map is what it
-always was.
+awake. If a source is down its part of the layer does not appear and the map
+under it is what it always was.
 
 Offered on every flight, live or closed. The layers are always today's
 weather and the track under them is always older, so a closed flight is no

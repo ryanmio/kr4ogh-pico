@@ -493,7 +493,6 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // toggle, leaving the right edge to the zoom control alone; on a
       // phone they sit along the bottom of the map.
       const wide = window.matchMedia("(min-width: 900px)").matches;
-      const lon = lastKnown(track, ghosts)?.lon ?? meta.launch_lon ?? 0;
       const viewToggle = buildViewToggle();
       // Weather is today's weather, whatever the flight's status. The layers
       // are live products drawn under a track that may be two weeks old
@@ -518,7 +517,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
             ghosts, overlays, forecast, onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
-            weather: { lon, ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
+            weather: { ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
           globe.onInteract(onInteract);
           if (wide) ctlSlot.appendChild(viewToggle);
@@ -548,7 +547,6 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       held.getContainer().addEventListener("dblclick", onInteract);
       held.zoomControl?.getContainer()?.addEventListener("click", onInteract);
       addWeatherControl(held, {
-        lon,
         ...(wide ? { into: ctlSlot } : { position: "bottomleft" as const }),
         ...weatherOpts,
       });
