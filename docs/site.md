@@ -128,7 +128,7 @@ neither one covers a whole flight:
   old. It is built from national radar networks, so it stops a couple of
   hundred km off any coast and is blank for most of an ocean crossing.
 - **Clouds** — longwave infrared (cloud-top temperature) from five
-  geostationary satellites at once, about forty minutes old, covering the
+  geostationary satellites at once, 40 to 70 minutes old, covering the
   whole planet from the tropics to about 60°. This is the layer that works
   over open ocean.
 
@@ -155,7 +155,7 @@ matching over the 0–45° E overlap. Each grey level is then painted the way
 the GIBS tiles are: the same grey and fade for cloud, the same colours for
 cold tops. A storm therefore looks the same on either side of a seam.
 
-Three more things about the infrared are worth knowing before touching it.
+Four more things about the infrared are worth knowing before touching it.
 
 **It is already an enhanced product, not a grey picture.** Its colour map is
 grey from about +57 °C down to −19 °C and colour below that — cyan, blue,
@@ -176,19 +176,42 @@ the map. Colour therefore starts at green, near −33 °C.
 the node answering has finished ingesting, which is not the same answer
 twice — two probes seconds apart returned 12:30 and 12:50 — so one map gets
 drawn from several moments with a tile-shaped hole wherever one is not ready.
-Sampling nine tiles across zooms 3–6 showed frames complete from about 30
-minutes old and ragged before that, so `irFrameTime()` asks for the newest
-ten-minute slot at least 40 minutes back. That is the whole reason the layer
-is 40 minutes old rather than 20. GIBS ingests Himawari later (54 minutes
-behind when GOES-East was 44), so Himawari is asked for 60 minutes back.
-EUMETSAT ran 10–25 minutes behind, so 40 is past it too.
+So `irFrameTime()` asks each source for the newest ten-minute slot safely
+older than its lag. GIBS' lag varies by satellite and by day: GOES-East has
+been 30–44 minutes behind, GOES-West and Himawari 52–54. Asking for less than
+an hour back cost a 404 and a retry on every tile much of the time, so GIBS
+is asked for 60 minutes back. EUMETSAT ran 10–25 minutes behind and is asked
+for 40. The seam between the two joins frames 20 minutes apart, and the blend
+hides it.
 
 **A missing frame steps back.** Even a pinned slot is sometimes not there.
 GIBS' Himawari skips 02:40 and 14:40 every day, the GOES records have gaps,
-and EUMETSAT answers the odd request with a 500. A tile that fails tries up
-to two earlier slots before leaving that slice blank. Tiles that the disc
+and EUMETSAT answers the odd request with a 500. A GIBS tile that fails tries
+up to two earlier slots before leaving that slice blank. Tiles that the disc
 mask would clear completely (the polar ones) are never requested. So a 404
-means a missing frame, not an empty patch of space.
+means a missing frame, not an empty patch of space. EUMETSAT is never asked
+for an older slot: it answers any time with its nearest frame, so a failure
+there means the server is struggling, and an older request would only add to
+its queue.
+
+**EUMETSAT is slow, so tiles are kept.** It draws every tile on request and
+speaks only HTTP/1.1, so the browser holds six requests open to it and queues
+the rest. In the evening a tile takes under a second. Under load, the eighth
+tile of one map took 18 seconds, and Europe stayed blank for most of an
+afternoon. Three things keep that from compounding:
+
+- **Finished tiles are cached in memory**, keyed by frame slot and tile, up to
+  128 of them. So are tiles still being drawn. The map is rebuilt whenever
+  telemetry or a forecast arrives, or when the units change. Before this,
+  every rebuild drew every tile again, because GIBS sends `no-store`. A
+  rebuild that came while EUMETSAT was still working put a second copy of
+  every request behind the first. `cloudTiles()` snaps its `now` to the
+  ten-minute slot, so successive rebuilds ask for the same keys.
+- **A request is dropped after 30 seconds**, which frees its connection.
+- **A tile missing a slice is not cached, and on the flat map it tries again
+  by itself** every minute, up to three times, for as long as it is on
+  screen. Blocking EUMETSAT for the first 30 seconds of a page load left
+  Europe blank; a minute later it had filled in without a reload.
 
 The chosen layer is remembered per browser and can be pinned to a link:
 `?w=c` for clouds, `?w=r` for rain, `?w=n` for none, with the long forms

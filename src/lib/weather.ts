@@ -209,7 +209,7 @@ interface GeoSat {
   name: string;
   /** Sub-satellite longitude. */
   lon: number;
-  /** How far behind real time to ask for its frame; see IR_LAG_MIN. */
+  /** How far behind real time to ask for its frame; see GIBS_LAG_MIN. */
   lagMin: number;
   source:
     | { kind: "gibs"; layer: string }
@@ -224,28 +224,39 @@ interface GeoSat {
  * and 12:50 -- so a single map ends up drawn from several different times,
  * with a tile-shaped hole wherever one of them is not ready yet.
  *
- * Frames fill in from the newest backwards. Sampling nine GIBS tiles across
- * zooms 3 to 6: the current slot and the one before it were entirely
- * absent, the one 20 minutes back was three-ninths there, and everything 30
- * minutes or older was complete. So take the newest slot at least this far
- * back and ask for it by name. One frame, one moment, no holes, at the cost
- * of half an hour of freshness -- which for cloud tops over an ocean is
- * nothing, and a good trade for a picture that is all there.
+ * So take the newest slot comfortably older than the source's lag and ask
+ * for it by name. One frame, one moment, no holes, at the cost of most of
+ * an hour of freshness -- which for cloud tops over an ocean is nothing,
+ * and a good trade for a picture that is all there.
  *
- * EUMETSAT ran 10 to 25 minutes behind when probed, so the same 40 is past
- * it too. MTG has the same ten-minute cadence; Meteosat-9 scans every
- * fifteen and the server answers with its nearest.
+ * GIBS' lag differs by satellite and by the day. Sampling nine GOES-East
+ * tiles once had everything 30 minutes or older complete; another evening
+ * its newest frame was 42 minutes old and GOES-West's and Himawari's 52.
+ * Asking any of them for less than an hour back meant a 404 and a retry on
+ * every tile much of the time. EUMETSAT ran 10 to 25 minutes behind when
+ * probed. MTG has the same ten-minute cadence; Meteosat-9 scans every
+ * fifteen and the server answers with its nearest. The seam between a GIBS
+ * and a EUMETSAT slice therefore joins frames 20 minutes apart, which the
+ * blend across it hides.
  *
  * Even an old slot is sometimes simply not there: GIBS' Himawari skips
- * 02:40 and 14:40 every day, the GOES records have gaps, and either server
- * can have a bad moment. A tile that fails steps back a slot at a time, up
- * to IR_FALLBACK_SLOTS, rather than leave a hole. */
-const IR_LAG_MIN = 40;
+ * 02:40 and 14:40 every day and the GOES records have gaps. A GIBS tile
+ * that fails steps back a slot at a time, up to IR_FALLBACK_SLOTS, rather
+ * than leave a hole. EUMETSAT never needs to: it answers any time with its
+ * nearest frame, so a failure there is the server struggling, and asking
+ * it again for an older frame only lengthens its queue. */
+const GIBS_LAG_MIN = 60;
+const EUMETSAT_LAG_MIN = 40;
 const IR_STEP_MIN = 10;
 const IR_FALLBACK_SLOTS = 2;
-/** GIBS ingests Himawari later: its newest frame was 54 minutes old when
- * GOES-East's was 44. */
-const HIMAWARI_LAG_MIN = 60;
+
+/** EUMETSAT renders every tile on request, one at a time as far as a
+ * client can tell, and only over HTTP/1.1, so the browser holds six
+ * requests open to it and queues the rest. In the evening a tile took under
+ * a second; under load the eighth tile of one map took 18 seconds. A
+ * request still hanging after this long is dropped, freeing its connection,
+ * and the tile is asked for again by the next map that wants it. */
+const IR_TIMEOUT_MS = 30_000;
 
 /** The newest slot at least `lagMin` before `now`, as an ISO timestamp. */
 function irFrameTime(now: number, lagMin: number): string {
@@ -272,32 +283,32 @@ const IODC_GREY_C: [number, number][] = [
 
 const GEO_SATS: GeoSat[] = [
   {
-    name: "GOES-West", lon: -137.0, lagMin: IR_LAG_MIN,
+    name: "GOES-West", lon: -137.0, lagMin: GIBS_LAG_MIN,
     source: { kind: "gibs", layer: "GOES-West_ABI_Band13_Clean_Infrared" },
   },
   {
-    name: "GOES-East", lon: -75.2, lagMin: IR_LAG_MIN,
+    name: "GOES-East", lon: -75.2, lagMin: GIBS_LAG_MIN,
     source: { kind: "gibs", layer: "GOES-East_ABI_Band13_Clean_Infrared" },
   },
   {
     // MTG's published legend: white at -80 C to black at +30 C, linear.
     // Checked against GOES-East over the mid-Atlantic, it agrees to within
     // about 3 C from +16 C down to -64 C.
-    name: "Meteosat (MTG)", lon: 0, lagMin: IR_LAG_MIN,
+    name: "Meteosat (MTG)", lon: 0, lagMin: EUMETSAT_LAG_MIN,
     source: {
       kind: "eumetsat", layer: "mtg_fd:ir105_hrfi",
       toC: (grey) => 30 - (grey * 110) / 255,
     },
   },
   {
-    name: "Meteosat-9", lon: 45.5, lagMin: IR_LAG_MIN,
+    name: "Meteosat-9", lon: 45.5, lagMin: EUMETSAT_LAG_MIN,
     source: {
       kind: "eumetsat", layer: "msg_iodc:ir108",
       toC: (grey) => interpolate(IODC_GREY_C, grey)[0]!,
     },
   },
   {
-    name: "Himawari", lon: 140.7, lagMin: HIMAWARI_LAG_MIN,
+    name: "Himawari", lon: 140.7, lagMin: GIBS_LAG_MIN,
     source: { kind: "gibs", layer: "Himawari_AHI_Band13_Clean_Infrared" },
   },
 ];
@@ -393,13 +404,11 @@ function tileUrl(
 }
 
 /** One source tile as raw pixels, or null when it could not be had: GIBS
- * has no such frame (a 404), or either server had a bad moment. An abort is
- * passed on, so the caller sees the cancellation it asked for. */
-async function fetchPixels(
-  url: string, signal?: AbortSignal,
-): Promise<Uint8ClampedArray | null> {
+ * has no such frame (a 404), either server had a bad moment, or it took
+ * longer than IR_TIMEOUT_MS. */
+async function fetchPixels(url: string): Promise<Uint8ClampedArray | null> {
   try {
-    const resp = await fetch(url, { signal });
+    const resp = await fetch(url, { signal: AbortSignal.timeout(IR_TIMEOUT_MS) });
     if (!resp.ok) return null;
     const bmp = await createImageBitmap(await resp.blob());
     const canvas = new OffscreenCanvas(TILE, TILE);
@@ -408,22 +417,21 @@ async function fetchPixels(
     ctx.drawImage(bmp, 0, 0, TILE, TILE);
     bmp.close();
     return ctx.getImageData(0, 0, TILE, TILE).data;
-  } catch (err) {
-    if (signal?.aborted) throw err;
+  } catch {
     return null;
   }
 }
 
-/** One satellite's tile for this map, stepping back a slot at a time when
- * its frame is missing. Null when none of them could be had: that slice is
- * then absent from this one tile, and the rest of the tile still draws. */
+/** One satellite's tile for this map, a GIBS one stepping back a slot at a
+ * time when its frame is missing. Null when it could not be had: that slice
+ * is then absent from this one tile, and the rest of the tile still draws. */
 async function fetchSlice(
   sat: GeoSat, coords: { x: number; y: number; z: number }, now: number,
-  signal?: AbortSignal,
 ): Promise<Uint8ClampedArray | null> {
-  for (let back = 0; back <= IR_FALLBACK_SLOTS; back++) {
+  const slots = sat.source.kind === "gibs" ? IR_FALLBACK_SLOTS : 0;
+  for (let back = 0; back <= slots; back++) {
     const time = irFrameTime(now, sat.lagMin + back * IR_STEP_MIN);
-    const px = await fetchPixels(tileUrl(sat, coords, time), signal);
+    const px = await fetchPixels(tileUrl(sat, coords, time));
     if (px) return px;
   }
   return null;
@@ -645,23 +653,66 @@ function maskDisc(
   }
 }
 
-/** One finished infrared tile at epsg3857 tile coordinates, or null where
- * no source had anything for it.
+/** Finished tiles, newest use last, and tiles still being drawn.
  *
- * Each satellite whose slice touches the tile is fetched, given the
- * per-pixel treatment for its source and cut to its disc, and the results
- * are mixed by their column weights: a weighted average of colour by
- * opacity, so where the slices overlap at a seam one fades into the other
- * rather than stacking up twice as opaque. Shared by both renderers: the
- * flat map runs it in a Leaflet layer, the globe in a tile protocol. */
-export async function renderCloudTile(
+ * The map is torn down and rebuilt on every telemetry refresh, every two
+ * minutes, and the cloud layer with it. Without this every rebuild drew
+ * every tile again from scratch: GIBS sends `no-store`, so nothing came out
+ * of the browser's cache, and a rebuild while EUMETSAT was still working
+ * through the last map's queue put a second copy of every request behind
+ * the first. On a slow afternoon Europe never finished before the next
+ * rebuild threw it away. Keyed by the frame slot as well as the tile, so a
+ * new frame is a new tile; a tile with a slice missing is not kept, so the
+ * next map asks again rather than inheriting the hole. */
+const tileCache = new Map<string, Promise<CloudTile>>();
+/** About 32 MB of pixels at most: several screens' worth across zooms. */
+const TILE_CACHE_SIZE = 128;
+
+export interface CloudTile {
+  /** The pixels, or null where no source had anything. */
+  data: ImageData | null;
+  /** False when a slice that should be there could not be had. */
+  complete: boolean;
+}
+
+/** One finished infrared tile at epsg3857 tile coordinates. Shared by both
+ * renderers: the flat map runs it in a Leaflet layer, the globe in a tile
+ * protocol. */
+export function renderCloudTile(
   coords: { x: number; y: number; z: number }, now: number,
-  signal?: AbortSignal,
-): Promise<ImageData | null> {
+): Promise<CloudTile> {
+  const key = `${now}/${coords.z}/${coords.x}/${coords.y}`;
+  let tile = tileCache.get(key);
+  if (tile) {
+    // Most recently used goes last; eviction takes from the front.
+    tileCache.delete(key);
+    tileCache.set(key, tile);
+    return tile;
+  }
+  tile = drawCloudTile(coords, now).then((t) => {
+    if (!t.complete) tileCache.delete(key);
+    return t;
+  });
+  tileCache.set(key, tile);
+  while (tileCache.size > TILE_CACHE_SIZE) {
+    tileCache.delete(tileCache.keys().next().value!);
+  }
+  return tile;
+}
+
+/** Draw one tile. Each satellite whose slice touches it is fetched, given
+ * the per-pixel treatment for its source and cut to its disc, and the
+ * results are mixed by their column weights: a weighted average of colour
+ * by opacity, so where the slices overlap at a seam one fades into the
+ * other rather than stacking up twice as opaque. */
+async function drawCloudTile(
+  coords: { x: number; y: number; z: number }, now: number,
+): Promise<CloudTile> {
   const slices = columnWeights(coords, TILE)
     .filter((s) => reachesDisc(coords, s.sat.lon, s.w));
   const tiles = await Promise.all(
-    slices.map((s) => fetchSlice(s.sat, coords, now, signal)));
+    slices.map((s) => fetchSlice(s.sat, coords, now)));
+  const complete = tiles.every((px) => px !== null);
   const acc = new Float32Array(TILE * TILE * 4);
   let any = false;
   slices.forEach(({ sat, w }, k) => {
@@ -683,7 +734,7 @@ export async function renderCloudTile(
       }
     }
   });
-  if (!any) return null;
+  if (!any) return { data: null, complete };
   const out = new ImageData(TILE, TILE);
   for (let i = 0; i < acc.length; i += 4) {
     const a = acc[i + 3]!;
@@ -693,18 +744,22 @@ export async function renderCloudTile(
     out.data[i + 2] = acc[i + 2]! / a;
     out.data[i + 3] = a * 255;
   }
-  return out;
+  return { data: out, complete };
 }
 
 /** The infrared layer's settings for one map. The tiles themselves come
  * from renderCloudTile, asked with this `now`. */
 export interface CloudTiles extends Omit<WeatherTiles, "url"> {
   /** The moment every frame time is reckoned back from. Fixed for the
-   * life of the layer, so every tile of one source is the same frame. */
+   * life of the layer, so every tile of one source is the same frame, and
+   * snapped to the frame cadence, so successive rebuilds of the map ask for
+   * the same tiles and find them already drawn. */
   now: number;
 }
 
-export function cloudTiles(now: number = Date.now()): CloudTiles {
+export function cloudTiles(at: number = Date.now()): CloudTiles {
+  const step = IR_STEP_MIN * 60_000;
+  const now = Math.floor(at / step) * step;
   const hhmm = (lagMin: number) => irFrameTime(now, lagMin).slice(11, 16);
   return {
     now,
@@ -712,13 +767,19 @@ export function cloudTiles(now: number = Date.now()): CloudTiles {
     // The GIBS products stop at zoom 6, and EUMETSAT's are no sharper.
     maxNativeZoom: 6,
     attribution:
-      `Infrared UTC: GOES ${hhmm(IR_LAG_MIN)}, ` +
-      `Himawari ${hhmm(HIMAWARI_LAG_MIN)} via ` +
+      `Infrared UTC: GOES, Himawari ${hhmm(GIBS_LAG_MIN)} via ` +
       '<a href="https://worldview.earthdata.nasa.gov/">NASA GIBS</a>; ' +
-      `Meteosat ${hhmm(IR_LAG_MIN)} ` +
+      `Meteosat ${hhmm(EUMETSAT_LAG_MIN)} ` +
       '&copy; <a href="https://view.eumetsat.int/">EUMETSAT</a>',
   };
 }
+
+/** A tile missing a slice tries again by itself, this often and this many
+ * times, for as long as it is on the map. Otherwise a slice that EUMETSAT
+ * failed under load stays a hole until new telemetry happens to rebuild the
+ * map, which can be most of an hour. */
+const TILE_RETRY_MS = 60_000;
+const TILE_RETRIES = 3;
 
 /** A Leaflet layer that draws each tile with renderCloudTile. A tile with
  * nothing to show is left blank rather than failed: a blank square is
@@ -728,13 +789,21 @@ const CloudLayer = L.GridLayer.extend({
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = TILE;
     const { now } = this.options as { now: number };
-    renderCloudTile(coords, now).then(
-      (data) => {
-        if (data) canvas.getContext("2d")?.putImageData(data, 0, 0);
-        done(undefined, canvas);
-      },
-      (err: Error) => done(err, canvas),
-    );
+    const paint = (attempt: number): void => {
+      renderCloudTile(coords, now).then(
+        ({ data, complete }) => {
+          if (data) canvas.getContext("2d")?.putImageData(data, 0, 0);
+          if (attempt === 0) done(undefined, canvas);
+          if (complete || attempt >= TILE_RETRIES) return;
+          // Leaflet detaches a tile it no longer shows: panned away,
+          // zoomed past, or the whole layer gone with a rebuild.
+          setTimeout(() => { if (canvas.isConnected) paint(attempt + 1); },
+            TILE_RETRY_MS);
+        },
+        (err: Error) => { if (attempt === 0) done(err, canvas); },
+      );
+    };
+    paint(0);
     return canvas;
   },
 }) as new (options: L.GridLayerOptions & { now: number }) => L.GridLayer;
@@ -777,7 +846,7 @@ const BUTTONS: { id: WeatherLayer; label: string; title: string }[] = [
     id: "clouds",
     label: "Clouds",
     title:
-      "Infrared cloud tops, about forty minutes old. White is cloud; the " +
+      "Infrared cloud tops, about an hour old. White is cloud; the " +
       "colours are tops colder than about -33 C, which is what a storm " +
       "looks like from above. Works over the ocean, where radar does not.",
   },

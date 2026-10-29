@@ -58,12 +58,11 @@ function blankTile(): Promise<ArrayBuffer> {
   return emptyTile;
 }
 
-addProtocol(IR_PROTOCOL, async (params, abort) => {
+addProtocol(IR_PROTOCOL, async (params) => {
   const m = /^pico-ir:\/\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url);
   if (!m) throw new Error(`bad infrared tile ${params.url}`);
-  const data = await renderCloudTile(
-    { z: Number(m[2]), x: Number(m[3]), y: Number(m[4]) }, Number(m[1]),
-    abort.signal);
+  const { data } = await renderCloudTile(
+    { z: Number(m[2]), x: Number(m[3]), y: Number(m[4]) }, Number(m[1]));
   if (!data) return { data: await blankTile() };
   const canvas = new OffscreenCanvas(data.width, data.height);
   const ctx = canvas.getContext("2d");
