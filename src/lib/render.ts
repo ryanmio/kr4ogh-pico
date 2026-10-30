@@ -3,11 +3,12 @@
  * from a live wspr.live query. */
 
 import {
-  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtRelative, fmtUtc, haversineKm,
-  parseUtc, trackStats,
+  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocalDay, fmtRelative, fmtUtc,
+  haversineKm, parseUtc, trackStats,
 } from "./format";
 import { heardBounds } from "./ghosts";
 import { METRICS, type MetricKey } from "./metrics";
+import { RECORDS, type FlightSummary, type Holders, type RecordKey } from "./records";
 import {
   groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
 } from "./speed";
@@ -56,8 +57,9 @@ const ICONS: Record<MetricKey, string> = {
     '<path d="M6.2 15.3a8 8 0 0 1 0-11.6M17.8 3.7a8 8 0 0 1 0 11.6"/></svg>',
 };
 
-/** Which card is lit: a metric card, the tracker or status card, or none. */
-export type ActiveCard = MetricKey | "tracker" | "status" | null;
+/** Which card is lit: a metric card, the tracker, status or records card,
+ * or none. */
+export type ActiveCard = MetricKey | "tracker" | "status" | "records" | null;
 
 const TRACKER_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
@@ -95,10 +97,13 @@ function metricCard(
  * fix, because a ghost carries none of them. */
 export function sidebarHtml(
   meta: FlightMeta, track: TrackPoint[], units: Units, active: ActiveCard,
-  opts: { pending?: boolean; ghosts?: GhostPoint[] } = {},
+  opts: { pending?: boolean; ghosts?: GhostPoint[]; records?: RecordsCardInfo } = {},
 ): string {
   const ended = meta.status === "closed";
   const ghosts = opts.ghosts ?? [];
+  // Last in the column: it is about every flight, not a reading from this
+  // one, and it is there whatever state this flight's own cards are in.
+  const records = opts.records ? recordsCard(opts.records, ended, active) : "";
   // The tracker card leads: it is what the header used to say (who this
   // is), shaped like every other card, and pressing it opens the build
   // details panel.
@@ -120,7 +125,7 @@ export function sidebarHtml(
   // The home page switching to another flight: its track is on the way.
   if (opts.pending) {
     return tracker + `<div class="fv-status"><p class="empty-note">Loading the
-      track&hellip;</p></div>`;
+      track&hellip;</p></div>` + records;
   }
   const s = trackStats(track);
   if (!s) {
@@ -135,7 +140,7 @@ export function sidebarHtml(
         fix.`
       : `No decoded telemetry yet. The tracker reports every 10 minutes once
         it has sun and a GPS fix.`;
-    return tracker + `<div class="fv-status"><p class="empty-note">${note}</p></div>`;
+    return tracker + `<div class="fv-status"><p class="empty-note">${note}</p></div>` + records;
   }
   const heard = heardBounds(track, ghosts)!;
   const volts = track.map((p) => p.voltage_v);
@@ -207,7 +212,7 @@ export function sidebarHtml(
       active,
     ),
   ];
-  return tracker + status + cards.join("");
+  return tracker + status + cards.join("") + records;
 }
 
 /** The speed column. A fix under the field's ceiling prints the integer the
@@ -275,4 +280,116 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
       <tbody>${rows.join("")}</tbody>
     </table></div>
   </details>`;
+}
+
+// ---------- records ----------
+
+/** What the Records card says: how many flights the records are drawn
+ * from, and how many of them this flight holds. */
+export interface RecordsCardInfo {
+  flights: number;
+  held: number;
+}
+
+const RECORDS_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+  ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M7.5 4h9v4.5a4.5 4.5 0 0 1-9 0z"/>' +
+  '<path d="M7.5 6H5.2a1.8 1.8 0 0 0 0 3.6h2.3M16.5 6h2.3a1.8 1.8 0 0 1 0 3.6h-2.3"/>' +
+  '<path d="M12 13v3.5"/><path d="M8.5 20h7"/><path d="M10 16.5h4v3.5h-4z"/></svg>';
+
+/** The star on a record's map pin, on both renderers: filled in the
+ * records' amber, on the same dark casing as everything else drawn over
+ * imagery. */
+export const RECORD_PIN_SVG =
+  '<svg viewBox="0 0 24 24" fill="currentColor" stroke="#0b1020" stroke-width="1.5"' +
+  ' stroke-linejoin="round"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4' +
+  'l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
+
+/** The records' own colour: a medal's gold, which is neither the track's
+ * white, the overlays' grey, the forecast's lavender nor a step on the
+ * altitude ramp. */
+const RECORD_COLOR = "#fbbf24";
+
+/** The card that opens the records panel. Wide, like the tracker card: it
+ * is about every flight, not a reading from this one. */
+function recordsCard(info: RecordsCardInfo, ended: boolean, active: ActiveCard): string {
+  const value = info.held
+    ? `Holds ${info.held} of ${RECORDS.length}`
+    : ended ? "Held none" : "None yet";
+  return `<button type="button" class="fv-card fv-card-wide" data-panel="records"
+    aria-pressed="${active === "records"}">
+    <span class="fv-card-icon" style="color:${RECORD_COLOR}">${RECORDS_ICON}</span>
+    <span class="fv-card-text">
+      <span class="fv-card-label">Records</span>
+      <span class="fv-card-value">${esc(value)}</span>
+      <span class="fv-card-sub">across ${info.flights} flights</span>
+    </span>
+    <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
+  </button>`;
+}
+
+/** What the records panel is built from. */
+export interface RecordsView {
+  /** Every flight with telemetry, in launch order. */
+  summaries: FlightSummary[];
+  holders: Holders;
+  /** The flight on screen: named "this flight" rather than linked. */
+  current: string;
+  units: Units;
+  /** The record whose pin the map has been flown to, if any. */
+  focus: RecordKey | null;
+  /** The address that opens another flight, for the table. */
+  hrefFor(flightId: string): string;
+}
+
+/** "Oct 24", in the reader's zone. Browser only, like the panel. */
+function day(utc: string): string {
+  return fmtLocalDay(parseUtc(utc));
+}
+
+/** The records panel: a tile per record, naming the flight that holds it
+ * and the day it was set, and under them one row per flight with the
+ * record cells lit. A flight id means little on its own, so every row
+ * carries the dates it flew, and every flight but this one is a link to
+ * its page. Pressing a tile is the caller's affair: the map flies to the
+ * record's pin. */
+export function recordsHtml(v: RecordsView): string {
+  const who = (s: FlightSummary) =>
+    s.flight_id === v.current ? '<span class="fv-this">This flight</span>' : esc(s.flight_id);
+  const tiles = RECORDS.flatMap((r) => {
+    const s = v.holders[r.key];
+    if (!s) return [];
+    return [`<button type="button" class="fv-record" data-record="${r.key}"
+      aria-pressed="${v.focus === r.key}" title="Show on the map where it was set">
+      <span class="fv-record-label">${esc(r.label)}</span>
+      <b class="fv-record-value">${esc(r.fmt(s.values[r.key], v.units, s))}</b>
+      <span class="fv-record-who">${who(s)} · ${esc(day(s.at[r.key].utc))}</span>
+    </button>`];
+  });
+  const head = RECORDS.map((r) => `<th>${esc(r.label)}</th>`).join("");
+  const rows = v.summaries.map((s) => {
+    const current = s.flight_id === v.current;
+    const name = current
+      ? `${esc(s.flight_id)} <span class="fv-this">this flight</span>`
+      : `<a href="${esc(v.hrefFor(s.flight_id))}">${esc(s.flight_id)}</a>`;
+    const flown = s.status === "closed"
+      ? `${day(s.firstUtc)} – ${day(s.lastUtc)}`
+      : `${day(s.firstUtc)} · still up`;
+    const cells = RECORDS.map((r) => {
+      const held = v.holders[r.key]?.flight_id === s.flight_id;
+      return `<td class="mono num${held ? " is-record" : ""}">` +
+        `${esc(r.fmt(s.values[r.key], v.units, s))}</td>`;
+    }).join("");
+    return `<tr${current ? ' class="is-current"' : ""}>
+      <th scope="row">${name}</th><td class="mono">${esc(flown)}</td>${cells}</tr>`;
+  });
+  return `<p class="fv-panel-note">Across every flight on this site. Press a
+    record to see where it was set; the map carries every flight's track
+    while this panel is open.</p>
+    <div class="fv-records">${tiles.join("")}</div>
+    <div class="table-scroll"><table class="records-table">
+      <thead><tr><th>Flight</th><th>Flown</th>${head}</tr></thead>
+      <tbody>${rows.join("")}</tbody>
+    </table></div>`;
 }

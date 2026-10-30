@@ -31,11 +31,12 @@ import {
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
+import { esc, RECORD_PIN_SVG } from "./render";
 import {
   buildWeatherToggle, cloudTiles, rainTiles, renderCloudTile,
   type WeatherLayer, type WeatherTiles,
 } from "./weather";
-import type { FlightMeta, GhostPoint, OverlayTrack, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, MapMark, OverlayTrack, TrackPoint } from "./types";
 
 /** Infrared tiles come through this scheme: `pico-ir://<now>/{z}/{x}/{y}`.
  * MapLibre substitutes the tile coordinates into the template before the
@@ -465,10 +466,14 @@ export interface GlobeOpts {
   onOverlayClick?: (flightId: string) => void;
   /** The predicted path ahead of the balloon, as on the flat map. */
   forecast?: Forecast | null;
+  /** Where records were set, a star and a label each, as on the flat map. */
+  marks?: MapMark[];
 }
 
 export interface GlobeHandle {
   remove(): void;
+  /** Ease the camera to a point, [lon, lat], at a zoom. */
+  flyTo(center: [number, number], zoom: number): void;
   getCamera(): {
     center: [number, number]; zoom: number; bearing: number; pitch: number;
   };
@@ -612,6 +617,20 @@ export function renderGlobe(
     }
   });
 
+  // Record pins: the flat map's stars, as DOM markers with the label laid
+  // beside the star the way an overlay's name is beside its beacon.
+  for (const m of opts.marks ?? []) {
+    const size = m.focus ? 30 : 20;
+    const el = document.createElement("div");
+    el.className = "record-pin-icon";
+    el.style.width = el.style.height = `${size}px`;
+    el.innerHTML =
+      `<span class="record-pin${m.focus ? " record-pin-focus" : ""}">${RECORD_PIN_SVG}</span>` +
+      `<span class="overlay-label record-label${m.focus ? " record-label-focus" : ""}" ` +
+      `style="position:absolute;left:${size + 4}px;top:${size / 2 - 9}px">${esc(m.label)}</span>`;
+    new Marker({ element: el }).setLngLat([m.lon, m.lat]).addTo(map);
+  }
+
   if (pos.here) {
     // The pulsing "you are here", same CSS as the flat map's.
     const icon = document.createElement("div");
@@ -648,6 +667,7 @@ export function renderGlobe(
       };
     },
     setCamera: (cam) => map.jumpTo(cam),
+    flyTo: (center, zoom) => map.flyTo({ center, zoom, duration: 1200 }),
     onInteract: (fn) => { interactFns.push(fn); },
     addCorner: (ctl) => { map.addControl(cornerWrap(ctl), "bottom-left"); },
   };

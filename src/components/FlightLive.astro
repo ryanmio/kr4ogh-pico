@@ -32,7 +32,9 @@
  */
 import { withBase } from "../lib/base";
 import { siteConfig, UPSTREAM_REPO } from "../lib/config";
+import { ghostsFor, trackFor } from "../lib/flights";
 import { lastKnown } from "../lib/ghosts";
+import { recordHolders, recordsHeldBy, summarize } from "../lib/records";
 import { sidebarHtml } from "../lib/render";
 import type { FlightMeta, GhostPoint, TrackPoint } from "../lib/types";
 
@@ -55,9 +57,24 @@ const nextHref = mode === "home"
   ? `?feature=${encodeURIComponent(after!.flight_id)}`
   : withBase(`/live/${encodeURIComponent(after!.flight_id)}/`);
 
+// The records across every flight on the site (lib/records.ts), from the
+// committed tracks: a summary each, which is what the page carries for the
+// flights it is not showing. The script recomputes this flight's from the
+// live track. With one flight there is nothing to compare, and no card.
+const summaries = flights.length > 1
+  ? flights.flatMap((f) => {
+    const own = f.flight_id === flight.flight_id;
+    const s = summarize(f, own ? track : trackFor(f), own ? ghosts : ghostsFor(f));
+    return s ? [s] : [];
+  })
+  : [];
+const records = summaries.length > 1
+  ? { flights: summaries.length,
+    held: recordsHeldBy(flight.flight_id, recordHolders(summaries)) }
+  : undefined;
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
-const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts });
+const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts, records });
 const last = lastKnown(track, ghosts);
 // What the About panel needs to say about this instance: whose site, where
 // its source lives, and where the project it is an instance of lives.
@@ -70,6 +87,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   data-track={JSON.stringify(track)}
   data-ghosts={JSON.stringify(ghosts)}
   data-flights={JSON.stringify(flights)}
+  data-summaries={JSON.stringify(summaries)}
   data-mode={mode}
   data-site={JSON.stringify(site)}
 >
@@ -141,26 +159,31 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import { withBase } from "../lib/base";
   import { featureFromSearch, urlWithFeature } from "../lib/feature";
   import { renderMapInto } from "../lib/flightview";
-  import { heardBounds, lastKnown } from "../lib/ghosts";
+  import { unwrapLons } from "../lib/basemap";
+  import { heardBounds, lastKnown, unwrapNear } from "../lib/ghosts";
   import { addCornerControl } from "../lib/map";
   import type { GlobeHandle } from "../lib/globe";
   import {
-    bearingDeg, compassPoint, fmtDuration, fmtInt, fmtUtc, haversineKm, parseUtc,
-    trackStats,
+    bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocalDay, fmtUtc, haversineKm,
+    parseUtc, trackStats,
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
   import {
     overlaysFromSearch, resolveOverlays, urlWithOverlays, type OverlayChoice,
   } from "../lib/overlay";
-  import { sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
+  import {
+    isRecordKey, recordHolders, recordPins, recordsHeldBy, summarize,
+    type FlightSummary, type RecordKey,
+  } from "../lib/records";
+  import { recordsHtml, sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
   import {
     groundSpeedKt, hasSaturatedSpeed, resolveTrackSpeeds, speedText,
     SPEED_CEILING_KT,
   } from "../lib/speed";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type {
-    FlightMeta, GhostPoint, OverlayTrack, SiteConfig, TrackPoint,
+    FlightMeta, GhostPoint, MapMark, OverlayTrack, SiteConfig, TrackPoint,
   } from "../lib/types";
   import {
     panelFromSearch, urlWithPanel, type PanelKind,
@@ -189,6 +212,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
     let ghosts = JSON.parse(root.dataset.ghosts!) as GhostPoint[];
     const flights = JSON.parse(root.dataset.flights!) as FlightMeta[];
+    // Every flight's record summary as built (lib/records.ts); this
+    // flight's is recomputed from the live track, see summaries().
+    const bundledSummaries = JSON.parse(root.dataset.summaries ?? "[]") as FlightSummary[];
     const mode = root.dataset.mode === "home" ? "home" : "permalink";
     // Before anything awaits, so an early tap still marks the page human.
     startAnalytics(() => meta.flight_id);
@@ -245,6 +271,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // reach the cards or the panel.
     let overlayChoice: OverlayChoice | null = overlaysFromSearch(location.search);
     let overlays: OverlayTrack[] = [];
+    // The records panel puts every other flight on the map while it is
+    // open, so a record can be seen where it was set: their tracks, held
+    // apart from the reader's own overlay choice, and the record the map
+    // has been flown to, if any.
+    let recordOverlays: OverlayTrack[] = [];
+    let recordFocus: RecordKey | null = null;
 
     // ---------- which flight ----------
 
@@ -264,7 +296,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       track = [];
       ghosts = [];
       document.title = document.title.replace(/^[^—]*—/, `${meta.callsign} ${meta.flight_id} —`);
-      cardsSlot.innerHTML = sidebarHtml(meta, track, units, null, { pending: true });
+      cardsSlot.innerHTML = sidebarHtml(meta, track, units, null, {
+        pending: true, records: recordsInfo(),
+      });
       try {
         const at = (name: string) =>
           fetch(withBase(`/live/${encodeURIComponent(meta.flight_id)}/${name}`));
@@ -278,21 +312,46 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     /** The committed track and ghosts of another flight, for overlaying.
-     * A fetch that fails leaves an empty overlay rather than no overlay,
-     * so a live one can still be found from launch by the refresh. */
-    async function fetchOverlay(f: FlightMeta): Promise<OverlayTrack> {
+     * Fetched once per flight and shared: the overlay toggle and the
+     * records panel then hold the same object, so a live overlay's refresh
+     * reaches both. A fetch that fails leaves an empty overlay rather than
+     * no overlay, so a live one can still be found from launch by the
+     * refresh; it is not kept, so the next ask tries again. */
+    const fetchedOverlays = new Map<string, Promise<OverlayTrack>>();
+    function fetchOverlay(f: FlightMeta): Promise<OverlayTrack> {
+      const have = fetchedOverlays.get(f.flight_id);
+      if (have) return have;
       const at = (name: string) =>
         fetch(withBase(`/live/${encodeURIComponent(f.flight_id)}/${name}`));
-      try {
-        const [t, g] = await Promise.all([at("track.json"), at("ghosts.json")]);
-        return {
-          meta: f,
-          track: t.ok ? resolveTrackSpeeds(await t.json() as TrackPoint[]) : [],
-          ghosts: g.ok ? await g.json() as GhostPoint[] : [],
-        };
-      } catch {
-        return { meta: f, track: [], ghosts: [] };
-      }
+      const p = (async (): Promise<OverlayTrack> => {
+        try {
+          const [t, g] = await Promise.all([at("track.json"), at("ghosts.json")]);
+          return {
+            meta: f,
+            track: t.ok ? resolveTrackSpeeds(await t.json() as TrackPoint[]) : [],
+            ghosts: g.ok ? await g.json() as GhostPoint[] : [],
+          };
+        } catch {
+          fetchedOverlays.delete(f.flight_id);
+          return { meta: f, track: [], ghosts: [] };
+        }
+      })();
+      fetchedOverlays.set(f.flight_id, p);
+      return p;
+    }
+
+    /** Every other flight's committed track, for the records panel. */
+    async function loadRecordOverlays() {
+      recordOverlays = await Promise.all(
+        flights.filter((f) => f.flight_id !== meta.flight_id).map(fetchOverlay));
+    }
+
+    /** What the map draws under this flight: the reader's overlays, and
+     * every other flight while the records panel is open. */
+    function mapOverlays(): OverlayTrack[] {
+      if (panel !== "records") return overlays;
+      const have = new Set(overlays.map((o) => o.meta.flight_id));
+      return [...overlays, ...recordOverlays.filter((o) => !have.has(o.meta.flight_id))];
     }
 
     /** Bring `overlays` in line with the choice: keep the ones already
@@ -515,7 +574,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
-            ghosts, overlays, forecast, onOverlayClick: openFlight,
+            ghosts, overlays: mapOverlays(), marks: recordMarks(), forecast,
+            onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
             weather: { ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
@@ -534,8 +594,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         }
       }
       const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, ghosts, overlays, forecast, sizing: "fill",
-        onOverlayClick: openFlight,
+        units, metric, ghosts, overlays: mapOverlays(), marks: recordMarks(),
+        forecast, sizing: "fill", onOverlayClick: openFlight,
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return;
@@ -610,12 +670,94 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     /** The card whose panel is open; the highlight promises details below,
      * so it must not light up for coloring alone. */
     function activeCard(): ActiveCard {
-      if (panel === "tracker" || panel === "status") return panel;
+      if (panel === "tracker" || panel === "status" || panel === "records") return panel;
       return panel && isMetricKey(panel) ? panel : null;
     }
 
+    // ---------- records ----------
+
+    /** Every flight's record summary (lib/records.ts): this flight's from
+     * its live track, another flight's from its track when that is on the
+     * map, else as built. In launch order, which is how ties are kept. */
+    function summaries(): FlightSummary[] {
+      return flights.flatMap((f) => {
+        if (f.flight_id === meta.flight_id) {
+          const s = summarize(meta, track, ghosts);
+          return s ? [s] : [];
+        }
+        const o = overlays.find((x) => x.meta.flight_id === f.flight_id)
+          ?? recordOverlays.find((x) => x.meta.flight_id === f.flight_id);
+        const s = o?.track.length ? summarize(o.meta, o.track, o.ghosts) : null;
+        if (s) return [s];
+        const built = bundledSummaries.find((x) => x.flight_id === f.flight_id);
+        return built ? [built] : [];
+      });
+    }
+
+    /** What the Records card says, or nothing with fewer than two flights
+     * to compare. */
+    function recordsInfo() {
+      const all = summaries();
+      if (all.length < 2) return undefined;
+      return { flights: all.length, held: recordsHeldBy(meta.flight_id, recordHolders(all)) };
+    }
+
+    /** The pins on the map while the records panel is open: a star where
+     * each record was set, the focused one larger and naming its flight. */
+    function recordMarks(): MapMark[] {
+      if (panel !== "records") return [];
+      const holders = recordHolders(summaries());
+      return recordPins(holders, units).map((p) => {
+        const focus = recordFocus !== null && p.keys.includes(recordFocus);
+        const s = holders[p.keys[0]!]!;
+        return {
+          flight_id: p.flight_id, utc: p.utc, lat: p.lat, lon: p.lon, focus,
+          label: focus
+            ? `${p.label} · ${s.flight_id} · ${fmtLocalDay(parseUtc(p.utc))}`
+            : p.label,
+        };
+      });
+    }
+
+    /** Fly the map to where a record was set. The reader chose this view,
+     * so a refresh must not fit it away again. */
+    function flyToRecord(key: RecordKey) {
+      const s = recordHolders(summaries())[key];
+      if (!s) return;
+      const at = s.at[key];
+      // Beside this flight's line, not a world away from it (lib/basemap.ts).
+      const lon = unwrapNear(at.lon, unwrapLons(track).at(-1) ?? at.lon);
+      userMoved = true;
+      if (map) map.flyTo([at.lat, lon], 5, { duration: 1.2 });
+      else globe?.flyTo([lon, at.lat], 4);
+      // On a phone the map is above the panel, off screen: bring it up.
+      if (window.matchMedia("(max-width: 899px)").matches) {
+        mapSlot.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    /** The other flights have arrived for the records panel: put them on
+     * the map, unless the panel closed while they were on their way. */
+    async function enterRecords() {
+      await loadRecordOverlays();
+      if (panel === "records") drawMapAgain();
+    }
+
+    function leaveRecords() {
+      recordFocus = null;
+      drawMapAgain(true);
+    }
+
+    function paintRecordTiles() {
+      for (const b of panelBody.querySelectorAll<HTMLButtonElement>("[data-record]")) {
+        b.setAttribute("aria-pressed", String(b.dataset.record === recordFocus));
+      }
+    }
+
     function renderSidebar() {
-      cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard(), { ghosts });
+      cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard(), {
+        ghosts, records: recordsInfo(),
+      });
     }
 
     /** The line under the cards: the newest report, and what kind. */
@@ -850,6 +992,13 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       } else if (panel === "tracker") {
         panelTitle.textContent = `The tracker · ${meta.callsign} ${meta.flight_id}`;
         panelBody.innerHTML = trackerDetailsHtml(meta.tracker);
+      } else if (panel === "records") {
+        const all = summaries();
+        panelTitle.textContent = `Records · ${all.length} flights`;
+        panelBody.innerHTML = recordsHtml({
+          summaries: all, holders: recordHolders(all), current: meta.flight_id,
+          units, focus: recordFocus, hrefFor: flightHref,
+        });
       } else if (panel === "data") {
         panelTitle.textContent = "Telemetry data";
         panelBody.innerHTML =
@@ -906,11 +1055,16 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
      * from a link must not scroll the page out from under the reader before
      * they have seen it, nor rewrite the URL that just asked for it. */
     function showPanel(kind: PanelKind) {
+      const wasRecords = panel === "records";
       panel = kind;
       renderPanel();
       paintCards();
       panelEl.hidden = false;
       root!.classList.add("panel-open");
+      // The records panel brings the other flights onto the map and takes
+      // them away again; a panel opened over it takes them away too.
+      if (kind === "records" && !wasRecords) void enterRecords();
+      else if (wasRecords && kind !== "records") leaveRecords();
     }
 
     function openPanel(kind: PanelKind) {
@@ -924,10 +1078,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function closePanel() {
+      const wasRecords = panel === "records";
       panel = null;
       panelEl.hidden = true;
       root!.classList.remove("panel-open");
       paintCards();
+      if (wasRecords) leaveRecords();
       // Nothing open is the page's own default, so the parameter comes back
       // out rather than being set to a value meaning "none".
       pinInUrl(urlWithPanel(location.href, null));
@@ -1048,6 +1204,19 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       });
     }
 
+    // A record tile: the map flies to where it was set, and the tile stays
+    // lit until it is pressed again or the panel goes.
+    panelBody.addEventListener("click", (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>("[data-record]");
+      if (!btn || panel !== "records" || !isRecordKey(btn.dataset.record)) return;
+      const key = btn.dataset.record;
+      recordFocus = recordFocus === key ? null : key;
+      if (recordFocus) act("Record", { record: key, flight: meta.flight_id });
+      paintRecordTiles();
+      drawMapAgain(true);
+      if (recordFocus) flyToRecord(key);
+    });
+
     // The download button lives inside the re-rendered data panel.
     panelBody.addEventListener("click", (ev) => {
       if (!(ev.target as HTMLElement).closest("#download")) return;
@@ -1152,6 +1321,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // them; the timer then runs whatever the flight's own state, because
     // a closed flight can carry a live one on its map.
     await loadOverlays();
+    // A `?p=records` arrival wants the other flights on the opening draw.
+    if (panel === "records") await loadRecordOverlays();
     update();
     // If wspr.live hangs rather than failing, the bundled track appears
     // anyway; a late answer then lands through the normal refresh path.

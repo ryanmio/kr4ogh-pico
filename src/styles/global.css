@@ -13,6 +13,7 @@
   --accent: #7dd3fc;
   --accent-deep: #38bdf8;
   --live: #34d399;  /* a flight that is up is good news, so green */
+  --record: #fbbf24;  /* a record is a medal, so gold */
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -677,6 +678,73 @@ a.fv-chip { text-decoration: none; }
   max-width: 46rem;
 }
 .fv-tracker a { color: var(--accent); }
+
+/* ----- records ----- */
+
+/* The tiles: one per record, lit while the map is on its pin. */
+.fv-records {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0.45rem; margin-bottom: 0.75rem;
+}
+.fv-record {
+  min-width: 0; display: flex; flex-direction: column; gap: 0.06rem;
+  font: inherit; text-align: left; color: var(--text); cursor: pointer;
+  background: rgba(148, 163, 184, 0.08); border: 1px solid transparent;
+  border-radius: 10px; padding: 0.45rem 0.6rem;
+  transition: border-color 120ms ease;
+}
+.fv-record:hover { border-color: var(--glass-border); }
+.fv-record[aria-pressed="true"] {
+  border-color: rgba(251, 191, 36, 0.7); background: rgba(251, 191, 36, 0.1);
+}
+.fv-record-label {
+  font-size: 0.62rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-faint);
+}
+.fv-record-value {
+  font-family: var(--mono); font-size: 0.98rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-record-who {
+  font-family: var(--mono); font-size: 0.66rem; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fv-this { color: var(--accent); }
+
+/* One row per flight under the tiles, the record cells in the records'
+   own gold. Dressed like the telemetry table, in the panel's dark. */
+.records-table {
+  width: 100%; border-collapse: collapse; font-size: 0.78rem;
+  background: rgba(15, 23, 42, 0.5);
+}
+.records-table th, .records-table td {
+  padding: 0.35rem 0.6rem; text-align: left; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.records-table thead th {
+  font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.records-table th:nth-child(n + 3), .records-table td:nth-child(n + 3) { text-align: right; }
+.records-table tbody th { font-family: var(--mono); font-weight: 600; color: var(--text-dim); }
+.records-table tbody tr:last-child th,
+.records-table tbody tr:last-child td { border-bottom: 0; }
+.records-table a { color: var(--accent); text-decoration: none; }
+.records-table a:hover { text-decoration: underline; }
+.records-table td.is-record { color: var(--record); font-weight: 600; }
+.records-table tr.is-current th { color: var(--text); }
+
+/* The pin: a star in the records' gold on a dark casing, its label in the
+   overlay label's dress. The focused one is bigger, and so is its label's
+   claim: it names the flight. */
+.record-pin-icon { background: none; border: none; }
+.record-pin {
+  display: block; width: 100%; height: 100%; color: var(--record);
+  filter: drop-shadow(0 1px 2px rgba(5, 10, 20, 0.8));
+}
+.record-pin svg { display: block; width: 100%; height: 100%; }
+.record-label { color: #fde68a; border-color: rgba(251, 191, 36, 0.45); }
+.record-label-focus { color: var(--record); border-color: var(--record); }
 
 /* ----- leaflet furniture in the full-page view ----- */
 

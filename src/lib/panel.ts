@@ -17,11 +17,12 @@
 import { isMetricKey, type MetricKey } from "./metrics";
 
 /** Everything the bottom panel can show: a metric's chart, or one of the
- * fixed panels behind the status card, the tracker card and the top-bar
- * chips. */
-export type PanelKind = MetricKey | "status" | "tracker" | "data" | "about";
+ * fixed panels behind the status card, the tracker card, the records card
+ * and the chips under the cards. */
+export type PanelKind =
+  | MetricKey | "status" | "tracker" | "records" | "data" | "about";
 
-const FIXED = ["status", "tracker", "data", "about"] as const;
+const FIXED = ["status", "tracker", "records", "data", "about"] as const;
 
 export function isPanelKind(v: unknown): v is PanelKind {
   return isMetricKey(v) || (FIXED as readonly unknown[]).includes(v);
@@ -37,6 +38,7 @@ export const URL_PARAM = "p";
 const ALIASES: Record<string, PanelKind | null> = {
   signal: "status",
   telemetry: "data",
+  record: "records",
   none: null, n: null, off: null, closed: null,
 };
 

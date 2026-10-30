@@ -98,3 +98,15 @@ export interface SiteConfig {
   /** The "Source & data" link. */
   repo: string;
 }
+
+/** A pin on the map at one fix, with a label beside it: where a record was
+ * set (lib/records.ts). Both renderers draw it as a star; the focused one
+ * larger, since the map has just been flown to it. */
+export interface MapMark {
+  flight_id: string;
+  utc: string;
+  lat: number;
+  lon: number;
+  label: string;
+  focus?: boolean;
+}

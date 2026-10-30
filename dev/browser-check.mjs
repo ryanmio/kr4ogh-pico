@@ -25,6 +25,10 @@ page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.
 // The home page: the featured flight, which has to be a live one for the
 // refresh and weather steps below to have anything to do.
 await page.goto("http://localhost:4321/", { waitUntil: "networkidle" });
+// With more than one flight the column ends in a Records card.
+const flightCount = await page.evaluate(() =>
+  JSON.parse(document.querySelector(".fv").dataset.flights).length);
+const expectedCards = 8 + (flightCount > 1 ? 1 : 0);
 
 const probe = async (label) => {
   const r = await page.evaluate(() => {
@@ -108,6 +112,50 @@ const hasDetails = await page.evaluate(() =>
 const trackerOk = tracker.open && tracker.rangeHidden
   && (hasDetails ? tracker.minis > 5 : tracker.minis === 0);
 await page.evaluate(() => document.getElementById("panel-close").click());
+
+// The records card opens a panel about every flight, and while it is open
+// the map carries the other flights and a star where each record was set.
+// Pressing a record lights its tile, grows its star and flies the map to
+// it; both survive a refresh; closing the panel takes the stars away.
+let recordsOk = true;
+if (flightCount > 1) {
+  const recordsProbe = async (label) => {
+    const r = await page.evaluate(() => ({
+      open: !document.getElementById("panel").hidden,
+      title: document.getElementById("panel-title")?.textContent?.trim(),
+      tiles: document.querySelectorAll(".fv-record").length,
+      lit: document.querySelector('.fv-record[aria-pressed="true"]')?.dataset.record,
+      rows: document.querySelectorAll(".records-table tbody tr").length,
+      pins: document.querySelectorAll(".record-pin").length,
+      focused: document.querySelectorAll(".record-pin-focus").length,
+      card: document.querySelector('[data-panel="records"]')?.getAttribute("aria-pressed"),
+    }));
+    console.log(`${label}: open=${r.open} title=${r.title} tiles=${r.tiles} ` +
+      `lit=${r.lit} rows=${r.rows} pins=${r.pins} focused=${r.focused} card=${r.card}`);
+    return r;
+  };
+  await page.evaluate(() => document.querySelector('[data-panel="records"]').click());
+  await page.waitForTimeout(2500);
+  const rec = await recordsProbe("records panel    ");
+  await page.evaluate(() =>
+    document.querySelector('.fv-record[data-record="highest"]').click());
+  await page.waitForTimeout(2000);
+  const recLit = await recordsProbe("records, highest ");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await page.waitForTimeout(4000);
+  const recAfter = await recordsProbe("records, refresh ");
+  await page.screenshot({ path: "dev/browser-check-records.png", fullPage: false });
+  await page.evaluate(() => document.getElementById("panel-close").click());
+  await page.waitForTimeout(1000);
+  const recClosed = await recordsProbe("records, closed  ");
+  recordsOk = rec.open && rec.title.startsWith("Records") && rec.tiles === 7
+    && rec.rows >= 2 && rec.pins > 0 && rec.focused === 0 && rec.card === "true"
+    && recLit.lit === "highest" && recLit.focused === 1
+    && recAfter.lit === "highest" && recAfter.focused === 1
+    && !recClosed.open && recClosed.pins === 0 && recClosed.card === "false";
+} else {
+  console.log("records          : one flight on the site, no card (skipped)");
+}
 
 // The weather layer is the other thing a rebuilt map can lose. Its control
 // is created fresh with each map, so the chosen layer has to be handed back
@@ -257,22 +305,24 @@ const linkOk =
   !linkClosed.open && linkClosed.search === "";
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  // six metrics, the Tracker card and the Signal card, and a refresh keeps
-  // every card it started with
-  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 8
+  // six metrics, the Tracker card and the Signal card, plus the Records
+  // card with several flights, and a refresh keeps every card it started
+  // with
+  && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === expectedCards
   && twice.cards === first.cards
-  && panelOk && trackerOk && weatherOk && globeOk && linkOk && wheelOk
+  && panelOk && trackerOk && recordsOk && weatherOk && globeOk && linkOk && wheelOk
   && errors.length === 0;
 // Name what failed: a bare "broken" sends the reader back through the log.
 const failed = Object.entries({
   map: after.hasLeafletPane && after.height > 200 && after.tiles > 0,
-  cards: twice.hasLeafletPane && twice.tiles > 0 && twice.cards === 8
+  cards: twice.hasLeafletPane && twice.tiles > 0 && twice.cards === expectedCards
     && twice.cards === first.cards,
-  panel: panelOk, tracker: trackerOk, weather: weatherOk, globe: globeOk,
+  panel: panelOk, tracker: trackerOk, records: recordsOk, weather: weatherOk,
+  globe: globeOk,
   link: linkOk, wheel: wheelOk, errors: errors.length === 0,
 }).filter(([, pass]) => !pass).map(([name]) => name);
 console.log(ok
-  ? "\nRESULT: map, panel, weather and globe survive refreshes; links share the panel"
+  ? "\nRESULT: map, panel, records, weather and globe survive refreshes; links share the panel"
   : `\nRESULT: STILL BROKEN (${failed.join(", ")})`);
 await browser.close();
 process.exit(ok ? 0 : 1);

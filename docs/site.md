@@ -110,7 +110,7 @@ alike.
 What is on screen travels in the link. `?u=i` pins imperial, `?w=c` the
 cloud layer, and `?p=speed` the open panel — a card's own name (`journey`,
 `altitude`, `speed`, `voltage`, `temperature`, `receivers`), or `status`
-(also `signal`), `tracker`, `data`, `about`. Opening a metric's panel colors
+(also `signal`), `tracker`, `records`, `data`, `about`. Opening a metric's panel colors
 the map by it, so the link reproduces both. A link with no `p` opens
 nothing, which is what closing a panel leaves behind: an open panel is where
 the reader is right now, not a preference, so unlike the units and the
@@ -277,6 +277,43 @@ turns it off, remembered per browser; `?f=n` in a link hides it and `?f=y`
 shows it, on the same rule as `?w=`. Closed flights have no line and no
 button: the balloon is nowhere, so there is nothing to predict.
 
+## Records
+
+The Records card, last in the column, opens a panel of the records across
+every flight on the site: the longest flight, the farthest travelled, the
+farthest from launch, the highest, the fastest, the most receivers on one
+report and the coldest tracker, each naming the flight that holds it and
+the day it was set, and under them one row per flight with the record
+cells lit. A flight id means little on its own, so every row carries the
+dates it flew, and every flight but the one on screen is a link to its
+page. `?p=records` opens the panel from a link like any other. With one
+flight on the site there is nothing to compare and no card.
+
+A record is a place as much as a number, so while the panel is open the
+map carries every flight's track, in the overlay grey, with a star at the
+fix where each record was set and the record on a label beside it.
+Pressing a record flies the map to its star; a track or beacon opens that
+flight, as an overlay does. Records set at the same fix share one star,
+since two labels on one spot would cover each other: a flight whose last
+fix ends both the longest flight and the farthest gets one star saying
+both.
+
+Nothing is typed in. `src/lib/records.ts` reduces each track to a summary,
+one value per record and the fix it happened at, by the same code the
+cards use, so a record never disagrees with the flight's own page: time
+aloft counts the ghosts as the Signal card does, speed carries the floor
+where the telemetry field saturated and is shown with the same trailing
+`+`, and a record changes hands only when beaten, never matched, so the
+earlier flight keeps a tie. The build runs it over the committed tracks and
+embeds the summaries, a few numbers per flight rather than every track; the
+browser runs it again over the live track, so a flight still up moves its
+own records with every refresh, and over another flight's track whenever
+that is on the map.
+
+```sh
+npm run records-check   # the records as the site would show them
+```
+
 ## The decoder
 
 `src/lib/wspr/` is a TypeScript port of the Python in `tool/picolog/` —
@@ -337,6 +374,7 @@ npm run build          # static output in dist/
 npm run live-check     # fetch + decode the live flight in the terminal;
                        # -- 6 F4B for a named flight, closed ones too
 npm run speed-check    # derived speeds above the telemetry ceiling
+npm run records-check  # the records across the committed tracks
 npm run browser-check  # drive the page in Chrome: map draws, survives refresh
 ```
 
@@ -394,6 +432,7 @@ the page and leaves, or a script calling `.click()`, sends none of them.
 | `Panel` | `panel`, `flight` | a card or chip opens a panel |
 | `Chart read` | `panel`, `flight` | the pointer crosses a chart; once per panel per load |
 | `Range` | `range`, `panel` | a chart range is picked |
+| `Record` | `record`, `flight` | a record tile is pressed; the map flies to it |
 | `Map moved` | `view`, `flight` | the first pan or zoom of a load |
 | `Map spot` | `view`, `flight` | the first spot tooltip of a load |
 | `View` / `Weather` / `Forecast` / `Overlay` | the new setting, `flight` | that switch is flipped |

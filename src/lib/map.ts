@@ -12,9 +12,10 @@ import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
+import { esc, RECORD_PIN_SVG } from "./render";
 import { speedText } from "./speed";
 import { altitude as fmtAltitude, type Units } from "./units";
-import type { FlightMeta, GhostPoint, OverlayTrack, TrackPoint } from "./types";
+import type { FlightMeta, GhostPoint, MapMark, OverlayTrack, TrackPoint } from "./types";
 
 export interface MapOptions {
   units?: Units;
@@ -29,6 +30,8 @@ export interface MapOptions {
   /** The predicted path ahead of the balloon, drawn dotted from the newest
    * report. See lib/forecast.ts. */
   forecast?: Forecast | null;
+  /** Where records were set, a star and a label each. See lib/records.ts. */
+  marks?: MapMark[];
   /** What the spots are colored by. */
   metric?: MetricKey;
   /** "fit" sizes the box to the track (article-style pages); "fill" leaves
@@ -160,6 +163,21 @@ export function renderMap(
 
   // Under everything of this flight's: context, not the subject.
   for (const o of overlays) drawOverlay(map, o.meta, o.geo, opts.onOverlayClick);
+
+  if (opts.marks?.length) {
+    // A pin sits on the line it belongs to: at that flight's own unwrapped
+    // longitude for the fix, which past the antimeridian is a world away
+    // from the raw one. A flight not on the map is unwrapped beside this one.
+    const ref = hereLatlng?.lng ?? overlays[0]?.geo.hereLatlng?.lng ?? 0;
+    drawMarks(map, opts.marks, (m) => {
+      const o = overlays.find((x) => x.meta.flight_id === m.flight_id);
+      const own = m.flight_id === meta.flight_id
+        ? { track, latlngs }
+        : o ? { track: o.track, latlngs: o.geo.latlngs } : null;
+      const i = own ? own.track.findIndex((p) => p.utc === m.utc) : -1;
+      return i >= 0 ? own!.latlngs[i]! : L.latLng(m.lat, unwrapNear(m.lon, ref));
+    });
+  }
 
   if (!hereLatlng || !here) {
     // Nothing of this flight's to draw yet; the overlays are the view.
@@ -462,6 +480,33 @@ function drawOverlay(
       L.DomEvent.stopPropagation(e);
       onClick(meta.flight_id);
     });
+  }
+}
+
+/** Record pins (lib/records.ts): a star at the fix where a record was set,
+ * with the record on a label beside it, the way an overlay's beacon carries
+ * its name. The focused one is larger and its label names the flight. DOM
+ * markers, so they ride over the canvas and are never buried under the
+ * spots; not interactive, so the spot beneath still answers a hover. */
+function drawMarks(
+  map: L.Map, marks: MapMark[], at: (m: MapMark) => L.LatLng,
+): void {
+  for (const m of marks) {
+    const size = m.focus ? 30 : 20;
+    L.marker(at(m), {
+      icon: L.divIcon({
+        className: "record-pin-icon",
+        html: `<span class="record-pin${m.focus ? " record-pin-focus" : ""}">${RECORD_PIN_SVG}</span>`,
+        iconSize: [size, size],
+      }),
+      keyboard: false,
+      interactive: false,
+      zIndexOffset: m.focus ? 2000 : 1000,
+    }).bindTooltip(esc(m.label), {
+      permanent: true, direction: "right", offset: [size / 2 + 3, 0],
+      className: `overlay-label record-label${m.focus ? " record-label-focus" : ""}`,
+      interactive: false,
+    }).addTo(map);
   }
 }
 
