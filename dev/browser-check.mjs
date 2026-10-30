@@ -127,7 +127,11 @@ if (flightCount > 1) {
       lit: document.querySelector('.fv-record[aria-pressed="true"]')?.dataset.record,
       rows: document.querySelectorAll(".records-table tbody tr").length,
       pins: document.querySelectorAll(".record-pin").length,
-      focused: document.querySelectorAll(".record-pin-focus").length,
+      // Distinct records, not pins: every pin is drawn once per copy of
+      // the world the reader can pan to (worldCopies in lib/map.ts), so
+      // the focused record alone is three or more pins.
+      focused: new Set([...document.querySelectorAll(".record-label-focus")]
+        .map((e) => e.textContent)).size,
       card: document.querySelector('[data-panel="records"]')?.getAttribute("aria-pressed"),
     }));
     console.log(`${label}: open=${r.open} title=${r.title} tiles=${r.tiles} ` +

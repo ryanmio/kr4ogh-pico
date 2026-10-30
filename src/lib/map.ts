@@ -1,6 +1,15 @@
 /** Leaflet track map. Points are colored by a selectable metric (altitude by
  * default); longitudes are unwrapped so a Pacific crossing draws as one
- * continuous line instead of jumping across the antimeridian. */
+ * continuous line instead of jumping across the antimeridian.
+ *
+ * The map is a treadmill: pan east for ever and the world comes round
+ * again, and no meridian is ever on screen twice. Leaflet repeats the tiles
+ * across copies of the world by itself and, with worldCopyJump, snaps a
+ * drag that crosses the seam back to the home copy. It never repeats the
+ * vectors or markers, so everything drawn here is drawn once per copy the
+ * reader can reach (worldCopies): a lap that crosses the seam then arrives
+ * at a launch site with the launch dot on it, and the snap is invisible
+ * because the copy that was on screen is replaced by an identical one. */
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -115,15 +124,25 @@ export function renderMap(
     ? forecastLatlngs(opts.forecast, latlngs.at(-1)!.lng) : [];
   const fitPts = [...overlays.flatMap((o) => o.geo.fitPts), ...geo.fitPts];
   // Worked out before the map exists, because on "fit" pages the box has to
-  // be the right height before Leaflet measures it.
-  const fitted = fitPts.length > 0 ? fitBoundsFor(fitPts) : null;
+  // be the right height before Leaflet measures it. Brought home to the
+  // copy of the world around longitude zero, where a drag keeps the view:
+  // a track that has passed the antimeridian is centred a world away in
+  // its own coordinates, and opening there would mean the first drag
+  // jumps a world (invisibly, but it also costs a copy of everything).
+  const fitted = fitPts.length > 0 ? homeCopy(fitBoundsFor(fitPts)) : null;
   if (fitted && !fill) fitHeightToBounds(el, fitted);
+  // Every longitude anything is drawn at, for the copies of the world.
+  const everyLon = [
+    ...allLons, ...overlays.flatMap((o) => o.geo.lons), ...fc.map((p) => p.lng),
+  ];
+  const worlds = worldCopies(everyLon);
 
   const map = L.map(el, {
     preferCanvas: true,
     // Replaced below by a continuous handler; see smoothWheelZoom.
     scrollWheelZoom: false,
-    worldCopyJump: false,
+    // A drag across the seam snaps back to the home copy; see worldCopies.
+    worldCopyJump: true,
     // In the full-page view the top corners are under the floating header,
     // so the zoom control moves to the right edge below it.
     zoomControl: !fill,
@@ -145,11 +164,11 @@ export function renderMap(
   }).addTo(map);
 
   if (meta.launch_lat != null && meta.launch_lon != null) {
-    L.circleMarker([meta.launch_lat, meta.launch_lon], {
+    const launch = L.latLng(meta.launch_lat, meta.launch_lon);
+    worlds.add(map, (at) => L.circleMarker(at(launch), {
       radius: 8, color: "#e2e8f0", weight: 2, fillColor: "#0b1020",
       fillOpacity: 1,
-    }).bindTooltip(`Launch${meta.launch_utc ? " · " + fmtLocal(meta.launch_utc) : ""}`)
-      .addTo(map);
+    }).bindTooltip(`Launch${meta.launch_utc ? " · " + fmtLocal(meta.launch_utc) : ""}`));
   }
 
   if (!fitted) {
@@ -162,14 +181,14 @@ export function renderMap(
   }
 
   // Under everything of this flight's: context, not the subject.
-  for (const o of overlays) drawOverlay(map, o.meta, o.geo, opts.onOverlayClick);
+  for (const o of overlays) drawOverlay(map, worlds, o.meta, o.geo, opts.onOverlayClick);
 
   if (opts.marks?.length) {
     // A pin sits on the line it belongs to: at that flight's own unwrapped
     // longitude for the fix, which past the antimeridian is a world away
     // from the raw one. A flight not on the map is unwrapped beside this one.
     const ref = hereLatlng?.lng ?? overlays[0]?.geo.hereLatlng?.lng ?? 0;
-    drawMarks(map, opts.marks, (m) => {
+    drawMarks(map, worlds, opts.marks, (m) => {
       const o = overlays.find((x) => x.meta.flight_id === m.flight_id);
       const own = m.flight_id === meta.flight_id
         ? { track, latlngs }
@@ -188,33 +207,34 @@ export function renderMap(
   // A dark casing under a light line: over satellite imagery, and over a
   // weather layer, a single thin grey line vanishes. The casing separates
   // the path from whatever is beneath it.
-  L.polyline(line, { color: "#0b1020", weight: 7, opacity: 0.5 }).addTo(map);
-  L.polyline(line, { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }).addTo(map);
+  worlds.add(map, (at) => L.polyline(line.map(at), { color: "#0b1020", weight: 7, opacity: 0.5 }));
+  worlds.add(map, (at) => L.polyline(line.map(at), { color: "#e2e8f0", weight: 2.6, opacity: 0.9 }));
   // The tail is dashed and never joins the line: a grid square is a claim
   // of where the balloon was to within 80 km, and the solid line is a claim
   // of 4. From the last fix out to the newest ghost, or ghost to ghost when
   // no fix has been decoded at all yet.
   if (tailLatlngs.length) {
     const tailLine = arc([...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs]);
-    L.polyline(tailLine, { color: "#0b1020", weight: 6, opacity: 0.4 }).addTo(map);
-    L.polyline(tailLine, {
+    worlds.add(map, (at) =>
+      L.polyline(tailLine.map(at), { color: "#0b1020", weight: 6, opacity: 0.4 }));
+    worlds.add(map, (at) => L.polyline(tailLine.map(at), {
       color: "#e2e8f0", weight: 2, opacity: 0.8, dashArray: "4 7",
-    }).addTo(map);
+    }));
   }
   // The square the balloon is somewhere in, when a ghost is the newest
   // report: the beacon alone would claim a precision the report lacks.
   if (here.coarse) {
-    L.rectangle(
+    worlds.add(map, (at) => L.rectangle(
       L.latLngBounds(
-        L.latLng(hereLatlng.lat - 0.5, hereLatlng.lng - 1),
-        L.latLng(hereLatlng.lat + 0.5, hereLatlng.lng + 1),
+        at(L.latLng(hereLatlng.lat - 0.5, hereLatlng.lng - 1)),
+        at(L.latLng(hereLatlng.lat + 0.5, hereLatlng.lng + 1)),
       ),
       { color: "#e2e8f0", weight: 1, opacity: 0.5, dashArray: "3 5", fill: false,
         interactive: false },
-    ).addTo(map);
+    ));
   }
 
-  if (fc.length) drawForecast(map, opts.forecast!, fc, units);
+  if (fc.length) drawForecast(map, worlds, opts.forecast!, fc, units);
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
@@ -257,51 +277,54 @@ export function renderMap(
         ? [{ p, latlng: latlngs[i]! }] : []);
     const sizeOf = (p: TrackPoint) =>
       p === shown[0]!.p || p === shown[shown.length - 1]!.p ? SPOT_RADIUS : radius;
+    // Once per copy of the world. The copies never overlap, so the order
+    // of the passes below only matters within one.
+    for (const at of worlds.into) {
+      // Ghosts go under everything: hollow, dim, a little smaller than a
+      // spot, and never thinned -- there are only ever a handful. The one
+      // the beacon sits on keeps a spot's full size, the way the two ends
+      // of the track do.
+      ghosts.forEach((g, i) => {
+        const isHere = here.coarse && i === ghosts.length - 1;
+        L.circleMarker(at(ghostLatlngs[i]!), {
+          radius: isHere ? SPOT_RADIUS : Math.max(GHOST_MIN_RADIUS, radius - 1.5),
+          color: GHOST_STROKE, weight: 1.2, opacity: 0.8,
+          fillColor: SPOT_OUTLINE, fillOpacity: 0.45,
+        }).bindTooltip(
+          `${fmtLocal(g.utc)}<br>heard in ${g.grid4} by ` +
+          `${g.rx_station_count} station${g.rx_station_count === 1 ? "" : "s"}` +
+          " · no telemetry",
+        ).addTo(spots);
+      });
 
-    // Ghosts go under everything: hollow, dim, a little smaller than a
-    // spot, and never thinned -- there are only ever a handful. The one
-    // the beacon sits on keeps a spot's full size, the way the two ends
-    // of the track do.
-    ghosts.forEach((g, i) => {
-      const isHere = here.coarse && i === ghosts.length - 1;
-      L.circleMarker(ghostLatlngs[i]!, {
-        radius: isHere ? SPOT_RADIUS : Math.max(GHOST_MIN_RADIUS, radius - 1.5),
-        color: GHOST_STROKE, weight: 1.2, opacity: 0.8,
-        fillColor: SPOT_OUTLINE, fillOpacity: 0.45,
-      }).bindTooltip(
-        `${fmtLocal(g.utc)}<br>heard in ${g.grid4} by ` +
-        `${g.rx_station_count} station${g.rx_station_count === 1 ? "" : "s"}` +
-        " · no telemetry",
-      ).addTo(spots);
-    });
-
-    // Outlines first, all of them, then the fills. Drawn per spot instead,
-    // each outline lands on its neighbours' fill wherever fixes overlap, and
-    // forty of them compound into the dark colourless mass that made a slow
-    // stretch of the flight unreadable. In two passes the outlines merge
-    // into one silhouette around the run and the fills cover the inside of
-    // it, so an outline is only ever seen where there is something to
-    // outline: around the group, and around a spot standing on its own.
-    for (const { p, latlng } of shown) {
-      L.circleMarker(latlng, {
-        radius: sizeOf(p) + SPOT_OUTLINE_PX,
-        stroke: false,
-        fillColor: SPOT_OUTLINE,
-        fillOpacity: 1,
-        interactive: false,
-      }).addTo(spots);
-    }
-    for (const { p, latlng } of shown) {
-      const raw = metric.raw(p);
-      L.circleMarker(latlng, {
-        radius: sizeOf(p),
-        stroke: false,
-        fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
-        fillOpacity: 1,
-      }).bindTooltip(
-        `${fmtLocal(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
-        ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V`,
-      ).addTo(spots);
+      // Outlines first, all of them, then the fills. Drawn per spot instead,
+      // each outline lands on its neighbours' fill wherever fixes overlap, and
+      // forty of them compound into the dark colourless mass that made a slow
+      // stretch of the flight unreadable. In two passes the outlines merge
+      // into one silhouette around the run and the fills cover the inside of
+      // it, so an outline is only ever seen where there is something to
+      // outline: around the group, and around a spot standing on its own.
+      for (const { p, latlng } of shown) {
+        L.circleMarker(at(latlng), {
+          radius: sizeOf(p) + SPOT_OUTLINE_PX,
+          stroke: false,
+          fillColor: SPOT_OUTLINE,
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(spots);
+      }
+      for (const { p, latlng } of shown) {
+        const raw = metric.raw(p);
+        L.circleMarker(at(latlng), {
+          radius: sizeOf(p),
+          stroke: false,
+          fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
+          fillOpacity: 1,
+        }).bindTooltip(
+          `${fmtLocal(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
+          ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V`,
+        ).addTo(spots);
+      }
     }
   };
 
@@ -310,7 +333,7 @@ export function renderMap(
   // metric-coloured dot for this same fix is underneath and has to stay
   // readable, or the newest point is the one point whose value you cannot
   // see.
-  L.marker(hereLatlng, {
+  worlds.add(map, (at) => L.marker(at(hereLatlng), {
     icon: L.divIcon({
       className: "last-pos-icon",
       html: `<span class="last-pos-pulse${meta.status === "closed" ? " last-pos-still" : ""}"></span>`,
@@ -318,7 +341,7 @@ export function renderMap(
     }),
     keyboard: false,
     interactive: false,
-  }).addTo(map);
+  }));
 
   // In the full-page view the card column floats over the map's left edge
   // and the header over its top, so the fit leaves them room; otherwise the
@@ -331,20 +354,17 @@ export function renderMap(
   if (!fill) coverBoxWithWorld(map, el, fitted!);
 
   // Keep the world covering the box at every zoom and pan: no zooming out
-  // past the point where the world is shorter than the box, and no panning
-  // off the top or bottom of it. Otherwise both leave bare strips. Longitude
-  // is left loose, with room for the wrapped copies a multi-lap track needs.
-  map.setMinZoom(Math.log2(el.clientHeight / 256));
+  // past the point where the world is shorter or narrower than the box,
+  // and no panning off the top or bottom of it. Otherwise both leave bare
+  // strips, and a world narrower than the box would put the same meridian
+  // on screen twice. Longitude is left free: the treadmill has no ends.
+  map.setMinZoom(Math.log2(Math.max(el.clientWidth, el.clientHeight) / 256));
   // Now that the map is at its fitted zoom, the spots know how far apart
   // they land on screen. Every zoom after this one re-thins them.
   drawSpots();
   map.on("zoomend", drawSpots);
-  const everyLon = [
-    ...allLons, ...overlays.flatMap((o) => o.geo.lons), ...fc.map((p) => p.lng),
-  ];
   map.setMaxBounds(L.latLngBounds(
-    L.latLng(-85, Math.min(...everyLon) - 360),
-    L.latLng(85, Math.max(...everyLon) + 360),
+    L.latLng(-85, -FREE_LON), L.latLng(85, FREE_LON),
   ));
 
   // The legend names the metric the spots are colored by. The desktop live
@@ -381,7 +401,7 @@ interface Geometry {
   tailLatlngs: L.LatLng[];
   here: ReturnType<typeof lastKnown>;
   hereLatlng: L.LatLng | undefined;
-  /** Every unwrapped longitude, for the pan limits. */
+  /** Every unwrapped longitude, for the copies of the world. */
   lons: number[];
   /** Every position with the balloon last: fitRegion's contract. */
   fitPts: L.LatLng[];
@@ -422,7 +442,7 @@ function arc(latlngs: L.LatLng[]): L.LatLng[] {
  * ghosts -- those are the detail of the flight being read, and a second
  * set would be noise over the first. */
 function drawOverlay(
-  map: L.Map, meta: FlightMeta, geo: Geometry,
+  map: L.Map, worlds: Worlds, meta: FlightMeta, geo: Geometry,
   onClick?: (flightId: string) => void,
 ): void {
   const { latlngs, line, tailLatlngs, here, hereLatlng } = geo;
@@ -440,47 +460,51 @@ function drawOverlay(
     return layer;
   };
   if (line.length) {
-    L.polyline(line, { color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false })
-      .addTo(map);
-    wire(L.polyline(line, {
+    worlds.add(map, (at) => L.polyline(line.map(at), {
+      color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false,
+    }));
+    worlds.add(map, (at) => wire(L.polyline(line.map(at), {
       color: OVERLAY_COLOR, weight: 2, opacity: 0.75,
       interactive: clickable, bubblingMouseEvents: false,
-    })).bindTooltip(`${meta.callsign} ${meta.flight_id}${hint}`, { sticky: true }).addTo(map);
+    })).bindTooltip(`${meta.callsign} ${meta.flight_id}${hint}`, { sticky: true }));
   }
   if (tailLatlngs.length) {
     const tailLine = arc([...(latlngs.length ? [latlngs.at(-1)!] : []), ...tailLatlngs]);
-    wire(L.polyline(tailLine, {
+    worlds.add(map, (at) => wire(L.polyline(tailLine.map(at), {
       color: OVERLAY_COLOR, weight: 1.6, opacity: 0.7, dashArray: "4 7",
       interactive: clickable, bubblingMouseEvents: false,
-    })).bindTooltip(`${meta.callsign} ${meta.flight_id}${hint}`, { sticky: true }).addTo(map);
+    })).bindTooltip(`${meta.callsign} ${meta.flight_id}${hint}`, { sticky: true }));
   }
-  wire(L.circleMarker(hereLatlng, {
+  worlds.add(map, (at) => wire(L.circleMarker(at(hereLatlng), {
     radius: 4.5, color: SPOT_OUTLINE, weight: 1.5, fillColor: OVERLAY_COLOR,
     fillOpacity: 1, bubblingMouseEvents: false,
   })).bindTooltip(
     `${meta.callsign} ${meta.flight_id} · ${fmtLocal(here.utc)}` +
     (here.coarse ? " · grid square only" : "") + hint,
-  ).addTo(map);
-  const beacon = L.marker(hereLatlng, {
-    icon: L.divIcon({
-      className: "last-pos-icon",
-      html: `<span class="last-pos-pulse last-pos-pulse-overlay${
-        meta.status === "closed" ? " last-pos-still" : ""}"></span>`,
-      iconSize: [22, 22],
-    }),
-    keyboard: false,
-    interactive: false,
-  }).bindTooltip(meta.flight_id, {
-    permanent: true, direction: "right", offset: [14, 0],
-    className: "overlay-label" + (clickable ? " overlay-label-link" : ""),
-    interactive: clickable,
-  }).addTo(map);
-  if (onClick) {
-    beacon.getTooltip()?.on("click", (e) => {
-      L.DomEvent.stopPropagation(e);
-      onClick(meta.flight_id);
+  ));
+  worlds.add(map, (at) => {
+    const beacon = L.marker(at(hereLatlng), {
+      icon: L.divIcon({
+        className: "last-pos-icon",
+        html: `<span class="last-pos-pulse last-pos-pulse-overlay${
+          meta.status === "closed" ? " last-pos-still" : ""}"></span>`,
+        iconSize: [22, 22],
+      }),
+      keyboard: false,
+      interactive: false,
+    }).bindTooltip(meta.flight_id, {
+      permanent: true, direction: "right", offset: [14, 0],
+      className: "overlay-label" + (clickable ? " overlay-label-link" : ""),
+      interactive: clickable,
     });
-  }
+    if (onClick) {
+      beacon.getTooltip()?.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        onClick(meta.flight_id);
+      });
+    }
+    return beacon;
+  });
 }
 
 /** Record pins (lib/records.ts): a star at the fix where a record was set,
@@ -489,11 +513,12 @@ function drawOverlay(
  * markers, so they ride over the canvas and are never buried under the
  * spots; not interactive, so the spot beneath still answers a hover. */
 function drawMarks(
-  map: L.Map, marks: MapMark[], at: (m: MapMark) => L.LatLng,
+  map: L.Map, worlds: Worlds, marks: MapMark[], placeOf: (m: MapMark) => L.LatLng,
 ): void {
   for (const m of marks) {
     const size = m.focus ? 30 : 20;
-    L.marker(at(m), {
+    const place = placeOf(m);
+    worlds.add(map, (at) => L.marker(at(place), {
       icon: L.divIcon({
         className: "record-pin-icon",
         html: `<span class="record-pin${m.focus ? " record-pin-focus" : ""}">${RECORD_PIN_SVG}</span>`,
@@ -506,7 +531,7 @@ function drawMarks(
       permanent: true, direction: "right", offset: [size / 2 + 3, 0],
       className: `overlay-label record-label${m.focus ? " record-label-focus" : ""}`,
       interactive: false,
-    }).addTo(map);
+    }));
   }
 }
 
@@ -532,12 +557,12 @@ function forecastLatlngs(f: Forecast, fromLon: number): L.LatLng[] {
  * full fix (the predictor's first point), on the same dark casing as the track, with a mark each day so
  * the line has a scale. Under the spots, over the weather. */
 function drawForecast(
-  map: L.Map, f: Forecast, line: L.LatLng[], units: Units,
+  map: L.Map, worlds: Worlds, f: Forecast, line: L.LatLng[], units: Units,
 ): void {
-  L.polyline(line, {
+  worlds.add(map, (at) => L.polyline(line.map(at), {
     color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false,
-  }).addTo(map);
-  L.polyline(line, {
+  }));
+  worlds.add(map, (at) => L.polyline(line.map(at), {
     color: FORECAST_COLOR, weight: 2.2, opacity: 0.9,
     dashArray: "1 7", lineCap: "round",
     attribution: FORECAST_ATTRIBUTION,
@@ -550,17 +575,76 @@ function drawForecast(
       : `floating at ${fmtAltitude(f.from.float_m, units).text}`) +
     "<br>SondeHub Tawhiri on GFS winds · a guess, not a report",
     { sticky: true },
-  ).addTo(map);
+  ));
   for (const m of dayMarks(f)) {
-    const at = line[f.points.indexOf(m.point)];
-    if (!at) continue;
-    L.circleMarker(at, {
+    const place = line[f.points.indexOf(m.point)];
+    if (!place) continue;
+    worlds.add(map, (at) => L.circleMarker(at(place), {
       radius: 3.5, color: SPOT_OUTLINE, weight: 1.5,
       fillColor: FORECAST_COLOR, fillOpacity: 1,
     }).bindTooltip(
       `Forecast +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtLocal(m.point.utc)}`,
-    ).addTo(map);
+    ));
   }
+}
+
+/** How far the view can reach from the home copy of the world, in degrees
+ * of longitude either side of its centre. A drag keeps the centre within
+ * half a world of longitude zero (worldCopyJump), and the world is never
+ * narrower than the box, so the edges of the view stay within a world of
+ * it: 360. The rest is slack for the inertia of a flung drag and for a
+ * flyTo that lands outside the home copy, which the next drag brings in. */
+const REACH_DEG = 540;
+
+/** Far enough that no track or flight to it will ever meet the pan limit
+ * on longitude, which exists only to hold latitude. */
+const FREE_LON = 1e6;
+
+/** Puts a position in one copy of the world. */
+type Into = (ll: L.LatLng) => L.LatLng;
+
+/** The copies of the world the reader can reach, and a way to draw a layer
+ * in all of them. See the note at the top of the file. */
+interface Worlds {
+  /** One per copy, each shifting a position into that copy. */
+  into: Into[];
+  /** Add the layer `make` builds to `target`, once per copy. */
+  add(target: L.Map | L.LayerGroup, make: (at: Into) => L.Layer): void;
+}
+
+/** The copies that anything drawn at these (unwrapped) longitudes can be
+ * seen in: every whole-world shift that brings some of the range within
+ * reach of the home copy. A track still on its first ocean needs three; a
+ * flight that has lapped the globe needs one more per lap. */
+function worldCopies(lons: number[]): Worlds {
+  const west = lons.length ? Math.min(...lons) : 0;
+  const east = lons.length ? Math.max(...lons) : 0;
+  const into: Into[] = [];
+  for (
+    let k = Math.ceil((-REACH_DEG - east) / 360);
+    k <= Math.floor((REACH_DEG - west) / 360);
+    k++
+  ) {
+    const dx = k * 360;
+    into.push((ll) => L.latLng(ll.lat, ll.lng + dx));
+  }
+  return {
+    into,
+    add(target, make) {
+      for (const at of into) make(at).addTo(target);
+    },
+  };
+}
+
+/** The same box, shifted by whole worlds until its centre is in the home
+ * copy: longitude in [-180, 180). */
+function homeCopy(b: L.LatLngBounds): L.LatLngBounds {
+  const dx = -360 * Math.floor((b.getCenter().lng + 180) / 360);
+  if (dx === 0) return b;
+  return L.latLngBounds(
+    L.latLng(b.getSouth(), b.getWest() + dx),
+    L.latLng(b.getNorth(), b.getEast() + dx),
+  );
 }
 
 /** Radius of a spot close in, and at the world view, where a run of fixes
