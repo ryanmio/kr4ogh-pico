@@ -123,10 +123,12 @@ launch_lon = -77.9759
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ clear 4D sphere"
 "Free lift" = "5.7 g"
+"Float" = "10,500–10,700 m"
 "Launched" = "2026-09-06 14:14 UTC · Summit Point, WV (180 m)"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "206"
+"Schedule" = "every 10 min from :00"
 
 # First heard 2026-09-06 14:44 UTC, last heard 2026-09-07 14:44 UTC. Same
 # channel as F1B, which is why F1B carries an end_utc; this one carries its
@@ -152,10 +154,12 @@ launch_lon = -77.9759
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ clear 4D sphere"
 "Free lift" = "5.7 g"
+"Float" = "10,980 m"
 "Launched" = "2026-09-06 14:27 UTC · Summit Point, WV (180 m)"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "348"
+"Schedule" = "every 10 min from :04"
 
 # JP-05 launched 2026-10-03 13:55 UTC (9:55 AM EDT).
 [[flights]]
@@ -173,7 +177,12 @@ float_m = 10300
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040) · JP-05"
+"Mass as flown" = "17.4–18.2 g"
+"Power" = "solar only, Solar System panel"
 "Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″"
+"Free lift" = "4.5 g"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097140 MHz (20 m)"
 "Channel" = "512"
@@ -195,7 +204,12 @@ float_m = 10300
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040) · JP-06"
+"Mass as flown" = "18.9 g"
+"Power" = "solar only, Solar System panel"
 "Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″"
+"Free lift" = "4.5 g"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "206"
@@ -218,12 +232,18 @@ float_m = 10500
 
 [flights.tracker]
 "Hardware" = "Traquito Jetpack (RP2040) · JP-08"
+"Mass as flown" = "17.89 g"
+"Power" = "solar only, Solar System panel"
 "Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″ clear 4D sphere"
+"Free lift" = "7.31 g"
+"Float" = "10,400–10,920 m"
+"Launched" = "2026-10-10 13:24 UTC · Summit Point, WV"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "549"
 "Schedule" = "every 10 min from :06"
-"Launched" = "2026-10-10 13:24 UTC · Summit Point, WV"
 
 # PT 01 launched 2026-10-24 14:55 UTC (10:55 AM EDT). First flight of Ryan's own manufactured/designed PCB. Reuses channel 206; F3B carries an end_utc so the two stay separate flights.
 [[flights]]
