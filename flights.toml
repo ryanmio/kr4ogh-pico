@@ -61,6 +61,7 @@ callsign = "KR4OGH"
 #
 # An optional [flights.tracker] table right after a flight holds build
 # details for the Tracker panel: any labels you like, in the order written.
+# A value may link out, written [text](https://...).
 
 # Launched 2026-08-29, heard 18:40-20:20 UTC, then silent. Left inactive so
 # it stays off the site; flip active on only if it is heard again.
@@ -237,7 +238,7 @@ float_m = 10500
 sensor = "bme280"
 
 [flights.tracker]
-"Hardware" = "Petrel rev A (RP2040) — custom add-on board, stock Traquito firmware"
+"Hardware" = "[Petrel rev A](https://github.com/ryanmio/petrel) (RP2040) — custom add-on board, stock Traquito firmware"
 "Mass as flown" = "16.95 g"
 "Power" = "solar only"
 "Transmit power" = "20 mW"
