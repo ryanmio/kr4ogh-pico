@@ -235,3 +235,18 @@ launch_lat = 39.2645
 launch_lon = -77.9759
 float_m = 10500
 sensor = "bme280"
+
+[flights.tracker]
+"Hardware" = "Petrel rev A (RP2040) — custom add-on board, stock Traquito firmware"
+"Mass as flown" = "16.95 g"
+"Power" = "solar only"
+"Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″ superpressure"
+"Free lift" = "6.75 g of helium"
+"Float" = "10,860 m ± 90 m"
+"Launched" = "2026-10-24 14:55 UTC · Summit Point, WV"
+"Mode" = "WSPR + U4B telemetry + BME280 sensor (temp/pressure/humidity)"
+"Frequency" = "14.097060 MHz (20 m)"
+"Channel" = "206"
+"Schedule" = "every 10 min from :00 (sensor message at :06)"
