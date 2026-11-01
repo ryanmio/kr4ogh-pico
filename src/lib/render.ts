@@ -97,10 +97,14 @@ function metricCard(
  * fix, because a ghost carries none of them. */
 export function sidebarHtml(
   meta: FlightMeta, track: TrackPoint[], units: Units, active: ActiveCard,
-  opts: { pending?: boolean; ghosts?: GhostPoint[]; records?: RecordsCardInfo } = {},
+  opts: {
+    pending?: boolean; ghosts?: GhostPoint[]; spoofed?: TrackPoint[];
+    records?: RecordsCardInfo;
+  } = {},
 ): string {
   const ended = meta.status === "closed";
   const ghosts = opts.ghosts ?? [];
+  const spoofed = opts.spoofed ?? [];
   // Last in the column: it is about every flight, not a reading from this
   // one, and it is there whatever state this flight's own cards are in.
   const records = opts.records ? recordsCard(opts.records, ended, active) : "";
@@ -142,7 +146,9 @@ export function sidebarHtml(
         it has sun and a GPS fix.`;
     return tracker + `<div class="fv-status"><p class="empty-note">${note}</p></div>` + records;
   }
-  const heard = heardBounds(track, ghosts)!;
+  // Spoofed fixes count here: the tracker was heard, and "Heard 2 min
+  // ago" is true while its GPS is being lied to.
+  const heard = heardBounds(track, ghosts, spoofed)!;
   const volts = track.map((p) => p.voltage_v);
   const temps = track.map((p) => p.temperature_c);
   const alt = (m: number) => u.altitude(m, units).text;

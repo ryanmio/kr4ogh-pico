@@ -11,7 +11,7 @@
  */
 import { parseUtc } from "./format";
 import { pruneGhosts } from "./ghosts";
-import { resolveTrackSpeeds } from "./speed";
+import { believe } from "./spoof";
 import { fetchWindow, mergeTrack, type FlightSpec } from "./wspr/track";
 import type { GhostPoint, TrackPoint } from "./types";
 
@@ -49,6 +49,8 @@ export interface LiveTrackResult {
   track: TrackPoint[];
   /** The slots heard without telemetry, brought up to date the same way. */
   ghosts: GhostPoint[];
+  /** The fixes set aside as GPS-spoofed (lib/spoof.ts). */
+  spoofed: TrackPoint[];
   /** Reports, of either kind, that were not in the bundled data. */
   added: number;
   /** Null when the update succeeded; the failure otherwise. */
@@ -57,13 +59,21 @@ export interface LiveTrackResult {
 
 export async function refreshTrack(
   flight: LiveFlight, bundled: TrackPoint[], bundledGhosts: GhostPoint[] = [],
-  signal?: AbortSignal,
+  bundledSpoofed: TrackPoint[] = [], signal?: AbortSignal,
 ): Promise<LiveTrackResult> {
   const now = new Date();
+  const unchanged = {
+    track: bundled, ghosts: bundledGhosts, spoofed: bundledSpoofed, added: 0,
+  };
+  // Every fix decoded so far, believed or not: the spoof test is re-run
+  // over all of them, since a fix is judged against the ones before it.
+  const raw = mergeTrack(bundled, bundledSpoofed);
   // The window opens at the last full fix even when ghosts are newer: a
   // ghost's slot is one the slower stations may yet complete, so it is
-  // asked about again until a fix lands there.
-  const last = bundled.at(-1);
+  // asked about again until a fix lands there. A spoofed fix counts: its
+  // slot is complete, and a spoof lasting hours would otherwise be fetched
+  // again on every refresh.
+  const last = raw.at(-1);
   const lastMs = last ? Date.parse(last.utc.replace(" ", "T") + "Z") : NaN;
   let fromMs = Number.isFinite(lastMs)
     ? Math.max(lastMs - OVERLAP_MS, now.getTime() - MAX_LOOKBACK_MS)
@@ -75,34 +85,31 @@ export async function refreshTrack(
   // lies outside is another flight.
   if (flight.launch_utc) fromMs = Math.max(fromMs, parseUtc(flight.launch_utc).getTime());
   if (flight.end_utc) toMs = Math.min(toMs, parseUtc(flight.end_utc).getTime());
-  if (toMs <= fromMs) {
-    return { track: bundled, ghosts: bundledGhosts, added: 0, error: null };
-  }
+  if (toMs <= fromMs) return { ...unchanged, error: null };
 
   try {
     const fresh = await fetchWindow(flight, new Date(fromMs), new Date(toMs), signal);
-    const known = new Set(bundled.map((p) => p.utc));
+    const known = new Set(raw.map((p) => p.utc));
     const knownGhosts = new Set(bundledGhosts.map((g) => g.utc));
     // Re-derived over the whole merged track, not just the tail: a
     // saturated fix at the old end had no fixes after it to measure
-    // against, and now it does. See lib/speed.ts.
-    const track = resolveTrackSpeeds(mergeTrack(bundled, fresh.track));
+    // against, and now it does (lib/speed.ts), and the spoof test needs
+    // the fixes before each one (lib/spoof.ts).
+    const all = mergeTrack(raw, fresh.track);
+    const b = believe(all, mergeTrack(bundledGhosts, fresh.ghosts));
     return {
-      track,
+      track: b.track,
       // A bundled ghost whose slot has since completed is dropped, and so
       // is a fresh ghost from a slot the bundled track already has a fix
-      // for: the window overlaps the bundled end on purpose.
-      ghosts: pruneGhosts(track, mergeTrack(bundledGhosts, fresh.ghosts)),
+      // for: the window overlaps the bundled end on purpose. A spoofed
+      // fix completes its slot as much as a believed one does.
+      ghosts: pruneGhosts(all, b.ghosts),
+      spoofed: b.spoofed,
       added: fresh.track.filter((p) => !known.has(p.utc)).length
         + fresh.ghosts.filter((g) => !knownGhosts.has(g.utc) && !known.has(g.utc)).length,
       error: null,
     };
   } catch (err) {
-    return {
-      track: bundled,
-      ghosts: bundledGhosts,
-      added: 0,
-      error: err instanceof Error ? err : new Error(String(err)),
-    };
+    return { ...unchanged, error: err instanceof Error ? err : new Error(String(err)) };
   }
 }

@@ -83,6 +83,10 @@ export interface OverlayTrack {
   meta: FlightMeta;
   track: TrackPoint[];
   ghosts: GhostPoint[];
+  /** Fixes set aside as GPS-spoofed (lib/spoof.ts): never drawn, kept so
+   * the refresh judges new fixes against them and does not fetch them
+   * again. */
+  spoofed: TrackPoint[];
 }
 
 /** The [site] table of flights.toml, with the deploy-time fallbacks

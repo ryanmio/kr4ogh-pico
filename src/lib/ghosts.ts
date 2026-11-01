@@ -47,11 +47,12 @@ export function lastKnown(track: TrackPoint[], ghosts: GhostPoint[]): LastKnown 
 /** When the tracker was first and last heard at all. A flight often opens
  * on a ghost (the launch slot, heard by one station on the ground) and
  * closes on a run of them (sunset, the telemetry message lost first), and
- * "time in the air" should count both ends. */
+ * "time in the air" should count both ends. A fix set aside as GPS-spoofed
+ * (lib/spoof.ts) was heard all the same, and counts too. */
 export function heardBounds(
-  track: TrackPoint[], ghosts: GhostPoint[],
+  track: TrackPoint[], ghosts: GhostPoint[], spoofed: TrackPoint[] = [],
 ): { firstUtc: string; lastUtc: string } | null {
-  const utcs = [...track.map((p) => p.utc), ...ghosts.map((g) => g.utc)];
+  const utcs = [...track, ...ghosts, ...spoofed].map((p) => p.utc);
   if (!utcs.length) return null;
   utcs.sort();
   return { firstUtc: utcs[0]!, lastUtc: utcs[utcs.length - 1]! };

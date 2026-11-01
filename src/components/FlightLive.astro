@@ -32,10 +32,11 @@
  */
 import { withBase } from "../lib/base";
 import { siteConfig, UPSTREAM_REPO } from "../lib/config";
-import { ghostsFor, trackFor } from "../lib/flights";
+import { flightData } from "../lib/flights";
 import { lastKnown } from "../lib/ghosts";
 import { recordHolders, recordsHeldBy, summarize } from "../lib/records";
 import { sidebarHtml } from "../lib/render";
+import { spoofedSince } from "../lib/spoof";
 import type { FlightMeta, GhostPoint, TrackPoint } from "../lib/types";
 
 interface Props {
@@ -43,12 +44,16 @@ interface Props {
   track: TrackPoint[];
   /** Slots heard without telemetry; see lib/types.ts. */
   ghosts?: GhostPoint[];
+  /** Fixes set aside as GPS-spoofed; see lib/spoof.ts. */
+  spoofed?: TrackPoint[];
   /** Every flight on the site, in "Next flight" order. Defaults to just
    * this one, which hides the button. */
   flights?: FlightMeta[];
   mode?: "home" | "permalink";
 }
-const { flight, track, ghosts = [], flights = [flight], mode = "permalink" } = Astro.props;
+const {
+  flight, track, ghosts = [], spoofed = [], flights = [flight], mode = "permalink",
+} = Astro.props;
 const ended = flight.status === "closed";
 // The "Next flight" link, as built; the script re-aims it at the reader's
 // current flight and carries their toggles along.
@@ -63,8 +68,8 @@ const nextHref = mode === "home"
 // live track. With one flight there is nothing to compare, and no card.
 const summaries = flights.length > 1
   ? flights.flatMap((f) => {
-    const own = f.flight_id === flight.flight_id;
-    const s = summarize(f, own ? track : trackFor(f), own ? ghosts : ghostsFor(f));
+    const d = f.flight_id === flight.flight_id ? { track, ghosts, spoofed } : flightData(f);
+    const s = summarize(f, d.track, d.ghosts, d.spoofed);
     return s ? [s] : [];
   })
   : [];
@@ -74,8 +79,9 @@ const records = summaries.length > 1
   : undefined;
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
-const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts, records });
+const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts, spoofed, records });
 const last = lastKnown(track, ghosts);
+const spoofing = spoofedSince(track, ghosts, spoofed);
 // What the About panel needs to say about this instance: whose site, where
 // its source lives, and where the project it is an instance of lives.
 const site = { ...siteConfig, upstream: UPSTREAM_REPO };
@@ -86,6 +92,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   data-flight={JSON.stringify(flight)}
   data-track={JSON.stringify(track)}
   data-ghosts={JSON.stringify(ghosts)}
+  data-spoofed={JSON.stringify(spoofed)}
   data-flights={JSON.stringify(flights)}
   data-summaries={JSON.stringify(summaries)}
   data-mode={mode}
@@ -121,7 +128,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         <p class="fv-updated" id="updated">
           {last
             ? `${ended ? "Flight ended · last" : "Newest"} position ${last.utc} UTC${
-              last.coarse ? " (grid square only)" : ""}`
+              last.coarse ? " (grid square only)" : ""}${
+              spoofing ? ` · GPS spoofed since ${spoofing.utc.slice(11, 16)}` : ""}`
             : "No positions yet"}
         </p>
       </div>
@@ -178,9 +186,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   } from "../lib/records";
   import { recordsHtml, sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
   import {
-    groundSpeedKt, hasSaturatedSpeed, resolveTrackSpeeds, speedText,
-    SPEED_CEILING_KT,
+    groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
+  import { believe, spoofedSince } from "../lib/spoof";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type {
     FlightMeta, GhostPoint, MapMark, OverlayTrack, SiteConfig, TrackPoint,
@@ -211,6 +219,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const site = JSON.parse(root.dataset.site!) as SiteConfig & { upstream: string };
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
     let ghosts = JSON.parse(root.dataset.ghosts!) as GhostPoint[];
+    // Fixes whose GPS was spoofed (lib/spoof.ts): kept off the map and out
+    // of every number, but the tracker was heard in them.
+    let spoofed = JSON.parse(root.dataset.spoofed ?? "[]") as TrackPoint[];
     const flights = JSON.parse(root.dataset.flights!) as FlightMeta[];
     // Every flight's record summary as built (lib/records.ts); this
     // flight's is recomputed from the live track, see summaries().
@@ -295,6 +306,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       meta = chosen;
       track = [];
       ghosts = [];
+      spoofed = [];
       document.title = document.title.replace(/^[^—]*—/, `${meta.callsign} ${meta.flight_id} —`);
       cardsSlot.innerHTML = sidebarHtml(meta, track, units, null, {
         pending: true, records: recordsInfo(),
@@ -303,8 +315,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         const at = (name: string) =>
           fetch(withBase(`/live/${encodeURIComponent(meta.flight_id)}/${name}`));
         const [trackResp, ghostResp] = await Promise.all([at("track.json"), at("ghosts.json")]);
-        if (trackResp.ok) track = resolveTrackSpeeds(await trackResp.json() as TrackPoint[]);
-        if (ghostResp.ok) ghosts = await ghostResp.json() as GhostPoint[];
+        // Both files are the raw record; the page believes them the way
+        // the build does.
+        ({ track, ghosts, spoofed } = believe(
+          trackResp.ok ? await trackResp.json() as TrackPoint[] : [],
+          ghostResp.ok ? await ghostResp.json() as GhostPoint[] : []));
       } catch {
         // The live refresh can still find the flight from launch; a closed
         // flight will say it has no positions, which is at least honest.
@@ -328,12 +343,13 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           const [t, g] = await Promise.all([at("track.json"), at("ghosts.json")]);
           return {
             meta: f,
-            track: t.ok ? resolveTrackSpeeds(await t.json() as TrackPoint[]) : [],
-            ghosts: g.ok ? await g.json() as GhostPoint[] : [],
+            ...believe(
+              t.ok ? await t.json() as TrackPoint[] : [],
+              g.ok ? await g.json() as GhostPoint[] : []),
           };
         } catch {
           fetchedOverlays.delete(f.flight_id);
-          return { meta: f, track: [], ghosts: [] };
+          return { meta: f, track: [], ghosts: [], spoofed: [] };
         }
       })();
       fetchedOverlays.set(f.flight_id, p);
@@ -372,10 +388,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     async function refreshOverlays(): Promise<number> {
       const counts = await Promise.all(overlays.map(async (o) => {
         if (o.meta.status === "closed") return 0;
-        const r = await refreshTrack(o.meta, o.track, o.ghosts);
+        const r = await refreshTrack(o.meta, o.track, o.ghosts, o.spoofed);
         if (r.error) return 0;
         o.track = r.track;
         o.ghosts = r.ghosts;
+        o.spoofed = r.spoofed;
         return r.added;
       }));
       return counts.reduce((a, b) => a + b, 0);
@@ -682,12 +699,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     function summaries(): FlightSummary[] {
       return flights.flatMap((f) => {
         if (f.flight_id === meta.flight_id) {
-          const s = summarize(meta, track, ghosts);
+          const s = summarize(meta, track, ghosts, spoofed);
           return s ? [s] : [];
         }
         const o = overlays.find((x) => x.meta.flight_id === f.flight_id)
           ?? recordOverlays.find((x) => x.meta.flight_id === f.flight_id);
-        const s = o?.track.length ? summarize(o.meta, o.track, o.ghosts) : null;
+        const s = o?.track.length ? summarize(o.meta, o.track, o.ghosts, o.spoofed) : null;
         if (s) return [s];
         const built = bundledSummaries.find((x) => x.flight_id === f.flight_id);
         return built ? [built] : [];
@@ -756,7 +773,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     function renderSidebar() {
       cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard(), {
-        ghosts, records: recordsInfo(),
+        ghosts, spoofed, records: recordsInfo(),
       });
     }
 
@@ -764,7 +781,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     function newestText(prefix: string): string {
       const known = lastKnown(track, ghosts);
       if (!known) return "No positions yet";
-      return `${prefix} position ${known.utc} UTC${known.coarse ? " (grid square only)" : ""}`;
+      // Heard since, but not where: the position above is the last true
+      // one, and the reader should know why it is not newer.
+      const since = spoofedSince(track, ghosts, spoofed);
+      return `${prefix} position ${known.utc} UTC${known.coarse ? " (grid square only)" : ""}`
+        + (since ? ` · GPS spoofed since ${since.utc.slice(11, 16)}` : "");
     }
 
     function paintCards() {
@@ -905,7 +926,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         gaps.push({ t, v: (t - parseUtc(pts[i - 1]!.utc).getTime()) / 60_000 });
       }
       const s = trackStats(track)!;
-      const heard = heardBounds(track, ghosts)!;
+      const heard = heardBounds(track, ghosts, spoofed)!;
       let longest = 0;
       for (let i = 1; i < track.length; i++) {
         longest = Math.max(longest,
@@ -919,18 +940,26 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const lastHeard = (ended()
         ? `${heard.lastUtc.slice(5, 16)} UTC`
         : `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`) +
-        (lastKnown(track, ghosts)?.coarse ? " · position only" : "");
+        (spoofedSince(track, ghosts, spoofed) ? " · GPS spoofed"
+          : lastKnown(track, ghosts)?.coarse ? " · position only" : "");
       // A ghost is the tracker heard with only half its report: the
       // Regular message with the grid square, never the telemetry. The
       // map draws them hollow; this is where the count is explained.
       const partial = ghosts.length
         ? mini("Without telemetry", `${fmtInt(ghosts.length)} heard, grid square only`)
         : "";
+      // A fix whose GPS was spoofed: heard, telemetry and all, but its
+      // position was a spoofer's, so it is on neither the map nor the cards.
+      const lied = spoofed.length
+        ? mini("GPS spoofed", `${fmtInt(spoofed.length)} position${
+          spoofed.length === 1 ? "" : "s"} faked, not drawn`)
+        : "";
       panelBody.innerHTML =
         `<div class="fv-minis">${[
           mini("Last heard", lastHeard),
           mini("Reports", `${fmtInt(s.points)} since launch`),
           partial,
+          lied,
           mini("Cadence", "every 10 min in sunlight"),
           mini("Longest silence", `${fmtDuration(longest)} (overnight)`),
         ].join("")}</div>` +
@@ -1253,7 +1282,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (updating) return;
       updating = true;
       const [result, overlayAdded] = await Promise.all([
-        refreshTrack(meta, track, ghosts), refreshOverlays(),
+        refreshTrack(meta, track, ghosts, spoofed), refreshOverlays(),
       ]).finally(() => { updating = false; });
       if (result.error) {
         // The bundled track is all there is; show it rather than a spinner
@@ -1267,6 +1296,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
       track = result.track;
       ghosts = result.ghosts;
+      spoofed = result.spoofed;
       // The forecast rides on the newest report, so it is brought up to
       // date now; but the map does not wait long for SondeHub, and a slow
       // answer redraws when it lands.

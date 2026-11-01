@@ -62,3 +62,17 @@ the newest fix — the one anyone is actually watching — has none after it
 yet. Storing it would freeze the worst version of it. `src/lib/speed.ts`
 recomputes it over the whole track every time the track changes, in the
 browser and at build time alike.
+
+GPS-spoofed fixes are handled the same way. Over parts of the Middle East
+the tracker's GPS can be spoofed, and it then reports a fake position,
+usually the spoofer's own spot on the ground. The committed track and
+`/live/<id>/track.json` keep those fixes exactly as sent. `src/lib/spoof.ts`
+sets them aside before anything else reads the track. A fix is set aside
+when its BME280 pressure altitude and its GPS altitude are more than 3 km
+apart, or when the balloon could not have reached it from the last good fix
+at 300 kt. Its ghosts go with it. A spoofed fix is not drawn and feeds no
+stat, record or forecast. It still counts as the tracker being heard, so
+"last heard" and time aloft stay true while the spoof lasts, and the footer
+says that the position shown is from before it. The pass runs before the
+speed pass, since a speed measured across a spoofed fix would be measuring
+the jump to the spoofer and back.

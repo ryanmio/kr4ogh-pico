@@ -115,10 +115,11 @@ function extreme(
  * yet: a grid square alone sets no record. */
 export function summarize(
   meta: FlightMeta, track: TrackPoint[], ghosts: GhostPoint[] = [],
+  spoofed: TrackPoint[] = [],
 ): FlightSummary | null {
   const s = trackStats(track);
   if (!s) return null;
-  const heard = heardBounds(track, ghosts)!;
+  const heard = heardBounds(track, ghosts, spoofed)!;
   const aloftMs = parseUtc(heard.lastUtc).getTime() - parseUtc(heard.firstUtc).getTime();
   // From the first fix, as the Journey card's "from launch" is.
   const origin = track[0]!;

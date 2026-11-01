@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { configuredFlights } from "../src/lib/config";
 import { RECORDS, recordHolders, recordPins, summarize } from "../src/lib/records";
-import { resolveTrackSpeeds } from "../src/lib/speed";
+import { believe } from "../src/lib/spoof";
 import type { GhostPoint, TrackPoint } from "../src/lib/types";
 
 const tracks = join(dirname(fileURLToPath(import.meta.url)), "../src/data/tracks");
@@ -25,12 +25,12 @@ const shown = configuredFlights
 const summaries = shown.flatMap((f) => {
   const base = join(tracks, `${f.callsign}-${f.flight_id}`);
   if (!existsSync(`${base}.json`)) return [];
-  const track = resolveTrackSpeeds(
-    JSON.parse(readFileSync(`${base}.json`, "utf8")) as TrackPoint[]);
-  const ghosts = existsSync(`${base}.ghosts.json`)
-    ? JSON.parse(readFileSync(`${base}.ghosts.json`, "utf8")) as GhostPoint[]
-    : [];
-  const s = summarize(f, track, ghosts);
+  const { track, ghosts, spoofed } = believe(
+    JSON.parse(readFileSync(`${base}.json`, "utf8")) as TrackPoint[],
+    existsSync(`${base}.ghosts.json`)
+      ? JSON.parse(readFileSync(`${base}.ghosts.json`, "utf8")) as GhostPoint[]
+      : []);
+  const s = summarize(f, track, ghosts, spoofed);
   return s ? [s] : [];
 });
 const holders = recordHolders(summaries);

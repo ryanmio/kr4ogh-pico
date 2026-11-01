@@ -3,7 +3,7 @@
  * Fetched by the home page when `?feature=` names a flight other than the
  * one built into it. */
 import type { APIRoute } from "astro";
-import { ghostsFor, shownFlights } from "../../../lib/flights";
+import { rawGhostsFor, shownFlights } from "../../../lib/flights";
 import type { FlightMeta } from "../../../lib/types";
 
 export function getStaticPaths() {
@@ -15,7 +15,7 @@ export function getStaticPaths() {
 
 export const GET: APIRoute = ({ props }) => {
   const { flight } = props as { flight: FlightMeta };
-  return new Response(JSON.stringify(ghostsFor(flight)), {
+  return new Response(JSON.stringify(rawGhostsFor(flight)), {
     headers: { "content-type": "application/json" },
   });
 };

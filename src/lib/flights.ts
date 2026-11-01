@@ -11,7 +11,7 @@
  * directory is a valid state: the site builds, and the pages say so.
  */
 import { configuredFlights, siteConfig } from "./config";
-import { resolveTrackSpeeds } from "./speed";
+import { believe, type Believed } from "./spoof";
 import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 
 const trackModules = import.meta.glob<{ default: TrackPoint[] }>(
@@ -73,23 +73,32 @@ export function featuredFlight(): FlightMeta | undefined {
     ?? shown.at(-1);
 }
 
-/** The committed track for a flight, with speeds above the telemetry
- * ceiling filled in (lib/speed.ts). The estimate is derived here rather than
- * exported into the JSON because it depends on the fixes around each point,
- * and the browser keeps adding those; the same pass runs again on every live
- * refresh. */
+/** The committed track and ghosts for a flight as the site shows them:
+ * spoofed fixes set aside (lib/spoof.ts) and speeds above the telemetry
+ * ceiling filled in (lib/speed.ts). Both are derived here rather than
+ * exported into the JSON because they depend on the fixes around each
+ * point, and the browser keeps adding those; the same pass runs again on
+ * every live refresh. */
+export function flightData(flight: FlightMeta): Believed {
+  return believe(rawTrackFor(flight), rawGhostsFor(flight));
+}
+
 export function trackFor(flight: FlightMeta): TrackPoint[] {
-  return resolveTrackSpeeds(rawTrackFor(flight));
+  return flightData(flight).track;
+}
+
+export function ghostsFor(flight: FlightMeta): GhostPoint[] {
+  return flightData(flight).ghosts;
 }
 
 /** The committed track exactly as exported, for /live/<id>/track.json: the
- * record of what the tracker sent, without the derived speeds. */
+ * record of what the tracker sent, spoofed fixes and all, without the
+ * derived speeds. */
 export function rawTrackFor(flight: FlightMeta): TrackPoint[] {
   return tracksByFile.get(trackFilename(flight)) ?? [];
 }
 
-/** The committed ghosts for a flight, for the page and for
- * /live/<id>/ghosts.json. */
-export function ghostsFor(flight: FlightMeta): GhostPoint[] {
+/** The committed ghosts exactly as exported, for /live/<id>/ghosts.json. */
+export function rawGhostsFor(flight: FlightMeta): GhostPoint[] {
   return ghostsByFile.get(ghostsFilename(flight)) ?? [];
 }
