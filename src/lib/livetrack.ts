@@ -59,7 +59,9 @@ export interface LiveTrackResult {
 
 export async function refreshTrack(
   flight: LiveFlight, bundled: TrackPoint[], bundledGhosts: GhostPoint[] = [],
-  bundledSpoofed: TrackPoint[] = [], signal?: AbortSignal,
+  bundledSpoofed: TrackPoint[] = [],
+  /** `detect` false keeps spoofed fixes on the track (lib/spoof.ts). */
+  opts: { signal?: AbortSignal; detect?: boolean } = {},
 ): Promise<LiveTrackResult> {
   const now = new Date();
   const unchanged = {
@@ -88,7 +90,7 @@ export async function refreshTrack(
   if (toMs <= fromMs) return { ...unchanged, error: null };
 
   try {
-    const fresh = await fetchWindow(flight, new Date(fromMs), new Date(toMs), signal);
+    const fresh = await fetchWindow(flight, new Date(fromMs), new Date(toMs), opts.signal);
     const known = new Set(raw.map((p) => p.utc));
     const knownGhosts = new Set(bundledGhosts.map((g) => g.utc));
     // Re-derived over the whole merged track, not just the tail: a
@@ -96,7 +98,7 @@ export async function refreshTrack(
     // against, and now it does (lib/speed.ts), and the spoof test needs
     // the fixes before each one (lib/spoof.ts).
     const all = mergeTrack(raw, fresh.track);
-    const b = believe(all, mergeTrack(bundledGhosts, fresh.ghosts));
+    const b = believe(all, mergeTrack(bundledGhosts, fresh.ghosts), opts.detect);
     return {
       track: b.track,
       // A bundled ghost whose slot has since completed is dropped, and so

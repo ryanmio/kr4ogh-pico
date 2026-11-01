@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 
 import {
   believe, dropSpoofedGhosts, pressureAltitudeM, spoofedSince, spoofRuns,
-  spoofViewFromSearch, splitSpoofed, urlWithSpoofView,
+  spoofModeFromSearch, splitSpoofed, urlWithSpoofMode,
 } from "../src/lib/spoof";
 import type { GhostPoint, TrackPoint } from "../src/lib/types";
 
@@ -90,12 +90,19 @@ check("the spoof is one run, from 11:50 out and back to 14:00",
 const ongoing = spoofRuns(split.track, split.spoofed);
 check("a spoof still going on has no way back yet",
   ongoing.length === 1 && ongoing[0]!.after === null);
-check("?spoofing=show and its synonyms turn the view on, anything else off",
-  spoofViewFromSearch("?spoofing=show") && spoofViewFromSearch("?u=i&spoofing=View")
-  && !spoofViewFromSearch("?spoofing=no") && !spoofViewFromSearch(""));
-check("toggling the view keeps the other parameters",
-  urlWithSpoofView("https://x/?u=i#a", true) === "https://x/?u=i&spoofing=show#a"
-  && urlWithSpoofView("https://x/?u=i&spoofing=show", false) === "https://x/?u=i");
+check("?spoofing= reads show, normal, and anything else as the default",
+  spoofModeFromSearch("?spoofing=show") === "show"
+  && spoofModeFromSearch("?u=i&spoofing=Normal") === "normal"
+  && spoofModeFromSearch("?spoofing=nonsense") === "hide"
+  && spoofModeFromSearch("") === "hide");
+check("switching mode keeps the other parameters, and the default leaves none",
+  urlWithSpoofMode("https://x/?u=i#a", "show") === "https://x/?u=i&spoofing=show#a"
+  && urlWithSpoofMode("https://x/?u=i&spoofing=show", "normal") === "https://x/?u=i&spoofing=normal"
+  && urlWithSpoofMode("https://x/?u=i&spoofing=show", "hide") === "https://x/?u=i");
+const raw = believe(iran, ghosts, false);
+check("with detection off, every fix and ghost is kept as decoded",
+  raw.track.length === iran.length && raw.ghosts.length === ghosts.length
+  && raw.spoofed.length === 0);
 
 // ---------- 2. every committed track ----------
 

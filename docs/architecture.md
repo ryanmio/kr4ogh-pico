@@ -77,7 +77,9 @@ says that the position shown is from before it. The pass runs before the
 speed pass, since a speed measured across a spoofed fix would be measuring
 the jump to the spoofer and back.
 
-`?spoofing=show` draws them anyway, for the reader who wants to see the
+`?spoofing=normal` turns detection off for the page: the spoofed fixes are
+on the track like any other and feed every number, as before any of this
+existed. `?spoofing=show` draws them anyway, for the reader who wants to see the
 spoof. Each one is a rose ring where the GPS put it, with a dashed detour
 from the last true fix out to it and back to the next. Spoofed fixes in
 the same grid square share one ring, whose tooltip gives the GPS's claim

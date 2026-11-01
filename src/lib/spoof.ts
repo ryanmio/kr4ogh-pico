@@ -153,8 +153,14 @@ export interface Believed {
 /** The one pass every track goes through on its way to the page, at build
  * time and after every live refresh: spoofed fixes out, and their ghosts
  * with them, then the speeds. In that order, because a speed measured
- * across a spoofed fix measures the jump to the spoofer and back. */
-export function believe(raw: TrackPoint[], rawGhosts: GhostPoint[]): Believed {
+ * across a spoofed fix measures the jump to the spoofer and back.
+ *
+ * With `detect` false nothing is set aside: the track as decoded, which is
+ * what `?spoofing=normal` shows. */
+export function believe(
+  raw: TrackPoint[], rawGhosts: GhostPoint[], detect = true,
+): Believed {
+  if (!detect) return { track: resolveTrackSpeeds(raw), ghosts: rawGhosts, spoofed: [] };
   const { track, spoofed } = splitSpoofed(raw);
   return {
     track: resolveTrackSpeeds(track),
@@ -198,28 +204,41 @@ export function spoofRuns(track: TrackPoint[], spoofed: TrackPoint[]): SpoofRun[
   return runs;
 }
 
-/** The query parameter that draws the spoofed fixes on the map, where the
- * GPS said they were: `?spoofing=show`. A link-only view, never
- * remembered: the reader who follows a link about a spoof gets it, and the
- * map everyone else sees stays the balloon's true path. */
+/** How the page treats spoofed fixes, from `?spoofing=`:
+ *
+ *  - "hide", the default: set aside, not drawn, not counted.
+ *  - "show": still not counted, but drawn where the GPS put them, in rose,
+ *    with the detour out to them and back.
+ *  - "normal": not detected at all. The page is what it was before any of
+ *    this existed: the spoofed fixes are on the track like any other, and
+ *    feed every number.
+ *
+ * A link-only choice, never remembered: the reader who follows a link
+ * about a spoof gets it, and everyone else sees the balloon's true path. */
+export type SpoofMode = "hide" | "show" | "normal";
+
 export const SPOOF_URL_PARAM = "spoofing";
 
-const SHOW = new Set(["show", "view", "on", "1", "true", "yes"]);
+const FROM_URL: Record<string, SpoofMode> = {
+  show: "show", view: "show", on: "show",
+  normal: "normal", raw: "normal", off: "normal",
+  hide: "hide",
+};
 
-export function spoofViewFromSearch(search: string): boolean {
+export function spoofModeFromSearch(search: string): SpoofMode {
   try {
     const raw = new URLSearchParams(search).get(SPOOF_URL_PARAM);
-    return raw !== null && SHOW.has(raw.trim().toLowerCase());
+    return (raw !== null && FROM_URL[raw.trim().toLowerCase()]) || "hide";
   } catch {
-    return false;
+    return "hide";
   }
 }
 
-/** The same page with the spoofed fixes shown or not, every other
- * parameter and the hash kept. */
-export function urlWithSpoofView(href: string, show: boolean): string {
+/** The same page in another mode, every other parameter and the hash
+ * kept; the default leaves no parameter behind. */
+export function urlWithSpoofMode(href: string, mode: SpoofMode): string {
   const url = new URL(href);
-  if (show) url.searchParams.set(SPOOF_URL_PARAM, "show");
-  else url.searchParams.delete(SPOOF_URL_PARAM);
+  if (mode === "hide") url.searchParams.delete(SPOOF_URL_PARAM);
+  else url.searchParams.set(SPOOF_URL_PARAM, mode);
   return url.toString();
 }

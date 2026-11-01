@@ -176,6 +176,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     parseUtc, trackStats,
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
+  import { mergeTrack } from "../lib/wspr/track";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
   import {
     overlaysFromSearch, resolveOverlays, urlWithOverlays, type OverlayChoice,
@@ -189,7 +190,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
   import {
-    believe, spoofedSince, spoofViewFromSearch, urlWithSpoofView,
+    believe, spoofedSince, spoofModeFromSearch, urlWithSpoofMode, type SpoofMode,
   } from "../lib/spoof";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type {
@@ -225,10 +226,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // of every number, but the tracker was heard in them.
     let spoofed = JSON.parse(root.dataset.spoofed ?? "[]") as TrackPoint[];
     // `?spoofing=show` draws them anyway, where the GPS said they were:
-    // a spoof over a war zone is part of the story of the flight. Link
-    // only, never remembered; the Signal panel toggles it.
-    let showSpoofed = spoofViewFromSearch(location.search);
-    const drawnSpoofed = () => (showSpoofed ? spoofed : []);
+    // a spoof over a war zone is part of the story of the flight. The
+    // Signal panel toggles that. `?spoofing=normal` turns detection off for
+    // the page, as if it had never existed. Link only, never remembered.
+    let spoofMode: SpoofMode = spoofModeFromSearch(location.search);
+    const detect = spoofMode !== "normal";
+    const drawnSpoofed = () => (spoofMode === "show" ? spoofed : []);
     const flights = JSON.parse(root.dataset.flights!) as FlightMeta[];
     // Every flight's record summary as built (lib/records.ts); this
     // flight's is recomputed from the live track, see summaries().
@@ -318,18 +321,31 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       cardsSlot.innerHTML = sidebarHtml(meta, track, units, null, {
         pending: true, records: recordsInfo(),
       });
+    }
+    // Another flight's committed record, or this one's as it was decoded:
+    // the build set this flight's spoofed fixes and ghosts aside, and
+    // `?spoofing=normal` wants them all back, ghosts included.
+    if (swapped || !detect) {
+      // Should the files not come, this flight's bundled fixes are at
+      // least put back together.
+      const rejoined = () => believe(mergeTrack(track, spoofed), ghosts, false);
       try {
         const at = (name: string) =>
           fetch(withBase(`/live/${encodeURIComponent(meta.flight_id)}/${name}`));
         const [trackResp, ghostResp] = await Promise.all([at("track.json"), at("ghosts.json")]);
         // Both files are the raw record; the page believes them the way
         // the build does.
-        ({ track, ghosts, spoofed } = believe(
-          trackResp.ok ? await trackResp.json() as TrackPoint[] : [],
-          ghostResp.ok ? await ghostResp.json() as GhostPoint[] : []));
+        if (trackResp.ok && ghostResp.ok) {
+          ({ track, ghosts, spoofed } = believe(
+            await trackResp.json() as TrackPoint[],
+            await ghostResp.json() as GhostPoint[], detect));
+        } else if (!detect) {
+          ({ track, ghosts, spoofed } = rejoined());
+        }
       } catch {
         // The live refresh can still find the flight from launch; a closed
         // flight will say it has no positions, which is at least honest.
+        if (!detect) ({ track, ghosts, spoofed } = rejoined());
       }
     }
 
@@ -352,7 +368,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
             meta: f,
             ...believe(
               t.ok ? await t.json() as TrackPoint[] : [],
-              g.ok ? await g.json() as GhostPoint[] : []),
+              g.ok ? await g.json() as GhostPoint[] : [], detect),
           };
         } catch {
           fetchedOverlays.delete(f.flight_id);
@@ -395,7 +411,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     async function refreshOverlays(): Promise<number> {
       const counts = await Promise.all(overlays.map(async (o) => {
         if (o.meta.status === "closed") return 0;
-        const r = await refreshTrack(o.meta, o.track, o.ghosts, o.spoofed);
+        const r = await refreshTrack(o.meta, o.track, o.ghosts, o.spoofed, { detect });
         if (r.error) return 0;
         o.track = r.track;
         o.ghosts = r.ghosts;
@@ -963,7 +979,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const lied = spoofed.length
         ? mini("GPS spoofed", `${fmtInt(spoofed.length)} position${
           spoofed.length === 1 ? "" : "s"} faked · <button type="button"
-          class="linklike" data-spoof-toggle>${showSpoofed ? "hide" : "show on map"}</button>`)
+          class="linklike" data-spoof-toggle>${
+            spoofMode === "show" ? "hide" : "show on map"}</button>`)
         : "";
       panelBody.innerHTML =
         `<div class="fv-minis">${[
@@ -1159,7 +1176,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // The build-time sidebar is metric, and its cards show none active; if
     // the reader's units differ, or a link opened a panel, or the page was
     // built around another flight, it has to be redrawn before they read it.
-    if (swapped || units !== "metric" || panel) renderSidebar();
+    if (swapped || !detect || units !== "metric" || panel) renderSidebar();
     // A `?p=` link opens its panel now, on the bundled track, rather than
     // waiting on wspr.live; the first refresh re-renders it either way.
     if (panel) showPanel(panel);
@@ -1175,9 +1192,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // The Signal panel re-renders, so listen on its body.
     panelBody.addEventListener("click", (ev) => {
       if (!(ev.target as HTMLElement).closest("[data-spoof-toggle]")) return;
-      showSpoofed = !showSpoofed;
-      act("Spoofing", { show: showSpoofed, flight: meta.flight_id });
-      pinInUrl(urlWithSpoofView(location.href, showSpoofed));
+      spoofMode = spoofMode === "show" ? "hide" : "show";
+      act("Spoofing", { mode: spoofMode, flight: meta.flight_id });
+      pinInUrl(urlWithSpoofMode(location.href, spoofMode));
       // A redraw, not a new view: the reader is looking where they were.
       drawMapAgain(true);
       renderPanel();
@@ -1304,7 +1321,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (updating) return;
       updating = true;
       const [result, overlayAdded] = await Promise.all([
-        refreshTrack(meta, track, ghosts, spoofed), refreshOverlays(),
+        refreshTrack(meta, track, ghosts, spoofed, { detect }), refreshOverlays(),
       ]).finally(() => { updating = false; });
       if (result.error) {
         // The bundled track is all there is; show it rather than a spinner
