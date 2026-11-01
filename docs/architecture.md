@@ -76,3 +76,11 @@ stat, record or forecast. It still counts as the tracker being heard, so
 says that the position shown is from before it. The pass runs before the
 speed pass, since a speed measured across a spoofed fix would be measuring
 the jump to the spoofer and back.
+
+`?spoofing=show` draws them anyway, for the reader who wants to see the
+spoof. Each one is a rose ring where the GPS put it, with a dashed detour
+from the last true fix out to it and back to the next. Spoofed fixes in
+the same grid square share one ring, whose tooltip gives the GPS's claim
+next to the pressure sensor's reading. The Signal panel's "GPS spoofed"
+line toggles it. It changes only what is drawn, never what is counted, and
+it is not remembered between visits.

@@ -188,7 +188,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import {
     groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
-  import { believe, spoofedSince } from "../lib/spoof";
+  import {
+    believe, spoofedSince, spoofViewFromSearch, urlWithSpoofView,
+  } from "../lib/spoof";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type {
     FlightMeta, GhostPoint, MapMark, OverlayTrack, SiteConfig, TrackPoint,
@@ -222,6 +224,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // Fixes whose GPS was spoofed (lib/spoof.ts): kept off the map and out
     // of every number, but the tracker was heard in them.
     let spoofed = JSON.parse(root.dataset.spoofed ?? "[]") as TrackPoint[];
+    // `?spoofing=show` draws them anyway, where the GPS said they were:
+    // a spoof over a war zone is part of the story of the flight. Link
+    // only, never remembered; the Signal panel toggles it.
+    let showSpoofed = spoofViewFromSearch(location.search);
+    const drawnSpoofed = () => (showSpoofed ? spoofed : []);
     const flights = JSON.parse(root.dataset.flights!) as FlightMeta[];
     // Every flight's record summary as built (lib/records.ts); this
     // flight's is recomputed from the live track, see summaries().
@@ -591,8 +598,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
-            ghosts, overlays: mapOverlays(), marks: recordMarks(), forecast,
-            onOverlayClick: openFlight,
+            ghosts, spoofed: drawnSpoofed(), overlays: mapOverlays(),
+            marks: recordMarks(), forecast, onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
             weather: { ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
@@ -611,7 +618,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         }
       }
       const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, ghosts, overlays: mapOverlays(), marks: recordMarks(),
+        units, metric, ghosts, spoofed: drawnSpoofed(), overlays: mapOverlays(),
+        marks: recordMarks(),
         forecast, sizing: "fill", onOverlayClick: openFlight,
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
@@ -950,9 +958,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         : "";
       // A fix whose GPS was spoofed: heard, telemetry and all, but its
       // position was a spoofer's, so it is on neither the map nor the cards.
+      // `?spoofing=show` puts them on the map anyway; this is where the
+      // reader finds that out.
       const lied = spoofed.length
         ? mini("GPS spoofed", `${fmtInt(spoofed.length)} position${
-          spoofed.length === 1 ? "" : "s"} faked, not drawn`)
+          spoofed.length === 1 ? "" : "s"} faked · <button type="button"
+          class="linklike" data-spoof-toggle>${showSpoofed ? "hide" : "show on map"}</button>`)
         : "";
       panelBody.innerHTML =
         `<div class="fv-minis">${[
@@ -1160,6 +1171,17 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         actOnce("Chart read", { panel, flight: meta.flight_id }, `chart:${panel}`);
       }
     }, { passive: true });
+
+    // The Signal panel re-renders, so listen on its body.
+    panelBody.addEventListener("click", (ev) => {
+      if (!(ev.target as HTMLElement).closest("[data-spoof-toggle]")) return;
+      showSpoofed = !showSpoofed;
+      act("Spoofing", { show: showSpoofed, flight: meta.flight_id });
+      pinInUrl(urlWithSpoofView(location.href, showSpoofed));
+      // A redraw, not a new view: the reader is looking where they were.
+      drawMapAgain(true);
+      renderPanel();
+    });
 
     nextLink.addEventListener("click", () => {
       const i = flights.findIndex((f) => f.flight_id === meta.flight_id);

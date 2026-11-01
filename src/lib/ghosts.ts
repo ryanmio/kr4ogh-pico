@@ -72,7 +72,7 @@ export function unwrapNear(lon: number, ref: number): number {
  * point nearest it in time. With no track at all the ghosts are unwrapped
  * against each other. */
 export function unwrapGhostLons(
-  track: TrackPoint[], trackLons: number[], ghosts: GhostPoint[],
+  track: TrackPoint[], trackLons: number[], ghosts: Pick<GhostPoint, "utc" | "lon">[],
 ): number[] {
   if (!track.length) {
     let ref: number | null = null;

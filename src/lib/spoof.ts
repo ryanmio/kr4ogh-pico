@@ -173,3 +173,53 @@ export function spoofedSince(
   const believed = [track.at(-1)?.utc ?? "", ghosts.at(-1)?.utc ?? ""].sort().at(-1)!;
   return spoofed.find((p) => p.utc > believed) ?? null;
 }
+
+/** One spoof, as the map draws it with `?spoofing=show`: the spoofed fixes
+ * in a row, and the true fixes either side, which are where the GPS jumped
+ * from and back to. Indices into the believed track; null at an end the
+ * track does not reach, such as a spoof still going on. */
+export interface SpoofRun {
+  before: number | null;
+  fixes: TrackPoint[];
+  after: number | null;
+}
+
+/** Group spoofed fixes into the runs between believed ones. */
+export function spoofRuns(track: TrackPoint[], spoofed: TrackPoint[]): SpoofRun[] {
+  const runs: SpoofRun[] = [];
+  let i = 0; // the first believed fix newer than the one being placed
+  for (const p of spoofed) {
+    while (i < track.length && track[i]!.utc < p.utc) i++;
+    const before = i > 0 ? i - 1 : null;
+    const last = runs.at(-1);
+    if (last && last.before === before) last.fixes.push(p);
+    else runs.push({ before, fixes: [p], after: i < track.length ? i : null });
+  }
+  return runs;
+}
+
+/** The query parameter that draws the spoofed fixes on the map, where the
+ * GPS said they were: `?spoofing=show`. A link-only view, never
+ * remembered: the reader who follows a link about a spoof gets it, and the
+ * map everyone else sees stays the balloon's true path. */
+export const SPOOF_URL_PARAM = "spoofing";
+
+const SHOW = new Set(["show", "view", "on", "1", "true", "yes"]);
+
+export function spoofViewFromSearch(search: string): boolean {
+  try {
+    const raw = new URLSearchParams(search).get(SPOOF_URL_PARAM);
+    return raw !== null && SHOW.has(raw.trim().toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/** The same page with the spoofed fixes shown or not, every other
+ * parameter and the hash kept. */
+export function urlWithSpoofView(href: string, show: boolean): string {
+  const url = new URL(href);
+  if (show) url.searchParams.set(SPOOF_URL_PARAM, "show");
+  else url.searchParams.delete(SPOOF_URL_PARAM);
+  return url.toString();
+}

@@ -23,6 +23,7 @@ import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { esc, RECORD_PIN_SVG } from "./render";
 import { speedText } from "./speed";
+import { pressureAltitudeM, spoofRuns } from "./spoof";
 import { altitude as fmtAltitude, type Units } from "./units";
 import type { FlightMeta, GhostPoint, MapMark, OverlayTrack, TrackPoint } from "./types";
 
@@ -30,6 +31,10 @@ export interface MapOptions {
   units?: Units;
   /** Slots heard without telemetry, drawn as ghosts beside the track. */
   ghosts?: GhostPoint[];
+  /** Fixes whose GPS was spoofed, drawn where the GPS said they were, off
+   * the track. Only passed when the reader asked for them; see
+   * lib/spoof.ts. */
+  spoofed?: TrackPoint[];
   /** Other flights drawn under this one for comparison: a dimmer line and
    * a named beacon each, nothing else. See lib/overlay.ts. */
   overlays?: OverlayTrack[];
@@ -106,9 +111,14 @@ export function renderMap(
   const metric = METRICS[opts.metric ?? "altitude"];
   const fill = opts.sizing === "fill";
   const ghosts = opts.ghosts ?? [];
+  const spoofed = opts.spoofed ?? [];
 
   const geo = geometry(track, ghosts);
   const { latlngs, line, ghostLatlngs, tailLatlngs, here, hereLatlng, lons: allLons } = geo;
+  // Placed beside the track the way ghosts are, so a spoof past the
+  // antimeridian lands next to the line rather than a world away.
+  const spoofLons = unwrapGhostLons(track, latlngs.map((ll) => ll.lng), spoofed);
+  const spoofLatlngs = spoofed.map((p, i) => L.latLng(p.lat, spoofLons[i]!));
   // Overlaid flights are fitted too, with this flight's balloon still last
   // (fitRegion's contract), so a comparison opens with both in view.
   const overlays = (opts.overlays ?? [])
@@ -134,6 +144,7 @@ export function renderMap(
   // Every longitude anything is drawn at, for the copies of the world.
   const everyLon = [
     ...allLons, ...overlays.flatMap((o) => o.geo.lons), ...fc.map((p) => p.lng),
+    ...spoofLons,
   ];
   const worlds = worldCopies(everyLon);
 
@@ -233,6 +244,8 @@ export function renderMap(
         interactive: false },
     ));
   }
+
+  if (spoofed.length) drawSpoofed(map, worlds, track, latlngs, spoofed, spoofLatlngs, units);
 
   if (fc.length) drawForecast(map, worlds, opts.forecast!, fc, units);
 
@@ -657,6 +670,64 @@ const SPOT_MIN_RADIUS = 4;
 
 /** Zooms the radius is interpolated between. Below the first is the whole
  * world in the box; above the second, a fix is a place you could point at. */
+/** The spoofed fixes, where the GPS put them: a dashed detour from the
+ * last true fix out to them and back to the next, and a ring at each. Rose,
+ * because it is the one colour nothing else on the map uses, and this is
+ * the one thing on it that is not true. */
+function drawSpoofed(
+  map: L.Map, worlds: Worlds, track: TrackPoint[], latlngs: L.LatLng[],
+  spoofed: TrackPoint[], spoofLatlngs: L.LatLng[], units: Units,
+): void {
+  const at = new Map(spoofed.map((p, i) => [p, spoofLatlngs[i]!]));
+  for (const run of spoofRuns(track, spoofed)) {
+    const path = arc([
+      ...(run.before !== null ? [latlngs[run.before]!] : []),
+      ...run.fixes.map((p) => at.get(p)!),
+      ...(run.after !== null ? [latlngs[run.after]!] : []),
+    ]);
+    if (path.length < 2) continue;
+    worlds.add(map, (w) => L.polyline(path.map(w), {
+      color: "#0b1020", weight: 5, opacity: 0.4, interactive: false,
+    }));
+    worlds.add(map, (w) => L.polyline(path.map(w), {
+      color: SPOOF_COLOR, weight: 1.8, opacity: 0.85, dashArray: "2 6",
+      interactive: false,
+    }));
+  }
+  // One ring per square the GPS was put in: a spoofer holds its spot for
+  // hours, and a stack of identical rings would hide all but the top
+  // one's tooltip, which may be the one without a pressure reading.
+  const bySquare = new Map<string, TrackPoint[]>();
+  for (const p of spoofed) {
+    const list = bySquare.get(p.grid6);
+    if (list) list.push(p);
+    else bySquare.set(p.grid6, [p]);
+  }
+  for (const fixes of bySquare.values()) {
+    const first = fixes[0]!;
+    const last = fixes.at(-1)!;
+    const sensed = fixes.findLast((p) => p.pressure_hpa != null && p.pressure_hpa > 0);
+    const when = fixes.length === 1
+      ? fmtLocal(first.utc)
+      : `${fmtLocal(first.utc)} to ${fmtLocal(last.utc)}, ${fixes.length} reports`;
+    worlds.add(map, (w) => L.circleMarker(w(at.get(last)!), {
+      radius: 5, color: SPOOF_COLOR, weight: 2, opacity: 0.95,
+      fillColor: SPOT_OUTLINE, fillOpacity: 0.6,
+    }).bindTooltip(
+      `<b>GPS spoofed</b> · ${when}<br>` +
+      `GPS said ${last.grid6}, ${fmtAltitude(last.altitude_m, units).text}, ` +
+      `${speedText(last, units)}` +
+      (sensed
+        ? `<br>pressure sensor said ${fmtAltitude(pressureAltitudeM(sensed.pressure_hpa!), units).text}` +
+          ` (${sensed.pressure_hpa} hPa)`
+        : "") +
+      "<br>not where the balloon was",
+    ));
+  }
+}
+
+const SPOOF_COLOR = "#fb7185";
+
 const SPOT_FULL_ZOOM = 7;
 const SPOT_SMALL_ZOOM = 2;
 

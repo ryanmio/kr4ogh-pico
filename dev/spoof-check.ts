@@ -17,7 +17,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import {
-  believe, dropSpoofedGhosts, pressureAltitudeM, spoofedSince, splitSpoofed,
+  believe, dropSpoofedGhosts, pressureAltitudeM, spoofedSince, spoofRuns,
+  spoofViewFromSearch, splitSpoofed, urlWithSpoofView,
 } from "../src/lib/spoof";
 import type { GhostPoint, TrackPoint } from "../src/lib/types";
 
@@ -78,6 +79,23 @@ check("a ghost in the spoofer's square is dropped, a true one kept",
 const b = believe(iran, ghosts);
 check("believe() leaves no spoofed fix on the track",
   b.track.every((p) => !b.spoofed.includes(p)) && b.spoofed.length === 2);
+
+// What `?spoofing=show` draws: one detour, from the last true fix out to
+// the spoofer and back to the first true fix after.
+const runs = spoofRuns(after.track, after.spoofed);
+check("the spoof is one run, from 11:50 out and back to 14:00",
+  runs.length === 1 && runs[0]!.fixes.length === 2
+  && after.track[runs[0]!.before!]?.utc === "2026-11-01 11:50:00"
+  && after.track[runs[0]!.after!]?.utc === "2026-11-01 14:00:00");
+const ongoing = spoofRuns(split.track, split.spoofed);
+check("a spoof still going on has no way back yet",
+  ongoing.length === 1 && ongoing[0]!.after === null);
+check("?spoofing=show and its synonyms turn the view on, anything else off",
+  spoofViewFromSearch("?spoofing=show") && spoofViewFromSearch("?u=i&spoofing=View")
+  && !spoofViewFromSearch("?spoofing=no") && !spoofViewFromSearch(""));
+check("toggling the view keeps the other parameters",
+  urlWithSpoofView("https://x/?u=i#a", true) === "https://x/?u=i&spoofing=show#a"
+  && urlWithSpoofView("https://x/?u=i&spoofing=show", false) === "https://x/?u=i");
 
 // ---------- 2. every committed track ----------
 

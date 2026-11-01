@@ -32,6 +32,7 @@ import {
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { esc, RECORD_PIN_SVG } from "./render";
+import { spoofRuns } from "./spoof";
 import {
   buildWeatherToggle, cloudTiles, rainTiles, renderCloudTile,
   type WeatherLayer, type WeatherTiles,
@@ -142,6 +143,56 @@ function positions(track: TrackPoint[], ghosts: GhostPoint[]): Positions {
     fitLats: pts.map((p) => p[0]!), fitLons: pts.map((p) => p[1]!),
   };
 }
+
+/** The spoofed fixes where the GPS put them, and the dashed detour out to
+ * them from the true track and back, as on the flat map. Under the track,
+ * so the true path and the beacon stay on top where the detour leaves
+ * them. */
+function addSpoofed(
+  style: StyleSpecification, track: TrackPoint[], pos: Positions,
+  spoofed: TrackPoint[],
+): void {
+  const lons = unwrapGhostLons(track, pos.lons, spoofed);
+  const at = new Map(spoofed.map((p, i) => [p, [lons[i]!, p.lat]]));
+  const lines = spoofRuns(track, spoofed).map((run) => greatCircleLine([
+    ...(run.before !== null ? [[pos.lons[run.before]!, track[run.before]!.lat]] : []),
+    ...run.fixes.map((p) => at.get(p)!),
+    ...(run.after !== null ? [[pos.lons[run.after]!, track[run.after]!.lat]] : []),
+  ])).filter((l) => l.length >= 2);
+  style.sources.spoofLine = {
+    type: "geojson",
+    data: {
+      type: "Feature", properties: {},
+      geometry: { type: "MultiLineString", coordinates: lines },
+    },
+  };
+  style.sources.spoofed = {
+    type: "geojson",
+    data: {
+      type: "Feature", properties: {},
+      geometry: { type: "MultiPoint", coordinates: [...at.values()] },
+    },
+  };
+  const layers: StyleSpecification["layers"] = [
+    { id: "spoof-casing", type: "line", source: "spoofLine",
+      paint: { "line-color": "#0b1020", "line-width": 5, "line-opacity": 0.4 } },
+    { id: "spoof-line", type: "line", source: "spoofLine",
+      paint: {
+        "line-color": SPOOF_COLOR, "line-width": 1.8, "line-opacity": 0.85,
+        "line-dasharray": [1, 3.5],
+      } },
+    { id: "spoofed", type: "circle", source: "spoofed",
+      paint: {
+        "circle-radius": 5, "circle-color": "#0b1020", "circle-opacity": 0.6,
+        "circle-stroke-color": SPOOF_COLOR, "circle-stroke-width": 2,
+      } },
+  ];
+  const under = style.layers.findIndex((l) => l.id === "track-casing");
+  style.layers.splice(under >= 0 ? under : style.layers.length, 0, ...layers);
+}
+
+/** The flat map's rose: the one thing on the map that is not true. */
+const SPOOF_COLOR = "#fb7185";
 
 /** The launch dot, the cased track line, the ghosts with their dashed
  * tail, and the newest report, as style sources and layers. Same colours
@@ -459,6 +510,9 @@ export interface GlobeOpts {
   weather?: GlobeWeather;
   /** Slots heard without telemetry, drawn as ghosts beside the track. */
   ghosts?: GhostPoint[];
+  /** Fixes whose GPS was spoofed, drawn where the GPS said, as on the flat
+   * map. */
+  spoofed?: TrackPoint[];
   /** Other flights drawn under this one, as on the flat map. */
   overlays?: OverlayTrack[];
   /** Called with the flight_id when a reader clicks an overlaid flight's
@@ -563,6 +617,7 @@ export function renderGlobe(
     .filter((x) => x.pos.here);
   overlays.forEach((x, n) => addOverlay(style, x.o, x.pos, n));
   addTrack(style, meta, track, ghosts, pos);
+  if (opts.spoofed?.length) addSpoofed(style, track, pos, opts.spoofed);
   // From the last full fix, where the prediction starts, not a newer ghost.
   const fc = opts.forecast && pos.lons.length
     ? forecastCoords(opts.forecast, pos.lons.at(-1)!) : [];
