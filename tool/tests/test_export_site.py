@@ -128,3 +128,78 @@ def test_sensor_fields_are_written_only_where_read(tmp_path):
     assert "pressure_hpa" not in track[0]
     assert (track[1]["pressure_hpa"], track[1]["board_temp_c"], track[1]["humidity_pct"]) == (252, -12, 0)
     assert "sensor_spot_id" not in track[1]
+
+
+def _fix(utc, **extra):
+    return {"flight_id": "F1", "utc": utc, "grid6": "FN41aa", "lat": 41.0, "lon": -71.9,
+            "altitude_m": 10800, "speed_knots": 60, "voltage_v": 4.0,
+            "temperature_c": 0, "gps_valid": 1, "rx_station_count": 1,
+            "regular_spot_id": 1, "telemetry_spot_id": 2,
+            "matcher_name": "fingerprint", "matcher_version": 1, **extra}
+
+
+def test_the_tier_is_written_only_on_an_inferred_point(tmp_path):
+    """A confirmed fix looks exactly as every fix always did; an inferred
+    one says so, with its reason (docs/cross-receiver-pairing.md)."""
+    (tmp_path / "flights.toml").write_text(CONFIG)
+    with Store(tmp_path / "t.db") as store:
+        store.upsert_telemetry([
+            _fix("2026-09-01 00:10:00", tier="confirmed", pressure_hpa=250,
+                 board_temp_c=-10, humidity_pct=0, sensor_tier="confirmed"),
+            _fix("2026-09-01 00:20:00", tier="inferred", pairing="cross-receiver; why",
+                 matcher_name="cross-receiver"),
+            _fix("2026-09-01 00:30:00", tier="confirmed", pressure_hpa=251,
+                 board_temp_c=-11, humidity_pct=0, sensor_tier="inferred",
+                 sensor_pairing="cross-receiver; sensor why"),
+        ])
+        store.replace_ghosts("F1", [{
+            "flight_id": "F1", "utc": "2026-09-01 00:40:00", "grid4": "FN41",
+            "lat": 41.5, "lon": -71.0, "rx_station_count": 1,
+            "matcher_name": "cross-receiver", "matcher_version": 1,
+            "pressure_hpa": 252, "board_temp_c": -12, "humidity_pct": 0,
+            "sensor_tier": "inferred", "sensor_pairing": "g why", "grid_source": "neighbours"}])
+    export(tmp_path / "flights.toml", tmp_path / "t.db", tmp_path)
+    tracks = tmp_path / "src" / "data" / "tracks"
+    track = json.loads((tracks / "N0CALL-F1.json").read_text())
+    assert not {"tier", "pairing", "sensor_tier", "sensor_pairing"} & set(track[0])
+    assert (track[1]["tier"], track[1]["pairing"]) == ("inferred", "cross-receiver; why")
+    assert "tier" not in track[2] and track[2]["sensor_tier"] == "inferred"
+    (ghost,) = json.loads((tracks / "N0CALL-F1.ghosts.json").read_text())
+    assert ghost == {"utc": "2026-09-01 00:40:00", "grid4": "FN41", "lat": 41.5,
+                     "lon": -71.0, "rx_station_count": 1, "pressure_hpa": 252,
+                     "board_temp_c": -12, "humidity_pct": 0, "sensor_tier": "inferred",
+                     "sensor_pairing": "g why", "grid_source": "neighbours"}
+
+
+def test_a_rejudged_inferred_point_is_withdrawn_not_merged_back(tmp_path):
+    """The export merges into the committed track and never drops a point
+    on its own. An inferred point the database has since looked at again
+    and not accepted is the exception: it is withdrawn. A confirmed point,
+    and an inferred one the database says nothing about, are kept."""
+    (tmp_path / "flights.toml").write_text(CONFIG)
+    tracks = tmp_path / "src" / "data" / "tracks"
+    tracks.mkdir(parents=True)
+    committed = [
+        {"utc": "2026-09-01 00:10:00", "lat": 41.0, "lon": -71.9},
+        {"utc": "2026-09-01 00:20:00", "lat": 41.0, "lon": -71.9, "tier": "inferred"},
+        {"utc": "2026-09-01 00:30:00", "lat": 41.0, "lon": -71.9, "tier": "inferred"},
+    ]
+    (tracks / "N0CALL-F1.json").write_text(json.dumps(committed))
+    from datetime import datetime
+
+    def judged(window_start):
+        with Store(tmp_path / "t.db") as store:
+            store.conn.execute("DELETE FROM pulls")
+            store.record_pull(datetime.fromisoformat(window_start),
+                              datetime(2026, 9, 1, 6), 14, "regular:F1", "q", 0)
+            store.replace_pairings("F1", [
+                {"flight_id": "F1", "cycle_utc": "2026-09-01 00:20:00", "kind": "basic",
+                 "outcome": "ambiguous", "reason": "2 messages pass", "spot_ids": "1,2"}])
+        export(tmp_path / "flights.toml", tmp_path / "t.db", tmp_path)
+        return [p["utc"] for p in json.loads((tracks / "N0CALL-F1.json").read_text())]
+
+    # Pulled from 23:50 the day before: 00:20 is only half an hour in, and
+    # the verdict may rest on a Regular this database never saw. Kept.
+    assert judged("2026-08-31 23:51:00") == [p["utc"] for p in committed]
+    # Pulled from midnight the day before: well inside. Withdrawn.
+    assert judged("2026-08-31 00:00:00") == ["2026-09-01 00:10:00", "2026-09-01 00:30:00"]
