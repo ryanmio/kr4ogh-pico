@@ -182,3 +182,13 @@ What the first export found, seeded from wspr.live on 2026-09-07: F1B's
 launch slot at 12:44 and its three FM38 sunset slots from the table above,
 plus one slot ten minutes after what had been its last fix; F2A and F2B
 each ending, that morning, on a ghost.
+
+## Since: the inferred tier (2026-11-03)
+
+Over Tibet on 3 Nov 2026 every one of PT01's cycles was a ghost. One
+station heard the Regular messages and another heard the telemetry, so the
+same-station rule linked nothing. A second, lower-confidence pairing tier
+now fills such cycles when exactly one candidate passes stricter checks
+(lane, decode, grid square, path and altitude). Its fixes are on the track
+marked `tier: "inferred"` and drawn as rings. Its sensor readings can ride
+on a ghost. See docs/cross-receiver-pairing.md.

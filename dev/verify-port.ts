@@ -6,9 +6,13 @@
  * tool/tests/vectors/petrel_slot3.json is ninety minutes of the first
  * Petrel flight, where the tracker's BME280 reading rides on every fix as
  * extended telemetry in slot 3, cross-checked against an independent
- * decoder. The Python passes both; this asserts the TypeScript port
- * produces byte-identical output from the same input, so "the port is
- * correct" is a measurement rather than a claim.
+ * decoder. tool/tests/vectors/pt01_cross_receiver.json is PT01 over Tibet
+ * and three other stretches, where the inferred pairing tier
+ * (docs/cross-receiver-pairing.md) fills cycles the fingerprint cannot.
+ * The Python passes all three; this asserts the TypeScript port produces
+ * byte-identical output from the same input, including every inferred
+ * tier decision and its reason, so "the port is correct" is a measurement
+ * rather than a claim.
  *
  * Run:  npx tsx dev/verify-port.ts
  */
@@ -28,7 +32,8 @@ interface Vector {
   flight: { callsign: string; channel: number; sensor?: string | null };
   raw_spots: Spot[];
   expected_telemetry: Record<string, unknown>[];
-  expected_ghosts?: { utc: string; grid4: string; rx_station_count: number }[];
+  expected_ghosts?: Record<string, unknown>[];
+  expected_pairings?: Record<string, unknown>[];
 }
 
 // Left side is the site's TrackPoint field, right side the vector's
@@ -42,7 +47,23 @@ const FIELDS: [string, string][] = [
   ["gps_valid", "gps_valid"], ["rx_station_count", "rx_station_count"],
   ["pressure_hpa", "pressure_hpa"], ["board_temp_c", "board_temp_c"],
   ["humidity_pct", "humidity_pct"],
+  ["tier", "tier"], ["pairing", "pairing"],
+  ["sensor_tier", "sensor_tier"], ["sensor_pairing", "sensor_pairing"],
 ];
+
+// A ghost's fields, which are named alike on both sides.
+const GHOST_FIELDS = [
+  "utc", "grid4", "lat", "lon", "rx_station_count", "pressure_hpa", "board_temp_c",
+  "humidity_pct", "sensor_tier", "sensor_pairing", "grid_source",
+];
+
+/** The Python's value as the port holds it: 0/1 for gps_valid, null for
+ * absent, and "confirmed" for a tier the port leaves off. */
+function asPort(field: string, b: unknown): unknown {
+  if (field === "gps_valid") return Boolean(b);
+  if (b === null || b === "confirmed") return undefined;
+  return b;
+}
 
 let failures = 0;
 const fail = (msg: string) => { console.error(`  FAIL ${msg}`); failures++; };
@@ -67,7 +88,8 @@ function verify(file: string, wantGhosts: { utc: string; grid4: string; rx: numb
     ? spots.filter((s) => candidate(s) && minute(s) === slotMinute(ch, BME280_SLOT))
     : [];
 
-  const { track: got, ghosts } = decodeWindow(regular, telemetry, sensor);
+  const { track: got, ghosts, decisions } = decodeWindow(
+    regular, telemetry, sensor, { channel: ch });
   const want = vector.expected_telemetry;
 
   console.log(`vector: ${vector.description.slice(0, 72)}...`);
@@ -82,16 +104,46 @@ function verify(file: string, wantGhosts: { utc: string; grid4: string; rx: numb
       const a = (got[i] as unknown as Record<string, unknown>)[mine];
       // The Python stores gps_valid as 0/1 in SQLite, and a missing sensor
       // reading as null; compare by value.
-      let b = want[i]![theirs];
-      if (theirs === "gps_valid") b = Boolean(b);
-      if (b === null) b = undefined;
+      const b = asPort(theirs, want[i]![theirs]);
       if (a !== b) fail(`row ${i} (${want[i]!.utc}) field ${mine}: got ${a}, want ${b}`);
     }
   }
 
-  const gotGhosts = ghosts.map((g) => ({ utc: g.utc, grid4: g.grid4, rx: g.rx_station_count }));
-  if (JSON.stringify(gotGhosts) !== JSON.stringify(wantGhosts)) {
-    fail(`ghosts: got ${JSON.stringify(gotGhosts)}, want ${JSON.stringify(wantGhosts)}`);
+  if (vector.expected_ghosts?.length) {
+    // Every field of every ghost, sensor readings included.
+    const wg = vector.expected_ghosts;
+    if (ghosts.length !== wg.length) fail(`ghost count ${ghosts.length} != ${wg.length}`);
+    for (let i = 0; i < Math.min(ghosts.length, wg.length); i++) {
+      for (const f of GHOST_FIELDS) {
+        const a = (ghosts[i] as unknown as Record<string, unknown>)[f];
+        const b = asPort(f, wg[i]![f]);
+        if (a !== b) fail(`ghost ${i} (${String(wg[i]!.utc)}) field ${f}: got ${a}, want ${b}`);
+      }
+    }
+  } else {
+    const gotGhosts = ghosts.map((g) => ({ utc: g.utc, grid4: g.grid4, rx: g.rx_station_count }));
+    if (JSON.stringify(gotGhosts) !== JSON.stringify(wantGhosts)) {
+      fail(`ghosts: got ${JSON.stringify(gotGhosts)}, want ${JSON.stringify(wantGhosts)}`);
+    }
+  }
+  // What the inferred tier decided, cycle by cycle, with its reasons.
+  const wantDecisions = (vector.expected_pairings ?? []).map((d) =>
+    `${String(d.cycle_utc)} ${String(d.kind)} ${String(d.outcome)}: ${String(d.reason)}`);
+  const gotDecisions = decisions
+    .map((d) => `${d.cycleUtc} ${d.kind} ${d.outcome}: ${d.reason}`)
+    .sort();
+  wantDecisions.sort();
+  if (gotDecisions.length !== wantDecisions.length) {
+    fail(`decision count ${gotDecisions.length} != ${wantDecisions.length}`);
+  }
+  for (let i = 0; i < Math.min(gotDecisions.length, wantDecisions.length); i++) {
+    if (gotDecisions[i] !== wantDecisions[i]) {
+      fail(`decision ${i}:\n    got  ${gotDecisions[i]}\n    want ${wantDecisions[i]}`);
+    }
+  }
+  const inferred = got.filter((p) => p.tier === "inferred").length;
+  if (decisions.length) {
+    console.log(`        ${inferred} inferred fixes, ${decisions.length} inferred-tier decisions`);
   }
   const readings = got.filter((p) => p.pressure_hpa !== undefined).length;
   console.log(`        ${readings} rows carry a sensor reading\n`);
@@ -106,10 +158,12 @@ const basic = verify("basic_telemetry.json", [
   { utc: "2026-08-18 16:54:00", grid4: "BN35", rx: 13 },
 ]);
 const petrel = verify("petrel_slot3.json", []);
+const cross = verify("pt01_cross_receiver.json", []);
 
 if (failures === 0) {
-  console.log(`PASS: ${basic.length} + ${petrel.length} rows identical across all `
-    + `${FIELDS.length} fields, and the slots heard without telemetry`);
+  console.log(`PASS: ${basic.length} + ${petrel.length} + ${cross.length} rows identical `
+    + `across all ${FIELDS.length} fields, the slots heard without telemetry, and `
+    + "every inferred-tier decision");
   // The matcher identity is a constant on the port, not a per-row field.
   console.log(`       matcher ${MATCHER_NAME} v${MATCHER_VERSION}, `
     + `vector says ${basic[0]!.matcher_name} v${basic[0]!.matcher_version}`);

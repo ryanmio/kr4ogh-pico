@@ -141,18 +141,30 @@ export interface TrackStats {
   last: TrackPoint;
 }
 
+/** True for a fix paired across receivers rather than by one station
+ * (docs/cross-receiver-pairing.md, lib/types.ts). */
+export function isInferred(p: TrackPoint): boolean {
+  return p.tier === "inferred";
+}
+
+/** Distance is over every fix, inferred ones included. The peak and the
+ * fastest are records, and come from confirmed fixes only, unless there
+ * are none. */
 export function trackStats(track: TrackPoint[]): TrackStats | null {
   if (track.length === 0) return null;
   let distanceKm = 0;
   let maxAltitudeM = -Infinity;
   let maxSpeedKt = -Infinity;
+  const onlyInferred = track.every(isInferred);
   for (let i = 0; i < track.length; i++) {
     const p = track[i]!;
-    maxAltitudeM = Math.max(maxAltitudeM, p.altitude_m);
-    // Inlined rather than imported from lib/speed.ts, which imports this
-    // module: the fallback is the whole of groundSpeedKt and a cycle
-    // between the two is not worth one expression.
-    maxSpeedKt = Math.max(maxSpeedKt, p.speed_kt_est ?? p.speed_kt);
+    if (onlyInferred || !isInferred(p)) {
+      maxAltitudeM = Math.max(maxAltitudeM, p.altitude_m);
+      // Inlined rather than imported from lib/speed.ts, which imports this
+      // module: the fallback is the whole of groundSpeedKt and a cycle
+      // between the two is not worth one expression.
+      maxSpeedKt = Math.max(maxSpeedKt, p.speed_kt_est ?? p.speed_kt);
+    }
     if (i > 0) {
       const q = track[i - 1]!;
       distanceKm += haversineKm(q.lat, q.lon, p.lat, p.lon);

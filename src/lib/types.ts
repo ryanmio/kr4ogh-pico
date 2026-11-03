@@ -32,6 +32,18 @@ export interface TrackPoint {
   pressure_hpa?: number;
   board_temp_c?: number;
   humidity_pct?: number;
+  /** How the fix was paired (docs/cross-receiver-pairing.md). Absent on a
+   * confirmed fix, the same-station fingerprint pair every fix used to be.
+   * "inferred" is a fix whose telemetry was heard by a different station
+   * from its Regular message, accepted by the stricter checks in
+   * lib/wspr/infer.ts; `pairing` says which passed and where the grid
+   * square came from. An inferred fix is on the line, the cards and the
+   * forecast, but sets no record. */
+  tier?: "inferred";
+  pairing?: string;
+  /** The same for the sensor reading, which is paired on its own. */
+  sensor_tier?: "inferred";
+  sensor_pairing?: string;
 }
 
 /** A slot where only the Regular message was heard: the callsign, a 4-char
@@ -46,6 +58,17 @@ export interface GhostPoint {
   lat: number;
   lon: number;
   rx_station_count: number;
+  /** The cycle's sensor reading, when one was heard and there was no fix
+   * to carry it. */
+  pressure_hpa?: number;
+  board_temp_c?: number;
+  humidity_pct?: number;
+  sensor_tier?: "inferred";
+  sensor_pairing?: string;
+  /** "neighbours" when no Regular was heard in the cycle itself: the square
+   * is the one the Regulars either side of it agreed on, and the ghost is
+   * there for the sensor reading it carries. */
+  grid_source?: "neighbours";
 }
 
 export interface FlightMeta {

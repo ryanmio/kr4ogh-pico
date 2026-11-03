@@ -63,6 +63,15 @@ yet. Storing it would freeze the worst version of it. `src/lib/speed.ts`
 recomputes it over the whole track every time the track changes, in the
 browser and at build time alike.
 
+Fixes are paired in two tiers (docs/cross-receiver-pairing.md). The
+**confirmed** tier is the same-station fingerprint every fix used to need.
+The **inferred** tier takes telemetry heard by a different station from
+the Regular message, when it passes stricter checks and is the only
+candidate. Both the tool and the browser run both tiers. The committed
+track marks an inferred fix with `tier` and `pairing` and leaves a
+confirmed one exactly as it was. The site draws inferred fixes as rings,
+reads them on the cards and the forecast, and leaves them out of records.
+
 GPS-spoofed fixes are handled the same way. Over parts of the Middle East
 the tracker's GPS can be spoofed, and it then reports a fake position,
 usually the spoofer's own spot on the ground. The committed track and
