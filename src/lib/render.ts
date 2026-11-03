@@ -4,7 +4,7 @@
 
 import {
   bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocalDay, fmtRelative, fmtUtc,
-  haversineKm, parseUtc, trackStats,
+  haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
 import { heardBounds } from "./ghosts";
 import { METRICS, type MetricKey } from "./metrics";
@@ -67,15 +67,30 @@ const TRACKER_ICON =
   '<path d="M12 2.5a6 6 0 0 1 6 6c0 3.7-2.7 6.7-6 6.7s-6-3-6-6.7a6 6 0 0 1 6-6z"/>' +
   '<path d="M10.8 15l-.8 2.5h4l-.8-2.5"/><path d="M12 17.5V21"/></svg>';
 
+/** What a tooltip, the table and the map key call an inferred fix's
+ * pairing, and the shorter word a card's label has room for. */
+export const INFERRED_LABEL = "cross-receiver";
+export const INFERRED_TAG = "inferred";
+export const INFERRED_TITLE =
+  "From a telemetry fix heard by a different station from the one that "
+  + "heard the balloon's callsign message (cross-receiver pairing). "
+  + "Accepted only when it is the one message in its slot that fits the "
+  + "flight; less certain than a fix one station heard whole.";
+
+/** `inferred` marks a value read off an inferred fix: the label says so,
+ * and its tooltip says what that means. */
 function metricCard(
-  key: MetricKey, value: string, sub: string, active: ActiveCard,
+  key: MetricKey, value: string, sub: string, active: ActiveCard, inferred = false,
 ): string {
   const m = METRICS[key];
+  const tier = inferred
+    ? ` <span class="fv-card-tier" title="${esc(INFERRED_TITLE)}">· ${INFERRED_TAG}</span>`
+    : "";
   return `<button type="button" class="fv-card" data-metric="${key}"
     aria-pressed="${key === active}">
     <span class="fv-card-icon" style="color:${m.color}">${ICONS[key]}</span>
     <span class="fv-card-text">
-      <span class="fv-card-label">${esc(m.label)}</span>
+      <span class="fv-card-label">${esc(m.label)}${tier}</span>
       <span class="fv-card-value">${esc(value)}</span>
       <span class="fv-card-sub">${esc(sub)}</span>
     </span>
@@ -94,7 +109,9 @@ function metricCard(
  * `ghosts` are the slots heard without telemetry. They count as the
  * tracker being heard -- "last heard" and "flying for" take them in -- and
  * as nothing else: every number on the metric cards is from the last full
- * fix, because a ghost carries none of them. */
+ * fix, because a ghost carries none of them. That fix may be an inferred
+ * one (docs/cross-receiver-pairing.md), and then its cards say so; the
+ * peak and the fastest are from confirmed fixes only. */
 export function sidebarHtml(
   meta: FlightMeta, track: TrackPoint[], units: Units, active: ActiveCard,
   opts: {
@@ -188,6 +205,8 @@ export function sidebarHtml(
   </button>
   <p class="fv-hint">Tap a stat to color the map by it and see its chart</p>`;
 
+  // The newest fix, read by every card below but Journey, may be inferred.
+  const lastInferred = isInferred(s.last);
   const cards = [
     metricCard(
       "journey",
@@ -197,25 +216,30 @@ export function sidebarHtml(
         : `${compassPoint(heading)} · ${u.distance(fromLaunchKm, units).text} from launch`,
       active,
     ),
-    metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active),
-    metricCard("speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`, active),
+    metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active,
+      lastInferred),
+    metricCard("speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`, active,
+      lastInferred),
     metricCard(
       "voltage",
       `${s.last.voltage_v.toFixed(2)} V`,
       `${Math.min(...volts).toFixed(2)}\u2013${Math.max(...volts).toFixed(2)} V seen`,
       active,
+      lastInferred,
     ),
     metricCard(
       "temperature",
       tmp(s.last.temperature_c),
       `${u.temperature(Math.min(...temps), units).value} to ${tmp(Math.max(...temps))}`,
       active,
+      lastInferred,
     ),
     metricCard(
       "receivers",
       fmtInt(s.last.rx_station_count),
       "stations heard the last report",
       active,
+      lastInferred,
     ),
   ];
   return tracker + status + cards.join("") + records;
@@ -250,6 +274,17 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
     : "";
   const sensorHeads = sensor
     ? "<th>hPa</th><th>Board (°C)</th><th>RH (%)</th>" : "";
+  // A pairing column, only once an inferred fix or reading is on the track
+  // (docs/cross-receiver-pairing.md): every other row is a same-station
+  // pair, and the column would say so 400 times.
+  const tiers = track.some((p) => isInferred(p) || p.sensor_tier === "inferred");
+  const tierCell = (p: TrackPoint) => {
+    if (!tiers) return "";
+    const what = isInferred(p) ? INFERRED_LABEL
+      : p.sensor_tier === "inferred" ? `sensor ${INFERRED_LABEL}` : "";
+    const why = p.pairing ?? p.sensor_pairing;
+    return `<td class="mono"${why ? ` title="${esc(why)}"` : ""}>${what}</td>`;
+  };
   const rows = [...track].reverse().slice(0, maxRows).map((p) => `<tr>
     <td class="mono">${esc(fmtUtc(p.utc))}</td>
     <td class="mono">${esc(p.grid6)}</td>
@@ -261,6 +296,7 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
     <td class="mono num">${p.temperature_c}</td>
     ${sensorCells(p)}
     <td class="mono num">${p.rx_station_count}</td>
+    ${tierCell(p)}
   </tr>`);
   const label = capped
     ? `Telemetry table · latest ${fmtInt(maxRows)} of ${fmtInt(track.length)}` +
@@ -274,14 +310,23 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
       "at least this". A "~" speed is measured from the distance flown either
       side of the fix instead.</p>`
     : "";
+  const tierNote = tiers
+    ? `<p class="fv-panel-note">A "${INFERRED_LABEL}" row is a fix whose
+      telemetry was heard by a different station from the one that heard
+      the callsign message. It is kept only when it is the one message in
+      its slot that fits the flight's path and altitude. It is drawn as a
+      ring on the map, and sets no record.</p>`
+    : "";
   return `<details class="telemetry-table">
     <summary>${label}</summary>
     ${ceilingNote}
+    ${tierNote}
     <div class="table-scroll"><table>
       <thead><tr>
         <th>UTC</th><th>Grid</th><th>Lat</th><th>Lon</th>
         <th>Alt (m)</th><th>Speed (kt)</th><th>Volts</th>
-        <th>Die temp (°C)</th>${sensorHeads}<th>RX stations</th>
+        <th>Die temp (°C)</th>${sensorHeads}<th>RX stations</th>${
+  tiers ? "<th>Pairing</th>" : ""}
       </tr></thead>
       <tbody>${rows.join("")}</tbody>
     </table></div>

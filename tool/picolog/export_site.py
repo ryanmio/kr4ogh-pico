@@ -39,9 +39,11 @@ is deliberately absent, which is how a launch that failed stays off the site.
 import argparse
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from .config import DEFAULT_PATH, Flight, load_flights
+from .infer import NEIGHBOUR_WINDOW
 from .store import Store
 
 # The site's TrackPoint shape (src/lib/types.ts). `speed_knots` is
@@ -60,6 +62,10 @@ _TRACK_FIELDS = (
     ("pressure_hpa", "pressure_hpa"),
     ("board_temp_c", "board_temp_c"),
     ("humidity_pct", "humidity_pct"),
+    ("tier", "tier"),
+    ("pairing", "pairing"),
+    ("sensor_tier", "sensor_tier"),
+    ("sensor_pairing", "sensor_pairing"),
 )
 
 # The sensor fields are left out of a point that has none, rather than
@@ -69,8 +75,18 @@ _TRACK_FIELDS = (
 _SENSOR_FIELDS = ("pressure_hpa", "board_temp_c", "humidity_pct")
 
 
-# The site's GhostPoint shape (src/lib/types.ts).
-_GHOST_FIELDS = ("utc", "grid4", "lat", "lon", "rx_station_count")
+# The pairing tier (docs/cross-receiver-pairing.md) is written only on a
+# point the inferred tier produced: a confirmed point, the same-station
+# fingerprint pair every point used to be, looks exactly as it always did.
+_TIER_FIELDS = ("tier", "pairing")
+_SENSOR_TIER_FIELDS = ("sensor_tier", "sensor_pairing")
+
+# The site's GhostPoint shape (src/lib/types.ts). The fields after the
+# first five are left out of a ghost that has none, like a fix's sensor
+# fields.
+_GHOST_FIELDS = ("utc", "grid4", "lat", "lon", "rx_station_count",
+                 "pressure_hpa", "board_temp_c", "humidity_pct",
+                 "sensor_tier", "sensor_pairing", "grid_source")
 
 
 def _shown(flight: Flight) -> bool:
@@ -100,15 +116,66 @@ def _track_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
         for key in _SENSOR_FIELDS:
             if point[key] is None:
                 del point[key]
+        _drop_confirmed(point)
         out.append(point)
     return out
+
+
+def _drop_confirmed(point: dict) -> None:
+    """Leave the tier fields off a point unless they say "inferred"."""
+    if point.get("tier") != "inferred":
+        for key in _TIER_FIELDS:
+            point.pop(key, None)
+    if point.get("sensor_tier") != "inferred" or "pressure_hpa" not in point:
+        for key in _SENSOR_TIER_FIELDS:
+            point.pop(key, None)
 
 
 def _ghosts_from_db(conn: sqlite3.Connection, flight_id: str) -> list[dict]:
     rows = conn.execute(
         f"SELECT {', '.join(_GHOST_FIELDS)} FROM ghosts WHERE flight_id = ? "
         "ORDER BY utc", (flight_id,)).fetchall()
-    return [dict(zip(_GHOST_FIELDS, row)) for row in rows]
+    out = []
+    for row in rows:
+        ghost = {k: v for k, v in zip(_GHOST_FIELDS, row)
+                 if v is not None or k in _GHOST_FIELDS[:5]}
+        _drop_confirmed(ghost)
+        out.append(ghost)
+    return out
+
+
+def _rejudged(conn: sqlite3.Connection, flight_id: str) -> set[str]:
+    """The cycles this database's inferred tier looked at and did not
+    accept. A committed point the inferred tier produced in one of them,
+    under rules since tightened, is withdrawn rather than merged back:
+    the merge otherwise keeps whatever an earlier export wrote.
+
+    Only cycles well inside what this database pulled count. The scheduled
+    run's database starts an hour before the newest committed fix, and a
+    cycle near that edge may have lost the neighbouring Regular it was
+    placed from: "unplaced" there is missing data, not a verdict. With no
+    pull recorded at all, nothing is withdrawn."""
+    start, end = conn.execute(
+        "SELECT MIN(window_start), MAX(window_end) FROM pulls WHERE query_kind = ?",
+        (f"regular:{flight_id}",)).fetchone()
+    if start is None:
+        return set()
+    t = lambda s: datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+    lo = t(start) + NEIGHBOUR_WINDOW
+    hi = t(end) - NEIGHBOUR_WINDOW
+    rows = conn.execute(
+        "SELECT cycle_utc FROM pairings WHERE flight_id = ? AND outcome != 'inferred'",
+        (flight_id,)).fetchall()
+    return {r[0] for r in rows if lo <= t(r[0]) <= hi}
+
+
+def _withdraw(points: list[dict], rejudged: set[str], fresh: list[dict]) -> list[dict]:
+    """Drop the committed inferred points (a fix, or a ghost carrying an
+    inferred sensor reading) whose cycle was re-judged and not accepted."""
+    have = {p["utc"] for p in fresh}
+    return [p for p in points
+            if not (p["utc"] in rejudged and p["utc"] not in have
+                    and (p.get("tier") == "inferred" or p.get("sensor_tier") == "inferred"))]
 
 
 def _prune_ghosts(track: list[dict], ghosts: list[dict]) -> list[dict]:
@@ -153,7 +220,9 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
         for flight in flights:
             path = tracks_dir / track_filename(flight)
             existing = json.loads(path.read_text()) if path.exists() else []
-            merged = _merge(existing, _track_from_db(conn, flight.flight_id))
+            rejudged = _rejudged(conn, flight.flight_id)
+            fresh = _track_from_db(conn, flight.flight_id)
+            merged = _merge(_withdraw(existing, rejudged, fresh), fresh)
             changed = _write_if_changed(path, merged)
             print(f"{flight.flight_id}: {len(merged)} points "
                   f"(+{len(merged) - len(existing)})"
@@ -161,8 +230,9 @@ def export(flights_path: str, db_path: str, site_dir: str) -> None:
 
             gpath = tracks_dir / ghosts_filename(flight)
             existing = json.loads(gpath.read_text()) if gpath.exists() else []
+            fresh_ghosts = _ghosts_from_db(conn, flight.flight_id)
             ghosts = _prune_ghosts(
-                merged, _merge(existing, _ghosts_from_db(conn, flight.flight_id)))
+                merged, _merge(_withdraw(existing, rejudged, fresh_ghosts), fresh_ghosts))
             changed = _write_if_changed(gpath, ghosts)
             print(f"{flight.flight_id}: {len(ghosts)} heard without telemetry "
                   f"({len(ghosts) - len(existing):+d})"

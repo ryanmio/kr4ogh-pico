@@ -11,7 +11,11 @@ Three tables:
   ghosts     slots where only the Regular message was heard: a grid square
              and a station count, no telemetry. Derived like `telemetry`,
              and rebuilt with it; docs/partial-spots.md says why they are
-             kept apart from it.
+             kept apart from it. A ghost may carry its cycle's sensor
+             reading.
+  pairings   what the inferred tier (infer.py) decided about each cycle it
+             looked at, accepted or not, and why. Derived, rebuilt with
+             `telemetry`; docs/cross-receiver-pairing.md.
 
 `pulls` is load-bearing, not bookkeeping. It is what lets the tool distinguish
 "no query ever covered this window" from "the balloon was silent". Those are
@@ -104,6 +108,16 @@ CREATE TABLE IF NOT EXISTS ghosts (
     PRIMARY KEY (flight_id, utc)
 );
 
+CREATE TABLE IF NOT EXISTS pairings (
+    flight_id   TEXT NOT NULL,
+    cycle_utc   TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    outcome     TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    spot_ids    TEXT NOT NULL,
+    PRIMARY KEY (flight_id, cycle_utc, kind)
+);
+
 CREATE INDEX IF NOT EXISTS spots_by_time ON spots (band, time);
 """
 
@@ -122,7 +136,8 @@ TELEMETRY_COLUMNS = ("flight_id", "utc", "grid6", "lat", "lon", "altitude_m",
                      "speed_knots", "voltage_v", "temperature_c", "gps_valid",
                      "rx_station_count", "regular_spot_id", "telemetry_spot_id",
                      "matcher_name", "matcher_version",
-                     "pressure_hpa", "board_temp_c", "humidity_pct", "sensor_spot_id")
+                     "pressure_hpa", "board_temp_c", "humidity_pct", "sensor_spot_id",
+                     "tier", "pairing", "sensor_tier", "sensor_pairing")
 
 # Columns added to `telemetry` after the first files were written, with
 # their types: the sensor reading from a Petrel tracker's slot-3 message,
@@ -133,10 +148,33 @@ _TELEMETRY_ADDED = {
     "board_temp_c": "INTEGER",
     "humidity_pct": "INTEGER",
     "sensor_spot_id": "INTEGER",
+    # The pairing tier (docs/cross-receiver-pairing.md): "confirmed" for
+    # the same-station fingerprint, "inferred" for cross-receiver, and the
+    # reason it was accepted. The sensor reading has its own, since it is
+    # paired separately from the fix it rides on.
+    "tier": "TEXT",
+    "pairing": "TEXT",
+    "sensor_tier": "TEXT",
+    "sensor_pairing": "TEXT",
+}
+
+# Added to `ghosts` the same way: the cycle's sensor reading, when there
+# was one and no fix to carry it, and where the square came from when no
+# Regular was heard in the cycle itself ("neighbours").
+_GHOSTS_ADDED = {
+    "pressure_hpa": "INTEGER",
+    "board_temp_c": "INTEGER",
+    "humidity_pct": "INTEGER",
+    "sensor_spot_id": "INTEGER",
+    "sensor_tier": "TEXT",
+    "sensor_pairing": "TEXT",
+    "grid_source": "TEXT",
 }
 
 GHOST_COLUMNS = ("flight_id", "utc", "grid4", "lat", "lon", "rx_station_count",
-                 "matcher_name", "matcher_version")
+                 "matcher_name", "matcher_version", *_GHOSTS_ADDED)
+
+PAIRING_COLUMNS = ("flight_id", "cycle_utc", "kind", "outcome", "reason", "spot_ids")
 
 
 def _fmt(t: datetime | str) -> str:
@@ -155,10 +193,11 @@ class Store:
         """Bring a file written by an earlier version up to the schema.
         Only derived tables are ever changed; `spots` is append-only and
         has never changed shape."""
-        have = {row[1] for row in self.conn.execute("PRAGMA table_info(telemetry)")}
-        for column, kind in _TELEMETRY_ADDED.items():
-            if column not in have:
-                self.conn.execute(f"ALTER TABLE telemetry ADD COLUMN {column} {kind}")
+        for table, added in (("telemetry", _TELEMETRY_ADDED), ("ghosts", _GHOSTS_ADDED)):
+            have = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+            for column, kind in added.items():
+                if column not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
         self.conn.commit()
 
     def close(self) -> None:
@@ -226,13 +265,24 @@ class Store:
         sql = (f"INSERT INTO ghosts ({', '.join(GHOST_COLUMNS)}) "
                f"VALUES ({placeholders})")
         for rec in records:
-            self.conn.execute(sql, [rec[c] for c in GHOST_COLUMNS])
+            self.conn.execute(sql, [rec.get(c) for c in GHOST_COLUMNS])
+        self.conn.commit()
+
+    def replace_pairings(self, flight_id: str, records: list[dict]) -> None:
+        """Set a flight's inferred-tier decisions to exactly these."""
+        self.conn.execute("DELETE FROM pairings WHERE flight_id = ?", (flight_id,))
+        placeholders = ", ".join("?" for _ in PAIRING_COLUMNS)
+        sql = (f"INSERT INTO pairings ({', '.join(PAIRING_COLUMNS)}) "
+               f"VALUES ({placeholders})")
+        for rec in records:
+            self.conn.execute(sql, [rec[c] for c in PAIRING_COLUMNS])
         self.conn.commit()
 
     def clear_telemetry(self) -> None:
         """Drop all derived records (before a rebuild from raw spots)."""
         self.conn.execute("DELETE FROM telemetry")
         self.conn.execute("DELETE FROM ghosts")
+        self.conn.execute("DELETE FROM pairings")
         self.conn.commit()
 
     def uncovered_windows(self, band: int, query_kind: str,

@@ -17,6 +17,7 @@ import {
   BME280_SLOT, DecodeError, decodeBme280Slot3, decodeCallsign, decodeGridPower,
   maidenheadToLatLon, sensorFailed,
 } from "./decode";
+import { infer, type Decision, type KnownFix } from "./infer";
 import {
   fingerprintMatch, MATCHER_NAME, MATCHER_VERSION, regularOnlySlots, type Match,
 } from "./match";
@@ -94,7 +95,21 @@ export function decodeMatch(m: Match): TrackPoint | null {
 export interface DecodedWindow {
   track: TrackPoint[];
   ghosts: GhostPoint[];
+  /** What the inferred tier decided about each cycle it looked at. */
+  decisions: Decision[];
 }
+
+/** A track point as the inferred tier reads a fix. */
+function knownFix(p: TrackPoint): KnownFix {
+  return {
+    utc: p.utc.slice(0, 19).replace("T", " "), lat: p.lat, lon: p.lon,
+    altitude_m: p.altitude_m, pressure_hpa: p.pressure_hpa ?? null,
+    tier: p.tier ?? "confirmed",
+  };
+}
+
+type SensorFields = Pick<TrackPoint,
+  "pressure_hpa" | "board_temp_c" | "humidity_pct" | "sensor_tier" | "sensor_pairing">;
 
 /** Decode a whole window of raw spots, both halves oldest first, and the
  * sensor candidates too when there are any.
@@ -104,14 +119,28 @@ export interface DecodedWindow {
  * was heard and its grid square is all that is known. A slot never appears
  * in both lists.
  *
- * The sensor message, six minutes after the Regular, is paired the same way
- * and rides on the fix: a slot whose Basic Telemetry was not heard has no
- * position for the reading to belong to, so a sensor-only slot is dropped,
- * and a fix whose sensor message was not heard simply lacks the fields. */
+ * Two pairing tiers (docs/cross-receiver-pairing.md). The confirmed tier
+ * is the same-station fingerprint, as it always was. The inferred tier
+ * (wspr/infer.ts) then tries the cycles it left empty, and marks what it
+ * accepts with `tier: "inferred"`. It needs the channel, for the lane and
+ * the slot minutes, and runs only when given one. It measures each
+ * candidate against the last fix before it, so `context` hands it the
+ * fixes already known from before this window: the bundled track, on a
+ * live refresh.
+ *
+ * The sensor message, six minutes after the Regular, is paired the same
+ * way, by either tier, and rides on its cycle's fix. A cycle with no fix
+ * carries it on its ghost instead, and where the cycle had no Regular
+ * either, the inferred tier's square makes the ghost. A fix whose sensor
+ * message was not heard simply lacks the fields. Mirrors
+ * tool/picolog/pipeline.py's rebuild_flight_telemetry. */
 export function decodeWindow(
   regularSpots: Spot[], telemetrySpots: Spot[], sensorSpots: Spot[] = [],
+  opts: { channel?: Channel; context?: TrackPoint[] } = {},
 ): DecodedWindow {
-  const sensorBySlot = new Map<string, NonNullable<ReturnType<typeof decodeSensorMatch>>>();
+  const ch = opts.channel;
+  const context = opts.context ?? [];
+  const sensorBySlot = new Map<string, SensorFields & { grid4?: string; rx_station_count?: number }>();
   for (const m of fingerprintMatch(
     regularSpots, sensorSpots, undefined, 2 * BME280_SLOT,
   )) {
@@ -119,22 +148,66 @@ export function decodeWindow(
     if (reading) sensorBySlot.set(m.slotUtc, reading);
   }
   const matches = fingerprintMatch(regularSpots, telemetrySpots);
-  const track: TrackPoint[] = [];
+  let track: TrackPoint[] = [];
   const decoded: Match[] = [];
   for (const m of matches) {
     const p = decodeMatch(m);
     if (p) {
-      track.push({ ...p, ...sensorBySlot.get(m.slotUtc) });
+      track.push(p);
       decoded.push(m);
     }
   }
-  const ghosts = regularOnlySlots(regularSpots, decoded).map((g) => {
-    const [lat, lon] = maidenheadToLatLon(g.grid4);
-    return {
-      utc: g.slotUtc, grid4: g.grid4, lat, lon, rx_station_count: g.rxStationCount,
-    };
+
+  let decisions: Decision[] = [];
+  if (ch) {
+    const held = [...regularSpots, ...telemetrySpots, ...sensorSpots].map((s) => s.time).sort();
+    const first = held[0];
+    const known = [
+      ...context.map(knownFix).filter((f) => first === undefined || f.utc < first),
+      // With their confirmed sensor readings: the spoof rule that picks
+      // the fix to measure from reads the pressure.
+      ...track.map((p) => knownFix({ ...p, ...sensorBySlot.get(p.utc) })),
+    ].sort((a, b) => (a.utc < b.utc ? -1 : a.utc > b.utc ? 1 : 0));
+    const inf = infer(ch, regularSpots, telemetrySpots, sensorSpots, known,
+      new Set(track.map((p) => p.utc)), new Set(sensorBySlot.keys()));
+    track = [...track, ...inf.fixes].sort((a, b) => a.utc.localeCompare(b.utc));
+    for (const [cycle, reading] of inf.sensors) sensorBySlot.set(cycle, reading);
+    decisions = inf.decisions;
+  }
+  const sensorOnly = ({ grid4: _g, rx_station_count: _n, ...rest }:
+    SensorFields & { grid4?: string; rx_station_count?: number }) => rest;
+  track = track.map((p) => {
+    const reading = sensorBySlot.get(p.utc);
+    return reading ? { ...p, ...sensorOnly(reading) } : p;
   });
-  return { track, ghosts };
+
+  const fixed = new Set(track.map((p) => p.utc));
+  const ghosts: GhostPoint[] = regularOnlySlots(regularSpots, decoded)
+    .filter((g) => !fixed.has(g.slotUtc))
+    .map((g) => {
+      const [lat, lon] = maidenheadToLatLon(g.grid4);
+      return {
+        utc: g.slotUtc, grid4: g.grid4, lat, lon, rx_station_count: g.rxStationCount,
+      };
+    });
+  const byUtc = new Map(ghosts.map((g) => [g.utc, g]));
+  for (const [cycle, reading] of sensorBySlot) {
+    if (fixed.has(cycle)) continue;
+    let ghost = byUtc.get(cycle);
+    if (!ghost) {
+      if (reading.grid4 === undefined) continue; // confirmed, but its cycle's square was tied
+      const [lat, lon] = maidenheadToLatLon(reading.grid4);
+      ghost = {
+        utc: cycle, grid4: reading.grid4, lat, lon,
+        rx_station_count: reading.rx_station_count!, grid_source: "neighbours",
+      };
+      ghosts.push(ghost);
+      byUtc.set(cycle, ghost);
+    }
+    Object.assign(ghost, sensorOnly(reading));
+  }
+  ghosts.sort((a, b) => a.utc.localeCompare(b.utc));
+  return { track, ghosts, decisions };
 }
 
 /** Fetch and decode one window straight from wspr.live.
@@ -145,6 +218,8 @@ export function decodeWindow(
  */
 export async function fetchWindow(
   flight: FlightSpec, windowStart: Date, windowEnd: Date, signal?: AbortSignal,
+  /** Fixes known from before the window (decodeWindow's `context`). */
+  context: TrackPoint[] = [],
 ): Promise<DecodedWindow> {
   const band = BAND_CODES[flight.band];
   if (band === undefined) throw new Error(`unsupported band: ${flight.band}`);
@@ -166,7 +241,7 @@ export async function fetchWindow(
       )
       : Promise.resolve([] as Spot[]),
   ]);
-  return decodeWindow(regular, telemetry, sensor);
+  return decodeWindow(regular, telemetry, sensor, { channel: ch, context });
 }
 
 /** Merge newly decoded points into an existing track; the newer decode wins a

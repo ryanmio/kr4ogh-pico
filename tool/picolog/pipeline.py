@@ -17,6 +17,7 @@ from .decode import (
 from .match import NAME as MATCHER_NAME
 from .match import VERSION as MATCHER_VERSION
 from .match import Match, RegularOnly, fingerprint_match, regular_only_slots
+from . import infer as inferred_tier
 from .store import Store
 from .wsprlive import fetch_spots, regular_spots_query, telemetry_candidates_query
 
@@ -56,12 +57,24 @@ def pull_flight_window(store: Store, flight: Flight,
     return new_rows
 
 
-def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
+def rebuild_flight_telemetry(store: Store, flight: Flight,
+                             context: list[dict] | None = None) -> int:
     """Match and decode every stored spot for one flight, overwriting its
     derived records: the telemetry table, and beside it the ghosts, the
-    slots heard without telemetry. Returns the number of telemetry records
-    written."""
-    channel = channel_table_20m()[flight.channel]
+    slots heard without telemetry, and the inferred tier's decisions.
+    Returns the number of telemetry records written.
+
+    Two tiers (docs/cross-receiver-pairing.md). "confirmed" is the
+    same-station fingerprint, unchanged. "inferred" is infer.py, tried only
+    on the cycles the confirmed tier left empty.
+
+    `context` is fixes from before what the store holds, oldest first, in
+    the committed track's shape (picolog.export_site). The inferred tier
+    measures each candidate against the last fix before it, and the
+    scheduled run's throwaway store holds only the last day: without the
+    committed track it would have nothing to measure the first one from.
+    """
+    channel =channel_table_20m()[flight.channel]
 
     # Only spots from the flight's own span, launch_utc to end_utc: the store
     # holds every flight's spots, and two flights on one channel with one
@@ -93,6 +106,7 @@ def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
     # nulls. A reading of -70 / 0 / 0 is the sensor not answering, which
     # is a fact about the sensor, not a measurement: dropped the same way.
     sensor_by_slot: dict[str, dict] = {}
+    sensor_candidates: list[dict] = []
     if flight.sensor == "bme280":
         sen_where, sen_params = _span_clause(flight, timedelta(minutes=2 * BME280_SLOT))
         sensor_candidates = _spot_rows(
@@ -106,28 +120,92 @@ def rebuild_flight_telemetry(store: Store, flight: Flight) -> int:
                                    offset_minutes=2 * BME280_SLOT):
             reading = _decode_sensor_match(m)
             if reading is not None:
-                sensor_by_slot[m.slot_utc] = reading
+                sensor_by_slot[m.slot_utc] = {**reading, "sensor_tier": "confirmed",
+                                              "sensor_pairing": None}
 
     records = []
     decoded = []
     for m in fingerprint_match(regulars, candidates):
         record = _decode_match(flight, m)
         if record is not None:
-            record.update(sensor_by_slot.get(m.slot_utc, _NO_SENSOR))
             records.append(record)
             decoded.append(m)
+
+    # The inferred tier, on what the confirmed tier left. It measures
+    # against every fix known before each candidate: the committed ones
+    # from before anything this store holds, then this rebuild's.
+    held = [s["time"] for s in regulars + candidates + sensor_candidates]
+    first = min(held) if held else None
+    known = [_context_fix(p) for p in (context or [])
+             if first is None or _utc(p["utc"]) < first]
+    # With their confirmed sensor readings: the spoof rule that picks the
+    # fix to measure from reads the pressure.
+    known = sorted(known + [{**r, "tier": "confirmed",
+                             "pressure_hpa": sensor_by_slot.get(r["utc"], {}).get("pressure_hpa")}
+                            for r in records],
+                   key=lambda f: f["utc"])
+    inf = inferred_tier.infer(
+        channel, flight.flight_id, regulars, candidates, sensor_candidates, known,
+        confirmed_basic={r["utc"] for r in records},
+        confirmed_sensor=set(sensor_by_slot))
+    records = sorted(records + inf.fixes, key=lambda r: r["utc"])
+    sensors = {**sensor_by_slot, **inf.sensors}
+    for record in records:
+        record.update({k: v for k, v in sensors.get(record["utc"], _NO_SENSOR).items()
+                       if k in _NO_SENSOR})
     store.upsert_telemetry(records)
+
     # A slot is a ghost when nothing paired in it, or when the pair was not
     # Basic Telemetry: the tracker was heard either way, and the grid square
-    # is all that is known. Mirrors src/lib/wspr/track.py's decodeWindow.
-    store.replace_ghosts(flight.flight_id, [
-        _ghost_record(flight, g)
-        for g in regular_only_slots(regulars, decoded)])
+    # is all that is known. A cycle the inferred tier filled is not one.
+    # Mirrors src/lib/wspr/track.ts's decodeWindow.
+    fixed = {r["utc"] for r in records}
+    ghosts = [_ghost_record(flight, g) for g in regular_only_slots(regulars, decoded)
+              if g.slot_utc not in fixed]
+    # A sensor reading in a cycle with no fix rides on the cycle's ghost
+    # instead, and where no Regular was heard in the cycle either, it
+    # makes one, in the square the inferred tier placed it in.
+    by_utc = {g["utc"]: g for g in ghosts}
+    for cycle, reading in sensors.items():
+        if cycle in fixed:
+            continue
+        ghost = by_utc.get(cycle)
+        if ghost is None:
+            if "grid4" not in reading:
+                continue  # a confirmed reading whose cycle's square was tied
+            lat, lon = maidenhead_to_latlon(reading["grid4"])
+            ghost = {"flight_id": flight.flight_id, "utc": cycle,
+                     "grid4": reading["grid4"], "lat": lat, "lon": lon,
+                     "rx_station_count": reading["rx_station_count"],
+                     "matcher_name": inferred_tier.NAME,
+                     "matcher_version": inferred_tier.VERSION,
+                     "grid_source": "neighbours"}
+            ghosts.append(ghost)
+            by_utc[cycle] = ghost
+        ghost.update({k: v for k, v in reading.items() if k in _NO_SENSOR})
+    store.replace_ghosts(flight.flight_id, sorted(ghosts, key=lambda g: g["utc"]))
+    store.replace_pairings(flight.flight_id, [
+        {"flight_id": flight.flight_id, "cycle_utc": d.cycle_utc, "kind": d.kind,
+         "outcome": d.outcome, "reason": d.reason,
+         "spot_ids": ",".join(str(i) for i in d.spot_ids)}
+        for d in inf.decisions])
     return len(records)
 
 
+def _utc(text: str) -> str:
+    """A committed track's UTC in the store's form."""
+    return text[:19].replace("T", " ")
+
+
+def _context_fix(p: dict) -> dict:
+    """A committed track point as the inferred tier reads a fix."""
+    return {"utc": _utc(p["utc"]), "lat": p["lat"], "lon": p["lon"],
+            "altitude_m": p["altitude_m"], "pressure_hpa": p.get("pressure_hpa"),
+            "tier": p.get("tier", "confirmed")}
+
+
 _NO_SENSOR = {"pressure_hpa": None, "board_temp_c": None, "humidity_pct": None,
-              "sensor_spot_id": None}
+              "sensor_spot_id": None, "sensor_tier": None, "sensor_pairing": None}
 
 
 def _decode_sensor_match(m: Match) -> dict | None:
@@ -195,6 +273,8 @@ def _decode_match(flight: Flight, m: Match) -> dict | None:
         "telemetry_spot_id": int(m.telemetry_spot["id"]),
         "matcher_name": MATCHER_NAME,
         "matcher_version": MATCHER_VERSION,
+        "tier": "confirmed",
+        "pairing": None,
     }
 
 

@@ -18,7 +18,7 @@
  * browser runs it again over the live one.
  */
 import {
-  fmtDuration, haversineKm, parseUtc, trackStats,
+  fmtDuration, haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
 import { heardBounds } from "./ghosts";
 import { groundSpeedKt, isSpeedFloor } from "./speed";
@@ -119,15 +119,21 @@ export function summarize(
 ): FlightSummary | null {
   const s = trackStats(track);
   if (!s) return null;
+  // A record read off one fix (highest, fastest, most heard, coldest) is
+  // set by a confirmed fix only: an inferred one is a lower-confidence
+  // pairing (docs/cross-receiver-pairing.md). Distances and time aloft
+  // take every fix.
+  const confirmed = track.filter((p) => !isInferred(p));
+  if (!confirmed.length) return null;
   const heard = heardBounds(track, ghosts, spoofed)!;
   const aloftMs = parseUtc(heard.lastUtc).getTime() - parseUtc(heard.firstUtc).getTime();
   // From the first fix, as the Journey card's "from launch" is.
   const origin = track[0]!;
   const far = extreme(track, (p) => haversineKm(origin.lat, origin.lon, p.lat, p.lon), "max");
-  const fast = extreme(track, groundSpeedKt, "max");
-  const high = extreme(track, (p) => p.altitude_m, "max");
-  const heardBy = extreme(track, (p) => p.rx_station_count, "max");
-  const cold = extreme(track, (p) => p.temperature_c, "min");
+  const fast = extreme(confirmed, groundSpeedKt, "max");
+  const high = extreme(confirmed, (p) => p.altitude_m, "max");
+  const heardBy = extreme(confirmed, (p) => p.rx_station_count, "max");
+  const cold = extreme(confirmed, (p) => p.temperature_c, "min");
   return {
     flight_id: meta.flight_id,
     callsign: meta.callsign,

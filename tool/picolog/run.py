@@ -60,14 +60,23 @@ def chunks(start: datetime, end: datetime,
         a = b
 
 
-def newest_committed(site_dir: str, flight: Flight) -> datetime | None:
-    """The time of the newest fix in the flight's committed track, or None
-    when there is no track (or nothing readable in it)."""
+def committed_track(site_dir: str, flight: Flight) -> list[dict]:
+    """The flight's committed track, or [] when there is none readable."""
     path = Path(site_dir) / "src" / "data" / "tracks" / track_filename(flight)
     try:
         track = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+    return track if isinstance(track, list) else []
+
+
+def newest_committed(site_dir: str, flight: Flight) -> datetime | None:
+    """The time of the newest fix in the flight's committed track, or None
+    when there is no track (or nothing readable in it)."""
+    try:
+        track = committed_track(site_dir, flight)
         return datetime.fromisoformat(track[-1]["utc"].replace("Z", ""))
-    except (OSError, ValueError, LookupError, TypeError, AttributeError):
+    except (ValueError, LookupError, TypeError, AttributeError):
         return None
 
 
@@ -110,7 +119,10 @@ def run(flights_path: str, db_path: str, window_hours: float,
                 if len(windows) > 1:
                     print(f"{flight.flight_id}: {a:%Y-%m-%d} .. {b:%Y-%m-%d} "
                           f"({i + 1}/{len(windows)})")
-            records = rebuild_flight_telemetry(store, flight)
+            # The committed track is what the inferred tier measures the
+            # first candidate from when this store holds only the last day.
+            context = committed_track(site_dir, flight) if site_dir else []
+            records = rebuild_flight_telemetry(store, flight, context)
             print(f"{flight.flight_id}: {new_spots} new spots, "
                   f"{records} telemetry records")
 

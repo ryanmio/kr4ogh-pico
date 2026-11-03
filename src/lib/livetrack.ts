@@ -90,7 +90,10 @@ export async function refreshTrack(
   if (toMs <= fromMs) return { ...unchanged, error: null };
 
   try {
-    const fresh = await fetchWindow(flight, new Date(fromMs), new Date(toMs), opts.signal);
+    // Every fix decoded so far goes in as context: the inferred pairing
+    // tier measures each candidate against the last fix before it.
+    const fresh = await fetchWindow(
+      flight, new Date(fromMs), new Date(toMs), opts.signal, raw);
     const known = new Set(raw.map((p) => p.utc));
     const knownGhosts = new Set(bundledGhosts.map((g) => g.utc));
     // Re-derived over the whole merged track, not just the tail: a

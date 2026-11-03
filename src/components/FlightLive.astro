@@ -173,7 +173,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import type { GlobeHandle } from "../lib/globe";
   import {
     bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocalDay, fmtUtc, haversineKm,
-    parseUtc, trackStats,
+    isInferred, parseUtc, trackStats,
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
   import { mergeTrack } from "../lib/wspr/track";
@@ -185,7 +185,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     isRecordKey, recordHolders, recordPins, recordsHeldBy, summarize,
     type FlightSummary, type RecordKey,
   } from "../lib/records";
-  import { recordsHtml, sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
+  import {
+    esc, INFERRED_TAG, INFERRED_LABEL, INFERRED_TITLE, recordsHtml, sidebarHtml, tableHtml,
+    type ActiveCard,
+  } from "../lib/render";
   import {
     groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
@@ -972,6 +975,18 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const partial = ghosts.length
         ? mini("Without telemetry", `${fmtInt(ghosts.length)} heard, grid square only`)
         : "";
+      // The fix every card reads, and how it was paired: a cross-receiver
+      // fix is less certain than one a single station heard whole
+      // (docs/cross-receiver-pairing.md).
+      const tierTag = `<span class="fv-card-tier" title="${esc(INFERRED_TITLE)}">${
+        INFERRED_TAG} (${INFERRED_LABEL} pairing)</span>`;
+      const lastFix = mini("Last fix", `${esc(s.last.utc.slice(5, 16))} UTC${
+        isInferred(s.last) ? ` · ${tierTag}` : ""}`);
+      const crossCount = track.filter(isInferred).length;
+      const cross = crossCount
+        ? mini("Cross-receiver", `${fmtInt(crossCount)} fix${crossCount === 1 ? "" : "es"},
+          telemetry heard by another station · ring on the map`)
+        : "";
       // A fix whose GPS was spoofed: heard, telemetry and all, but its
       // position was a spoofer's, so it is on neither the map nor the cards.
       // `?spoofing=show` puts them on the map anyway; this is where the
@@ -985,7 +1000,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       panelBody.innerHTML =
         `<div class="fv-minis">${[
           mini("Last heard", lastHeard),
+          lastFix,
           mini("Reports", `${fmtInt(s.points)} since launch`),
+          cross,
           partial,
           lied,
           mini("Cadence", "every 10 min in sunlight"),

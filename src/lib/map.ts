@@ -18,13 +18,13 @@ import {
   unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
-import { fmtLocal } from "./format";
+import { fmtLocal, isInferred } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
-import { esc, RECORD_PIN_SVG } from "./render";
+import { esc, INFERRED_LABEL, RECORD_PIN_SVG } from "./render";
 import { speedText } from "./speed";
 import { pressureAltitudeM, spoofRuns } from "./spoof";
-import { altitude as fmtAltitude, type Units } from "./units";
+import { altitude as fmtAltitude, temperature as fmtTemperature, type Units } from "./units";
 import type { FlightMeta, GhostPoint, MapMark, OverlayTrack, TrackPoint } from "./types";
 
 export interface MapOptions {
@@ -303,11 +303,7 @@ export function renderMap(
           radius: isHere ? SPOT_RADIUS : Math.max(GHOST_MIN_RADIUS, radius - 1.5),
           color: GHOST_STROKE, weight: 1.2, opacity: 0.8,
           fillColor: SPOT_OUTLINE, fillOpacity: 0.45,
-        }).bindTooltip(
-          `${fmtLocal(g.utc)}<br>heard in ${g.grid4} by ` +
-          `${g.rx_station_count} station${g.rx_station_count === 1 ? "" : "s"}` +
-          " · no telemetry",
-        ).addTo(spots);
+        }).bindTooltip(ghostTooltip(g, units)).addTo(spots);
       });
 
       // Outlines first, all of them, then the fills. Drawn per spot instead,
@@ -328,14 +324,21 @@ export function renderMap(
       }
       for (const { p, latlng } of shown) {
         const raw = metric.raw(p);
-        L.circleMarker(at(latlng), {
-          radius: sizeOf(p),
-          stroke: false,
-          fillColor: rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5),
-          fillOpacity: 1,
-        }).bindTooltip(
+        const color = rampColor(metric.ramp, hi > lo ? (raw - lo) / (hi - lo) : 0.5);
+        // An inferred fix is a ring in the metric's colour round a dark
+        // centre, where a confirmed one is a solid dot: the value still
+        // reads, and so does that the pairing was across receivers.
+        const inferred = isInferred(p);
+        L.circleMarker(at(latlng), inferred
+          ? {
+            radius: sizeOf(p) - INFERRED_RING_PX / 2, color, weight: INFERRED_RING_PX,
+            opacity: 1, fillColor: SPOT_OUTLINE, fillOpacity: 1,
+          }
+          : { radius: sizeOf(p), stroke: false, fillColor: color, fillOpacity: 1 },
+        ).bindTooltip(
           `${fmtLocal(p.utc)}<br>${fmtAltitude(p.altitude_m, units).text}` +
-          ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V`,
+          ` · ${speedText(p, units)} · ${p.voltage_v.toFixed(2)} V` +
+          (inferred ? `<br>telemetry fix, ${INFERRED_LABEL} pairing` : ""),
         ).addTo(spots);
       }
     }
@@ -399,7 +402,35 @@ export function renderMap(
     legend.onAdd = () => legendDiv;
     legend.addTo(map);
   }
+  // The ring needs a key of its own, but only on a track that has one.
+  if (track.some(isInferred)) {
+    const key = new L.Control({ position: "bottomright" });
+    key.onAdd = () => {
+      const div = L.DomUtil.create("div", "map-legend map-legend-key");
+      div.innerHTML = `<span class="map-legend-ring" aria-hidden="true"></span>` +
+        `telemetry fix, ${INFERRED_LABEL} pairing`;
+      return div;
+    };
+    key.addTo(map);
+  }
   return map;
+}
+
+/** A ghost's tooltip: when and where it was heard, and the cycle's sensor
+ * reading when there was one. A ghost the inferred tier made for a sensor
+ * reading has no Regular of its own; its square is the one the Regulars
+ * either side agreed on, and it says so. */
+function ghostTooltip(g: GhostPoint, units: Units): string {
+  const where = g.grid_source === "neighbours"
+    ? `in ${g.grid4}, the square heard either side`
+    : `heard in ${g.grid4} by ${g.rx_station_count} station${
+      g.rx_station_count === 1 ? "" : "s"}`;
+  const reading = g.pressure_hpa !== undefined
+    ? `<br>sensor ${g.pressure_hpa} hPa · ${
+      fmtTemperature(g.board_temp_c!, units).text} board · ${g.humidity_pct} % RH` +
+      (g.sensor_tier === "inferred" ? ` · ${INFERRED_LABEL}` : "")
+    : "";
+  return `${fmtLocal(g.utc)}<br>${where} · no telemetry${reading}`;
 }
 
 /** Everything drawn for one flight, in map coordinates: the track and the
@@ -740,6 +771,8 @@ const SPOT_OUTLINE = "#0b1020";
  * ring is the track's own light grey: a ghost is a report of the balloon,
  * not a value on the metric ramp, so it takes no colour from it. */
 const GHOST_STROKE = "#e2e8f0";
+/** The width of an inferred fix's ring. */
+const INFERRED_RING_PX = 2.4;
 const GHOST_MIN_RADIUS = 2.5;
 
 /** How many spots the canvas will carry before they start being sampled.

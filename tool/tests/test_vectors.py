@@ -19,7 +19,12 @@ VECTOR_PATH = Path(__file__).parent / "vectors" / "basic_telemetry.json"
 PETREL_PATH = Path(__file__).parent / "vectors" / "petrel_slot3.json"
 
 NO_SENSOR = {"pressure_hpa": None, "board_temp_c": None, "humidity_pct": None,
-             "sensor_spot_id": None}
+             "sensor_spot_id": None, "sensor_tier": None, "sensor_pairing": None}
+
+# Every row these vectors were verified with is a same-station fingerprint
+# pair: the confirmed tier, with no inferred reason attached. Columns the
+# vectors predate (docs/cross-receiver-pairing.md).
+CONFIRMED = {"tier": "confirmed", "pairing": None}
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +49,7 @@ def test_full_pipeline_reproduces_verified_day(vector, tmp_path_factory):
 
     # A stock tracker: the sensor columns exist on every row and hold nothing.
     for expected in vector["expected_telemetry"]:
-        assert got[expected["utc"]] == {**expected, **NO_SENSOR}
+        assert got[expected["utc"]] == {**expected, **NO_SENSOR, **CONFIRMED}
     store.close()
 
 
@@ -100,7 +105,8 @@ def test_petrel_slice_reproduces_sensor_readings(petrel, tmp_path_factory):
     assert written == len(petrel["expected_telemetry"])
     got = _telemetry_rows(store)
     for expected in petrel["expected_telemetry"]:
-        assert got[expected["utc"]] == expected
+        assert got[expected["utc"]] == {
+            **expected, **CONFIRMED, "sensor_tier": "confirmed", "sensor_pairing": None}
     # The slice was chosen so that the reading rode on every fix; the
     # pressure falls monotonically through the climb.
     pressures = [r["pressure_hpa"] for r in (got[e["utc"]] for e in petrel["expected_telemetry"])]
