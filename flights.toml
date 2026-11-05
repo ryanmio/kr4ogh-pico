@@ -246,12 +246,17 @@ float_m = 10500
 "Schedule" = "every 10 min from :06"
 
 # PT 01 launched 2026-10-24 14:55 UTC (10:55 AM EDT). First flight of Ryan's own manufactured/designed PCB. Reuses channel 206; F3B carries an end_utc so the two stay separate flights.
+# Flew 10 d 12 h, 202° of longitude east; last heard 2026-11-04 03:12 UTC at
+# 4,160 m and descending, about 190 km west of Jeju.
 [[flights]]
 flight_id = "PT01"
 callsign = "KR4OGH"
 band = "20m"
 channel = 206
 launch_utc = "2026-10-24 14:55:00"
+end_utc = "2026-11-04 04:00:00"
+status = "closed"
+close_reason = "Down — East China Sea, ~190 km W of Jeju; silent since 2026-11-04 03:12 UTC"
 launch_lat = 39.2645
 launch_lon = -77.9759
 float_m = 10500
