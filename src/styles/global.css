@@ -176,12 +176,6 @@ main { padding: 2.2rem 0 3.5rem; }
   text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
   color: var(--text-faint);
 }
-/* The key for an inferred fix's ring (lib/map.ts): the same ring, drawn
-   in the track's grey since the metric colours it on the map. */
-.map-legend-ring {
-  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-  border: 2.4px solid #e2e8f0; background: #0b1020; box-sizing: border-box;
-}
 /* A card value read off an inferred fix: the ring's grey, which is what marks
    one on the map too. */
 .fv-card-tier { color: #e2e8f0; letter-spacing: 0.06em; cursor: help; }

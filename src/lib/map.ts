@@ -402,17 +402,6 @@ export function renderMap(
     legend.onAdd = () => legendDiv;
     legend.addTo(map);
   }
-  // The ring needs a key of its own, but only on a track that has one.
-  if (track.some(isInferred)) {
-    const key = new L.Control({ position: "bottomright" });
-    key.onAdd = () => {
-      const div = L.DomUtil.create("div", "map-legend map-legend-key");
-      div.innerHTML = `<span class="map-legend-ring" aria-hidden="true"></span>` +
-        `telemetry fix, ${INFERRED_LABEL} pairing`;
-      return div;
-    };
-    key.addTo(map);
-  }
   return map;
 }
 
