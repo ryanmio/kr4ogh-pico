@@ -226,8 +226,8 @@ isn't trusted as a reference point.
 
 | Where | Inferred points |
 |---|---|
-| Flight path | On the line. Drawn as a **ring** in the metric's colour round a dark centre, where a confirmed fix is a solid dot. There is no map key for it: the ring's tooltip says "telemetry fix, cross-receiver pairing", and the Signal panel and data table explain it. The globe view draws no per-fix dots, so there is nothing to restyle there. |
-| Latest-state cards | Altitude, speed, voltage, temperature and receivers read the newest fix of either tier. When it is inferred, each card's label says "· inferred", with an explanation on hover. The Signal panel gains a "Last fix" line with the tier, and a count of cross-receiver fixes. |
+| Flight path | On the line. Drawn as a **ring** in the metric's colour round a dark centre, where a confirmed fix is a solid dot. There is no map key for it: the ring's tooltip says "telemetry fix, cross-receiver pairing", and the data table explains it. The globe view draws no per-fix dots, so there is nothing to restyle there. |
+| Latest-state cards | Altitude, speed, voltage, temperature and receivers read the newest fix of either tier. When it is inferred, each card's label says "· inferred", with an explanation on hover. |
 | Forecast start | The newest fix of either tier (unchanged code: `forecastOrigin` takes the last fix). |
 | Records and the peak / fastest lines | Confirmed only. That covers highest, fastest, most heard and coldest. Distance flown, farthest from launch and time aloft take every fix. |
 | Distance | Includes inferred points. |
