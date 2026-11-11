@@ -276,3 +276,27 @@ sensor = "bme280"
 "Frequency" = "14.097060 MHz (20 m)"
 "Channel" = "206"
 "Schedule" = "every 10 min from :00 (sensor message at :06)"
+
+# PT-02 launched 2026-11-11 14:44 UTC (9:44 AM EST). Temporary entry:
+# tracker panel details and sensor type still to be filled in.
+[[flights]]
+flight_id = "PT02"
+callsign = "KR4OGH"
+band = "20m"
+channel = 178
+launch_utc = "2026-11-11 14:44:00"
+launch_lat = 39.2645
+launch_lon = -77.9759
+float_m = 10500
+
+# PT-03 launched 2026-11-11 14:44 UTC (9:44 AM EST). Temporary entry:
+# tracker panel details and sensor type still to be filled in.
+[[flights]]
+flight_id = "PT03"
+callsign = "KR4OGH"
+band = "20m"
+channel = 135
+launch_utc = "2026-11-11 14:44:00"
+launch_lat = 39.2645
+launch_lon = -77.9759
+float_m = 10500
