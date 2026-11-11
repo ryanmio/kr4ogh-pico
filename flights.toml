@@ -277,15 +277,31 @@ sensor = "bme280"
 "Channel" = "206"
 "Schedule" = "every 10 min from :00 (sensor message at :06)"
 
-# PT-02 launched 2026-11-11 14:44 UTC (9:44 AM EST). Temporary entry:
-# tracker panel details and sensor type still to be filled in.
+# PT-02 launched 2026-11-11 15:00 UTC (10:00 AM EST) from Summit Point. 6.4 g
+# free lift, 99% helium (Roberts Oxygen). Climbed through a broken/overcast deck
+# at ~7,000 ft and levelled off near 12,080 m around 18:56 UTC. Slot-3 sensor
+# message not being sent, so no sensor line.
 [[flights]]
 flight_id = "PT02"
 callsign = "KR4OGH"
 band = "20m"
 channel = 178
-launch_utc = "2026-11-11 14:44:00"
+launch_utc = "2026-11-11 15:00:00"
 launch_lat = 39.2645
 launch_lon = -77.9759
-float_m = 10500
+float_m = 12080
 
+[flights.tracker]
+"Hardware" = "[Petrel rev A](https://github.com/ryanmio/petrel) (RP2040) — custom add-on board, stock Traquito firmware · PT-02"
+"Mass as flown" = "18.76 g"
+"Power" = "solar only — no battery"
+"Transmit power" = "20 mW"
+"Antenna" = "20 m half-wave dipole"
+"Balloon" = "CYMYLAR 60″ superpressure"
+"Free lift" = "6.4 g of 99% helium"
+"Float" = "≈12,080 m"
+"Launched" = "2026-11-11 15:00 UTC · Summit Point, WV"
+"Mode" = "WSPR + U4B telemetry"
+"Frequency" = "14.097180 MHz (20 m)"
+"Channel" = "178"
+"Schedule" = "every 10 min from :04"
