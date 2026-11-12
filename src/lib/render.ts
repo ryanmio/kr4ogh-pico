@@ -336,10 +336,13 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
 // ---------- records ----------
 
 /** What the Records card says: how many flights the records are drawn
- * from, and how many of them this flight holds. */
+ * from, how many records are held at all, and how many of them this
+ * flight holds. */
 export interface RecordsCardInfo {
   flights: number;
   held: number;
+  /** Records with a holder: a crossing nobody has made is not one. */
+  total: number;
 }
 
 const RECORDS_ICON =
@@ -366,7 +369,7 @@ const RECORD_COLOR = "#fbbf24";
  * is about every flight, not a reading from this one. */
 function recordsCard(info: RecordsCardInfo, ended: boolean, active: ActiveCard): string {
   const value = info.held
-    ? `Holds ${info.held} of ${RECORDS.length}`
+    ? `Holds ${info.held} of ${info.total}`
     : ended ? "Held none" : "None yet";
   return `<button type="button" class="fv-card fv-card-wide" data-panel="records"
     aria-pressed="${active === "records"}">
@@ -403,8 +406,20 @@ function day(utc: string): string {
  * and the day it was set, and under them one row per flight with the
  * record cells lit. A flight id means little on its own, so every row
  * carries the dates it flew, and every flight but this one is a link to
- * its page. Pressing a tile is the caller's affair: the map flies to the
- * record's pin. */
+ * its page. The crossings share one column, which appears once any flight
+ * has made one, so the table does not grow three columns of dashes.
+ * Pressing a tile is the caller's affair: the map flies to the record's
+ * pin. */
+/** A flight's crossings, "Atlantic 6d 16h · Halfway round 10d 9h", lit
+ * when it holds any of them; a dash for a flight that made none. */
+function crossingCell(s: FlightSummary, crossings: typeof RECORDS, v: RecordsView): string {
+  const made = crossings.filter((r) => s.values[r.key] !== undefined);
+  const held = made.some((r) => v.holders[r.key]?.flight_id === s.flight_id);
+  const text = made.map((r) => `${r.short} ${r.fmt(s.values[r.key]!, v.units, s)}`)
+    .join(" · ");
+  return `<td class="mono${held ? " is-record" : ""}">${esc(text || "—")}</td>`;
+}
+
 export function recordsHtml(v: RecordsView): string {
   const who = (s: FlightSummary) =>
     s.flight_id === v.current ? '<span class="fv-this">This flight</span>' : esc(s.flight_id);
@@ -414,11 +429,15 @@ export function recordsHtml(v: RecordsView): string {
     return [`<button type="button" class="fv-record" data-record="${r.key}"
       aria-pressed="${v.focus === r.key}" title="Show on the map where it was set">
       <span class="fv-record-label">${esc(r.label)}</span>
-      <b class="fv-record-value">${esc(r.fmt(s.values[r.key], v.units, s))}</b>
-      <span class="fv-record-who">${who(s)} · ${esc(day(s.at[r.key].utc))}</span>
+      <b class="fv-record-value">${esc(r.fmt(s.values[r.key]!, v.units, s))}</b>
+      <span class="fv-record-who">${who(s)} · ${esc(day(s.at[r.key]!.utc))}</span>
     </button>`];
   });
-  const head = RECORDS.map((r) => `<th>${esc(r.label)}</th>`).join("");
+  const columns = RECORDS.filter((r) => !r.crossing);
+  const crossings = RECORDS.filter((r) =>
+    r.crossing && v.summaries.some((s) => s.values[r.key] !== undefined));
+  const head = columns.map((r) => `<th>${esc(r.label)}</th>`).join("")
+    + (crossings.length ? "<th>Crossings</th>" : "");
   const rows = v.summaries.map((s) => {
     const current = s.flight_id === v.current;
     const name = current
@@ -427,11 +446,11 @@ export function recordsHtml(v: RecordsView): string {
     const flown = s.status === "closed"
       ? `${day(s.firstUtc)} – ${day(s.lastUtc)}`
       : `${day(s.firstUtc)} · still up`;
-    const cells = RECORDS.map((r) => {
+    const cells = columns.map((r) => {
       const held = v.holders[r.key]?.flight_id === s.flight_id;
       return `<td class="mono num${held ? " is-record" : ""}">` +
-        `${esc(r.fmt(s.values[r.key], v.units, s))}</td>`;
-    }).join("");
+        `${esc(r.fmt(s.values[r.key]!, v.units, s))}</td>`;
+    }).join("") + (crossings.length ? crossingCell(s, crossings, v) : "");
     return `<tr${current ? ' class="is-current"' : ""}>
       <th scope="row">${name}</th><td class="mono">${esc(flown)}</td>${cells}</tr>`;
   });

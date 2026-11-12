@@ -34,7 +34,7 @@ import { withBase } from "../lib/base";
 import { siteConfig, UPSTREAM_REPO } from "../lib/config";
 import { flightData } from "../lib/flights";
 import { lastKnown } from "../lib/ghosts";
-import { recordHolders, recordsHeldBy, summarize } from "../lib/records";
+import { recordHolders, recordsHeldBy, recordsSet, summarize } from "../lib/records";
 import { sidebarHtml } from "../lib/render";
 import { spoofedSince } from "../lib/spoof";
 import type { FlightMeta, GhostPoint, TrackPoint } from "../lib/types";
@@ -73,9 +73,10 @@ const summaries = flights.length > 1
     return s ? [s] : [];
   })
   : [];
+const holders = recordHolders(summaries);
 const records = summaries.length > 1
   ? { flights: summaries.length,
-    held: recordsHeldBy(flight.flight_id, recordHolders(summaries)) }
+    held: recordsHeldBy(flight.flight_id, holders), total: recordsSet(holders) }
   : undefined;
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
@@ -182,7 +183,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     overlaysFromSearch, resolveOverlays, urlWithOverlays, type OverlayChoice,
   } from "../lib/overlay";
   import {
-    isRecordKey, recordHolders, recordPins, recordsHeldBy, summarize,
+    isRecordKey, recordHolders, recordPins, recordsHeldBy, recordsSet, summarize,
     type FlightSummary, type RecordKey,
   } from "../lib/records";
   import { recordsHtml, sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
@@ -740,7 +741,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     function recordsInfo() {
       const all = summaries();
       if (all.length < 2) return undefined;
-      return { flights: all.length, held: recordsHeldBy(meta.flight_id, recordHolders(all)) };
+      const holders = recordHolders(all);
+      return {
+        flights: all.length, held: recordsHeldBy(meta.flight_id, holders),
+        total: recordsSet(holders),
+      };
     }
 
     /** The pins on the map while the records panel is open: a star where
@@ -766,6 +771,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const s = recordHolders(summaries())[key];
       if (!s) return;
       const at = s.at[key];
+      if (!at) return;
       // Beside this flight's line, not a world away from it (lib/basemap.ts).
       const lon = unwrapNear(at.lon, unwrapLons(track).at(-1) ?? at.lon);
       userMoved = true;

@@ -42,7 +42,8 @@ console.table(summaries.map((s) => Object.fromEntries([
   ["fixes", s.points],
   ...RECORDS.map((r) => [
     r.label,
-    (holders[r.key] === s ? "* " : "") + r.fmt(s.values[r.key], "metric", s),
+    s.values[r.key] === undefined ? "—"
+      : (holders[r.key] === s ? "* " : "") + r.fmt(s.values[r.key]!, "metric", s),
   ]),
 ])));
 
@@ -50,8 +51,8 @@ console.log("\nRecords (* above), and where each was set:");
 for (const r of RECORDS) {
   const s = holders[r.key];
   if (!s) continue;
-  const at = s.at[r.key];
-  console.log(`  ${r.label.padEnd(22)} ${r.fmt(s.values[r.key], "metric", s).padEnd(14)}`
+  const at = s.at[r.key]!;
+  console.log(`  ${r.label.padEnd(22)} ${r.fmt(s.values[r.key]!, "metric", s).padEnd(14)}`
     + ` ${s.flight_id.padEnd(6)} ${at.utc}  ${at.lat.toFixed(2)}, ${at.lon.toFixed(2)}`);
 }
 const pins = recordPins(holders, "metric");
