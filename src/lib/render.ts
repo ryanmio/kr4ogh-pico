@@ -410,14 +410,17 @@ function day(utc: string): string {
  * has made one, so the table does not grow three columns of dashes.
  * Pressing a tile is the caller's affair: the map flies to the record's
  * pin. */
-/** A flight's crossings, "Atlantic 6d 16h · Halfway round 10d 9h", lit
- * when it holds any of them; a dash for a flight that made none. */
+/** A flight's crossings, "Atlantic ≈6d 4h · Halfway round ≈9d 22h", each
+ * lit on its own when this flight holds it; a dash for a flight that made
+ * none. */
 function crossingCell(s: FlightSummary, crossings: typeof RECORDS, v: RecordsView): string {
   const made = crossings.filter((r) => s.values[r.key] !== undefined);
-  const held = made.some((r) => v.holders[r.key]?.flight_id === s.flight_id);
-  const text = made.map((r) => `${r.short} ${r.fmt(s.values[r.key]!, v.units, s)}`)
-    .join(" · ");
-  return `<td class="mono${held ? " is-record" : ""}">${esc(text || "—")}</td>`;
+  if (!made.length) return '<td class="mono">—</td>';
+  return `<td class="mono">${made.map((r) => {
+    const text = esc(`${r.short} ${r.fmt(s.values[r.key]!, v.units, s)}`);
+    return v.holders[r.key]?.flight_id === s.flight_id
+      ? `<span class="is-record">${text}</span>` : text;
+  }).join(" · ")}</td>`;
 }
 
 export function recordsHtml(v: RecordsView): string {

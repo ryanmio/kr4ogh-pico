@@ -735,7 +735,8 @@ a.fv-chip { text-decoration: none; }
 .records-table tbody tr:last-child td { border-bottom: 0; }
 .records-table a { color: var(--accent); text-decoration: none; }
 .records-table a:hover { text-decoration: underline; }
-.records-table td.is-record { color: var(--record); font-weight: 600; }
+/* A lit cell, or one crossing lit within the Crossings cell. */
+.records-table .is-record { color: var(--record); font-weight: 600; }
 .records-table tr.is-current th { color: var(--text); }
 
 /* The pin: a star in the records' gold on a dark casing, its label in the
