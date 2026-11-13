@@ -192,3 +192,16 @@ now fills such cycles when exactly one candidate passes stricter checks
 (lane, decode, grid square, path and altitude). Its fixes are on the track
 marked `tier: "inferred"` and drawn as rings. Its sensor readings can ride
 on a ghost. See docs/cross-receiver-pairing.md.
+
+## Since: held for one cycle (2026-11-13)
+
+A live flight's newest slot is a ghost for a few minutes of every cycle:
+the Regular reaches wspr.live before the Telemetry sent two minutes after
+it. Drawn at once, the beacon jumped into a grid square and back every ten
+minutes, which reads as the balloon veering off course. A ghost is now held
+back until its slot is ten minutes old (`GHOST_HOLD_MS`, `settledGhosts` in
+`src/lib/ghosts.ts`), so it shows only when its telemetry really was lost.
+The hold is applied where ghosts reach the page (the build's render, the
+bundled data, the fetched files and `refreshTrack`); the stored and
+committed ghosts are unchanged. A held ghost appears on the first refresh
+after its hold ends, at most one refresh interval (2 min) late.

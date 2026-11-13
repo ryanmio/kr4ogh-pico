@@ -10,7 +10,7 @@
  * was last updated. Nothing here can leave the page emptier than it started.
  */
 import { parseUtc } from "./format";
-import { pruneGhosts } from "./ghosts";
+import { pruneGhosts, settledGhosts } from "./ghosts";
 import { believe } from "./spoof";
 import { fetchWindow, mergeTrack, type FlightSpec } from "./wspr/track";
 import type { GhostPoint, TrackPoint } from "./types";
@@ -64,8 +64,10 @@ export async function refreshTrack(
   opts: { signal?: AbortSignal; detect?: boolean } = {},
 ): Promise<LiveTrackResult> {
   const now = new Date();
+  // A ghost younger than one cycle is held back (lib/ghosts.ts,
+  // GHOST_HOLD_MS): its telemetry is most likely still on the way.
   const unchanged = {
-    track: bundled, ghosts: bundledGhosts, spoofed: bundledSpoofed, added: 0,
+    track: bundled, ghosts: settledGhosts(bundledGhosts, now), spoofed: bundledSpoofed, added: 0,
   };
   // Every fix decoded so far, believed or not: the spoof test is re-run
   // over all of them, since a fix is judged against the ones before it.
@@ -102,16 +104,21 @@ export async function refreshTrack(
     // the fixes before each one (lib/spoof.ts).
     const all = mergeTrack(raw, fresh.track);
     const b = believe(all, mergeTrack(bundledGhosts, fresh.ghosts), opts.detect);
+    // A bundled ghost whose slot has since completed is dropped, and so
+    // is a fresh ghost from a slot the bundled track already has a fix
+    // for: the window overlaps the bundled end on purpose. A spoofed fix
+    // completes its slot as much as a believed one does. A ghost still
+    // inside its hold is left out for now; the window opens at the last
+    // fix, so the next refresh asks about its slot again.
+    const ghosts = settledGhosts(pruneGhosts(all, b.ghosts), now);
     return {
       track: b.track,
-      // A bundled ghost whose slot has since completed is dropped, and so
-      // is a fresh ghost from a slot the bundled track already has a fix
-      // for: the window overlaps the bundled end on purpose. A spoofed
-      // fix completes its slot as much as a believed one does.
-      ghosts: pruneGhosts(all, b.ghosts),
+      ghosts,
       spoofed: b.spoofed,
+      // A ghost counts as new when it is first shown, which for a held one
+      // is a refresh after it was first heard: the map redraws to add it.
       added: fresh.track.filter((p) => !known.has(p.utc)).length
-        + fresh.ghosts.filter((g) => !knownGhosts.has(g.utc) && !known.has(g.utc)).length,
+        + ghosts.filter((g) => !knownGhosts.has(g.utc)).length,
       error: null,
     };
   } catch (err) {

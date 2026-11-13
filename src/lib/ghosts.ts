@@ -19,6 +19,22 @@ export function pruneGhosts(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoi
   return ghosts.filter((g) => !fixed.has(g.utc));
 }
 
+/** How long a ghost is held back before it is drawn. A cycle sends its
+ * Regular message first and the telemetry two minutes later, and the
+ * stations' reports reach wspr.live minutes after that, so for a few
+ * minutes of every cycle the newest slot looks like a ghost even when its
+ * fix is on the way. Drawn at once, the balloon would hop to the middle of
+ * a grid square and back every ten minutes. Held for a cycle, a ghost
+ * appears only when its telemetry really was lost. */
+export const GHOST_HOLD_MS = 10 * 60 * 1000;
+
+/** The ghosts old enough to show: every one whose slot began at least
+ * GHOST_HOLD_MS before `now`. A closed flight's are all old enough. */
+export function settledGhosts(ghosts: GhostPoint[], now: Date = new Date()): GhostPoint[] {
+  const cutoff = now.getTime() - GHOST_HOLD_MS;
+  return ghosts.filter((g) => parseUtc(g.utc).getTime() <= cutoff);
+}
+
 /** The ghosts newer than the last full fix, oldest first: the coarse tail
  * the balloon has been heard along since it last sent telemetry. Empty
  * whenever a full fix is the newest thing known. */

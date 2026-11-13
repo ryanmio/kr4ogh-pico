@@ -33,7 +33,7 @@
 import { withBase } from "../lib/base";
 import { siteConfig, UPSTREAM_REPO } from "../lib/config";
 import { flightData } from "../lib/flights";
-import { lastKnown } from "../lib/ghosts";
+import { lastKnown, settledGhosts } from "../lib/ghosts";
 import { recordHolders, recordsHeldBy, recordsSet, summarize } from "../lib/records";
 import { sidebarHtml } from "../lib/render";
 import { spoofedSince } from "../lib/spoof";
@@ -52,8 +52,12 @@ interface Props {
   mode?: "home" | "permalink";
 }
 const {
-  flight, track, ghosts = [], spoofed = [], flights = [flight], mode = "permalink",
+  flight, track, ghosts: allGhosts = [], spoofed = [], flights = [flight], mode = "permalink",
 } = Astro.props;
+// A ghost from the last few minutes is held back (lib/ghosts.ts,
+// GHOST_HOLD_MS): its telemetry may simply not have arrived yet. The page
+// carries them all, and the script shows each once its hold is up.
+const ghosts = settledGhosts(allGhosts);
 const ended = flight.status === "closed";
 // The "Next flight" link, as built; the script re-aims it at the reader's
 // current flight and carries their toggles along.
@@ -92,7 +96,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   class="fv fv-loading"
   data-flight={JSON.stringify(flight)}
   data-track={JSON.stringify(track)}
-  data-ghosts={JSON.stringify(ghosts)}
+  data-ghosts={JSON.stringify(allGhosts)}
   data-spoofed={JSON.stringify(spoofed)}
   data-flights={JSON.stringify(flights)}
   data-summaries={JSON.stringify(summaries)}
@@ -169,7 +173,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import { featureFromSearch, urlWithFeature } from "../lib/feature";
   import { renderMapInto } from "../lib/flightview";
   import { unwrapLons } from "../lib/basemap";
-  import { heardBounds, lastKnown, unwrapNear } from "../lib/ghosts";
+  import { heardBounds, lastKnown, settledGhosts, unwrapNear } from "../lib/ghosts";
   import { addCornerControl } from "../lib/map";
   import type { GlobeHandle } from "../lib/globe";
   import {
@@ -222,7 +226,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let meta = JSON.parse(root.dataset.flight!) as FlightMeta;
     const site = JSON.parse(root.dataset.site!) as SiteConfig & { upstream: string };
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
-    let ghosts = JSON.parse(root.dataset.ghosts!) as GhostPoint[];
+    let ghosts = settledGhosts(JSON.parse(root.dataset.ghosts!) as GhostPoint[]);
     // Fixes whose GPS was spoofed (lib/spoof.ts): kept off the map and out
     // of every number, but the tracker was heard in them.
     let spoofed = JSON.parse(root.dataset.spoofed ?? "[]") as TrackPoint[];
@@ -339,7 +343,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         if (trackResp.ok && ghostResp.ok) {
           ({ track, ghosts, spoofed } = believe(
             await trackResp.json() as TrackPoint[],
-            await ghostResp.json() as GhostPoint[], detect));
+            settledGhosts(await ghostResp.json() as GhostPoint[]), detect));
         } else if (!detect) {
           ({ track, ghosts, spoofed } = rejoined());
         }
@@ -369,7 +373,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
             meta: f,
             ...believe(
               t.ok ? await t.json() as TrackPoint[] : [],
-              g.ok ? await g.json() as GhostPoint[] : [], detect),
+              g.ok ? settledGhosts(await g.json() as GhostPoint[]) : [], detect),
           };
         } catch {
           fetchedOverlays.delete(f.flight_id);
