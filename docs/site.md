@@ -290,17 +290,23 @@ page. `?p=records` opens the panel from a link like any other. With one
 flight on the site there is nothing to compare and no card.
 
 Three more records are crossings, timed from first heard (the start the
-longest flight counts from) to the first confirmed fix past a line, the
-fastest holding each. The **Atlantic crossing** finishes on a coarse line
+longest flight counts from) to the moment a line was crossed, the fastest
+holding each. The **Atlantic crossing** finishes on a coarse line
 along the eastern shore of the ocean, Norway to Cape Palmas, so a balloon
 that makes landfall in Africa has crossed as much as one reaching Europe,
 and the Azores, Canaries and Cape Verde, on the ocean side, do not count.
 Only a flight first heard west of 50°W is in the running for it. The
 **half circumnavigation** and **circumnavigation** count longitude
 unwrapped along the track through the date line: 180° and 360° from the
-first fix, either way round. Solar trackers sleep at night, so the fix
-past a line is often the next morning's. The record is when the flight was
-first heard across, never an interpolation into the gap. Most flights make
+first fix, either way round. A crossing counts once a confirmed fix
+is past the line. Solar trackers sleep at night, so that fix is often the
+next morning's, hundreds of kilometres on; the record is instead an
+estimate of when and where the line was crossed, read off the line the map
+draws between the last fix short of it and the first past it (bent across
+the night, as the map bends it), with the balloon taken as keeping a steady
+speed across the gap. The star sits on the track where it crossed, the time
+reads "≈6d 4h", and the tile's tooltip names the two fixes it was estimated
+between. Most flights make
 no crossing, so a crossing has no value until a flight makes it: its tile
 and star appear only once some flight has, the card's "Holds N of M"
 counts only the records someone holds, and the table puts every crossing

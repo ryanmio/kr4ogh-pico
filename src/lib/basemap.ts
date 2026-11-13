@@ -109,23 +109,38 @@ export interface TimedPoint { lat: number; utc: string }
 export function flightLine(track: TimedPoint[], lons: number[]): number[][] {
   const out: number[][] = [];
   const ms = track.map((p) => Date.parse(p.utc));
-  const at = (i: number): Vec3 => unitVector(lons[i]!, track[i]!.lat);
   for (let i = 0; i < track.length; i++) {
-    if (i > 0) {
-      const a = at(i - 1);
-      const b = at(i);
-      const d = angle(a, b);
-      // Not bent across a short hop: the headings either side would be
-      // mostly grid noise, and the curve would wiggle for nothing.
-      const bent = ms[i]! - ms[i - 1]! >= BEND_GAP_MS && d * EARTH_KM >= 2 * HEADING_MIN_KM
-        ? bend(a, b, travelTangent(at, ms, i - 1, -1), travelTangent(at, ms, i, +1))
-        : null;
-      if (bent) sampleCurve(out, bent, 1.5 * d, BEND_STEP_DEG, lons[i - 1]!);
-      else sampleArc(out, a, b, lons[i - 1]!);
-    }
+    if (i > 0) between(out, track, lons, ms, i);
     out.push([lons[i]!, track[i]!.lat]);
   }
   return out;
+}
+
+/** The stretch of flightLine from fix i-1 to fix i, both ends included:
+ * the path the map draws across that gap, for whatever needs to say where
+ * along it something happened. */
+export function flightLineBetween(track: TimedPoint[], lons: number[], i: number): number[][] {
+  const out = [[lons[i - 1]!, track[i - 1]!.lat]];
+  between(out, track, lons, track.map((p) => Date.parse(p.utc)), i);
+  out.push([lons[i]!, track[i]!.lat]);
+  return out;
+}
+
+/** Push the points strictly between fix i-1 and fix i. */
+function between(
+  out: number[][], track: TimedPoint[], lons: number[], ms: number[], i: number,
+): void {
+  const at = (j: number): Vec3 => unitVector(lons[j]!, track[j]!.lat);
+  const a = at(i - 1);
+  const b = at(i);
+  const d = angle(a, b);
+  // Not bent across a short hop: the headings either side would be
+  // mostly grid noise, and the curve would wiggle for nothing.
+  const bent = ms[i]! - ms[i - 1]! >= BEND_GAP_MS && d * EARTH_KM >= 2 * HEADING_MIN_KM
+    ? bend(a, b, travelTangent(at, ms, i - 1, -1), travelTangent(at, ms, i, +1))
+    : null;
+  if (bent) sampleCurve(out, bent, 1.5 * d, BEND_STEP_DEG, lons[i - 1]!);
+  else sampleArc(out, a, b, lons[i - 1]!);
 }
 
 /** The way the balloon was travelling at fix i, as a unit vector tangent to

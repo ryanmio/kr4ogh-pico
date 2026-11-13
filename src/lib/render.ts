@@ -3,7 +3,7 @@
  * from a live wspr.live query. */
 
 import {
-  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocalDay, fmtRelative, fmtUtc,
+  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocal, fmtLocalDay, fmtRelative, fmtUtc,
   haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
 import { heardBounds } from "./ghosts";
@@ -426,8 +426,14 @@ export function recordsHtml(v: RecordsView): string {
   const tiles = RECORDS.flatMap((r) => {
     const s = v.holders[r.key];
     if (!s) return [];
+    // An estimated crossing says what it was estimated from.
+    const between = s.at[r.key]!.between;
+    const title = between
+      ? `Estimated along the track between the fixes at ${fmtLocal(between[0])}`
+        + ` and ${fmtLocal(between[1])}. Show on the map where it was crossed`
+      : "Show on the map where it was set";
     return [`<button type="button" class="fv-record" data-record="${r.key}"
-      aria-pressed="${v.focus === r.key}" title="Show on the map where it was set">
+      aria-pressed="${v.focus === r.key}" title="${esc(title)}">
       <span class="fv-record-label">${esc(r.label)}</span>
       <b class="fv-record-value">${esc(r.fmt(s.values[r.key]!, v.units, s))}</b>
       <span class="fv-record-who">${who(s)} · ${esc(day(s.at[r.key]!.utc))}</span>
