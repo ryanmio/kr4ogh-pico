@@ -1,7 +1,7 @@
 # Cross-receiver pairing: telemetry heard without a same-station Regular
 
-Status: **built 2026-11-03, on the `cross-receiver-pairing` branch, not
-merged.** The Step 1 findings were written first, before any code changed,
+Status: **built 2026-11-03, merged the same day (PR #13). PT01's
+backfill was run on 2026-11-13** (see "Backfill" at the end). The Step 1 findings were written first, before any code changed,
 and are kept as they were. The design, the results and the spot-check list
 follow them.
 
@@ -376,3 +376,10 @@ LM30 244 (245); 11-01 10:00 LM30pb 250 (250); 11-01 11:40 LL49nm 250
   The map key, table and Signal panel use the full wording.
 - **Backfill.** After merging, run the ingest workflow once with "from
   launch", so the 31 Oct – 2 Nov inferred points join the committed track.
+  *Done 2026-11-13, by hand.* It was never run while PT01 was live, and
+  once PT01 closed (5 Nov) the workflow skips it, because `picolog.run`
+  pulls only live flights. So it was run locally against a copy of
+  flights.toml with PT01 set to live, then exported with the real one.
+  The result matches the replay above: 10 inferred fixes (31 Oct 3,
+  1 Nov 2, 2 Nov 1, 3 Nov 4). The ghosts file gained the 31 Oct 13:20
+  sensor reading placed in JM60, as described above.
