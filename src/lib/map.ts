@@ -629,11 +629,9 @@ function drawForecast(
   }
 }
 
-/** The wake mark's tooltip: when, and why then. */
+/** The wake mark's tooltip: just when. */
 function wakeText(w: NonNullable<Forecast["wake"]>): string {
-  return `<b>Expected back</b> about ${fmtLocal(w.point.utc)}<br>` +
-    `when the sun is ${w.cutoff.toFixed(0)}° up here, where it woke on ` +
-    "earlier mornings · a guess along the forecast";
+  return `<b>Expected back</b> ~${fmtLocal(w.point.utc)}`;
 }
 
 /** How far the view can reach from the home copy of the world, in degrees
