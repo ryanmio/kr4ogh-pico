@@ -443,6 +443,28 @@ function addForecast(
         "line-dasharray": [0.1, 3],
       } },
   );
+  // Where a sleeping balloon is expected back (lib/wake.ts), as on the
+  // flat map: a pale gold dot on the line.
+  if (f.wake && coords[f.wake.index]) {
+    const w = f.wake;
+    style.sources["forecast-wake"] = {
+      type: "geojson",
+      data: {
+        type: "Feature", properties: {},
+        geometry: {
+          type: "Point",
+          coordinates: [unwrapNear(w.point.lon, coords[w.index]![0]), w.point.lat],
+        },
+      },
+    };
+    style.layers.push({
+      id: "forecast-wake", type: "circle", source: "forecast-wake",
+      paint: {
+        "circle-radius": 6, "circle-color": "#fde68a",
+        "circle-stroke-color": FORECAST_COLOR, "circle-stroke-width": 2,
+      },
+    });
+  }
   const marks = dayMarks(f)
     .map((m) => coords[f.points.indexOf(m.point)])
     .filter((c): c is [number, number] => !!c);

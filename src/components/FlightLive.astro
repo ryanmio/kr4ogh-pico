@@ -181,6 +181,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     parseUtc, trackStats,
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
+  import { expectedWake, wakeCutoff, type Wake } from "../lib/wake";
   import { mergeTrack } from "../lib/wspr/track";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
   import {
@@ -269,6 +270,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // The newest full report is older than any wind the predictor holds, so
     // there is no line until the balloon is heard again; the button says so.
     let forecastQuiet = false;
+    // Where the forecast line says the balloon wakes, when it is asleep
+    // (lib/wake.ts), as last drawn: a change redraws the map.
+    let drawnWake = "";
     // Which panel is open, if any. A `?p=speed` link arrives with that
     // panel already open, so a link shows what its sender was looking at.
     let panel: PanelKind | null = panelFromSearch(location.search);
@@ -579,6 +583,23 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       return changed;
     }
 
+    /** Where a sleeping balloon is expected back, on the forecast line;
+     * null while it is awake, before it has woken from enough nights to
+     * know its cutoff, or with no line. */
+    function currentWake(): Wake | null {
+      if (!forecast || ended()) return null;
+      const cutoff = wakeCutoff([...track, ...ghosts]);
+      const heard = heardBounds(track, ghosts, spoofed);
+      return cutoff === null || !heard ? null : expectedWake(forecast, cutoff, heard.lastUtc);
+    }
+
+    /** The forecast as the map draws it: with its wake mark, if any. */
+    function drawnForecast(): Forecast | null {
+      const wake = currentWake();
+      drawnWake = wake?.point.utc ?? "";
+      return forecast && { ...forecast, wake };
+    }
+
     async function selectView(next: ViewMode) {
       if (next === view) return;
       if (next === "globe" && !(await ensureGlobeMod())) return;
@@ -620,7 +641,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
             ghosts, spoofed: drawnSpoofed(), overlays: mapOverlays(),
-            marks: recordMarks(), forecast, onOverlayClick: openFlight,
+            marks: recordMarks(), forecast: drawnForecast(), onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
             weather: { ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
@@ -641,7 +662,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const held = renderMapInto(mapSlot, meta, track, {
         units, metric, ghosts, spoofed: drawnSpoofed(), overlays: mapOverlays(),
         marks: recordMarks(),
-        forecast, sizing: "fill", onOverlayClick: openFlight,
+        forecast: drawnForecast(), sizing: "fill", onOverlayClick: openFlight,
         ...(wide ? { legendInto: ctlSlot } : {}),
       });
       if (!held) return;
@@ -979,6 +1000,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // A ghost is the tracker heard with only half its report: the
       // Regular message with the grid square, never the telemetry. The
       // map draws them hollow; this is where the count is explained.
+      // A sleeping balloon's expected return, off the forecast line.
+      const wake = currentWake();
+      const back = wake
+        ? mini("Expected back", `~${wake.point.utc.slice(11, 16)} UTC · in ${
+          fmtDuration(parseUtc(wake.point.utc).getTime() - Date.now())}`)
+        : "";
       const partial = ghosts.length
         ? mini("Without telemetry", `${fmtInt(ghosts.length)} heard, grid square only`)
         : "";
@@ -995,6 +1022,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       panelBody.innerHTML =
         `<div class="fv-minis">${[
           mini("Last heard", lastHeard),
+          back,
           mini("Reports", `${fmtInt(s.points)} since launch`),
           partial,
           lied,
@@ -1360,7 +1388,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         await drawFirst();
         renderSidebar();
         renderPanel();
-      } else if (result.added > 0 || overlayAdded > 0 || fcChanged) {
+      } else if (result.added > 0 || overlayAdded > 0 || fcChanged
+        || (currentWake()?.point.utc ?? "") !== drawnWake) {
         drawMapAgain();
         renderSidebar();
         renderPanel();

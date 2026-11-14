@@ -27,6 +27,7 @@
 
 import { parseUtc } from "./format";
 import type { TrackPoint } from "./types";
+import type { Wake } from "./wake";
 
 // ---------- the reader's choice ----------
 
@@ -172,6 +173,9 @@ export interface Forecast {
   startUtc: string;
   /** The trajectory from the start, about every twenty minutes. */
   points: ForecastPoint[];
+  /** Where the line says a sleeping balloon wakes (lib/wake.ts). Set by the
+   * page on the copy it hands the map, never on the cached answer. */
+  wake?: Wake | null;
 }
 
 /** Metres per second the altitude is changing over the newest half hour

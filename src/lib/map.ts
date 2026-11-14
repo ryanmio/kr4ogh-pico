@@ -609,6 +609,14 @@ function drawForecast(
     "<br>SondeHub Tawhiri on GFS winds · a guess, not a report",
     { sticky: true },
   ));
+  if (f.wake && line[f.wake.index]) {
+    const w = f.wake;
+    const place = L.latLng(w.point.lat, unwrapNear(w.point.lon, line[w.index]!.lng));
+    worlds.add(map, (at) => L.circleMarker(at(place), {
+      radius: 6, color: FORECAST_COLOR, weight: 2,
+      fillColor: "#fde68a", fillOpacity: 1,
+    }).bindTooltip(wakeText(w)));
+  }
   for (const m of dayMarks(f)) {
     const place = line[f.points.indexOf(m.point)];
     if (!place) continue;
@@ -619,6 +627,13 @@ function drawForecast(
       `Forecast +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtLocal(m.point.utc)}`,
     ));
   }
+}
+
+/** The wake mark's tooltip: when, and why then. */
+function wakeText(w: NonNullable<Forecast["wake"]>): string {
+  return `<b>Expected back</b> about ${fmtLocal(w.point.utc)}<br>` +
+    `when the sun is ${w.cutoff.toFixed(0)}° up here, where it woke on ` +
+    "earlier mornings · a guess along the forecast";
 }
 
 /** How far the view can reach from the home copy of the world, in degrees
