@@ -10,7 +10,8 @@
  */
 import { readFileSync } from "node:fs";
 import { parse, TomlError } from "smol-toml";
-import type { FlightMeta, SiteConfig } from "./types";
+import type { FlightMeta, SiteConfig, TrackPoint } from "./types";
+import { maidenheadToLatLon } from "./wspr/decode";
 
 /** The project this site is an instance of. The "Fly your own" link, and
  * the source link of last resort. */
@@ -26,8 +27,13 @@ const LAUNCH_UTC = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const FLIGHT_FIELDS = new Set([
   "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
   "launch_lat", "launch_lon", "status", "close_reason", "float_m", "tracker",
-  "sensor",
+  "sensor", "spoofed",
 ]);
+const GRID6 = /^[A-R]{2}[0-9]{2}[a-x]{2}$/i;
+const SPOOFED_NUMBERS = [
+  "altitude_m", "speed_kt", "voltage_v", "temperature_c", "rx_station_count",
+] as const;
+const SPOOFED_FIELDS = new Set(["utc", "grid6", "note", ...SPOOFED_NUMBERS]);
 /** Sensors a tracker can declare. "bme280" is the Petrel tracker's board
  * sensor, sent as extended telemetry in slot 3 (lib/wspr/decode.ts). */
 const SENSORS = ["bme280"] as const;
@@ -149,6 +155,8 @@ function flight(entry: unknown, index: number): FlightMeta {
     );
   }
 
+  const spoofed = handSpoofed(entry.spoofed, where, launchUtc, endUtc);
+
   return {
     flight_id: flightId,
     callsign,
@@ -164,7 +172,54 @@ function flight(entry: unknown, index: number): FlightMeta {
     float_m: floatM,
     ...(tracker ? { tracker } : {}),
     ...(sensor ? { sensor: sensor as (typeof SENSORS)[number] } : {}),
+    ...(spoofed.length ? { spoofed } : {}),
   };
+}
+
+/** The [[flights.spoofed]] entries: fixes set aside as spoofed by hand.
+ * Strict, because each one puts a point on a public map that no decoder
+ * vouched for: every field is required, a note must say why, and the time
+ * must fall inside the flight, so a typo cannot land a point on the wrong
+ * flight or leave one unexplained. */
+function handSpoofed(
+  v: unknown, where: string, launchUtc: string | null, endUtc: string | null,
+): TrackPoint[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) fail(`${where}.spoofed`, "must be [[flights.spoofed]] entries");
+  return v.map((e, i) => {
+    const at = `${where}.spoofed #${i + 1}`;
+    if (!isTable(e)) fail(at, "must be a table");
+    for (const key of Object.keys(e)) {
+      if (!SPOOFED_FIELDS.has(key)) fail(`${at}.${key}`, "unknown field");
+    }
+    const utc = utcText(e, at, "utc");
+    if (utc === null) fail(`${at}.utc`, 'required, e.g. "2026-11-14 11:36:00"');
+    if (launchUtc === null) fail(at, "the flight needs a launch_utc to check this against");
+    if (utc < launchUtc || (endUtc !== null && utc > endUtc)) {
+      fail(`${at}.utc`, `"${utc}" is outside this flight (${launchUtc} to ${endUtc ?? "now"})`);
+    }
+    const grid6 = e.grid6;
+    if (typeof grid6 !== "string" || !GRID6.test(grid6)) {
+      fail(`${at}.grid6`, 'required, a 6-character locator such as "FH17lx"');
+    }
+    const note = optionalText(e, at, "note");
+    if (note === null || !note.trim()) {
+      fail(`${at}.note`, "required: say why this fix is taken to be spoofed");
+    }
+    const nums = Object.fromEntries(SPOOFED_NUMBERS.map((k) => {
+      const n = optionalNumber(e, at, k);
+      if (n === null || !Number.isFinite(n)) fail(`${at}.${k}`, "required, a number");
+      return [k, n];
+    })) as Record<(typeof SPOOFED_NUMBERS)[number], number>;
+    const [lat, lon] = maidenheadToLatLon(grid6);
+    return {
+      utc, grid6: grid6.slice(0, 4).toUpperCase() + grid6.slice(4).toLowerCase(),
+      lat, lon, ...nums,
+      // A position can only be spoofed if the GPS called it valid.
+      gps_valid: true,
+      spoof_note: note.trim(),
+    };
+  });
 }
 
 function load(): { site: SiteConfig; flights: FlightMeta[] } {
@@ -174,6 +229,12 @@ function load(): { site: SiteConfig; flights: FlightMeta[] } {
   } catch {
     fail("", "not found (expected at the repo root)");
   }
+  return parseConfig(text);
+}
+
+/** flights.toml's text to the site and its flights, or a thrown error
+ * naming what is wrong. Exported for the dev checks. */
+export function parseConfig(text: string): { site: SiteConfig; flights: FlightMeta[] } {
   let doc: Table;
   try {
     doc = parse(text);

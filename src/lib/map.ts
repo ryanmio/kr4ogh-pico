@@ -750,7 +750,11 @@ function drawSpoofed(
       radius: 5, color: SPOOF_COLOR, weight: 2, opacity: 0.95,
       fillColor: SPOT_OUTLINE, fillOpacity: 0.6,
     }).bindTooltip(
-      `<b>GPS spoofed</b> · ${when}<br>` +
+      // A hand-entered fix (FlightMeta.spoofed) is named as probable and
+      // says why, in the words flights.toml gives it.
+      (last.spoof_note != null
+        ? `<b>Probable GPS spoofing</b> · ${when}<br>${esc(last.spoof_note)}<br>`
+        : `<b>GPS spoofed</b> · ${when}<br>`) +
       `GPS said ${last.grid6}, ${fmtAltitude(last.altitude_m, units).text}, ` +
       `${speedText(last, units)}` +
       (sensed

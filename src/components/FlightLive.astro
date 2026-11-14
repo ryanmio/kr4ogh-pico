@@ -36,7 +36,7 @@ import { flightData } from "../lib/flights";
 import { lastKnown, settledGhosts } from "../lib/ghosts";
 import { recordHolders, recordsHeldBy, recordsSet, summarize } from "../lib/records";
 import { sidebarHtml } from "../lib/render";
-import { spoofedSince } from "../lib/spoof";
+import { spoofHeadline } from "../lib/spoof";
 import type { FlightMeta, GhostPoint, TrackPoint } from "../lib/types";
 
 interface Props {
@@ -86,7 +86,7 @@ const records = summaries.length > 1
 // remembered choice on load, which cannot be known here.
 const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts, spoofed, records });
 const last = lastKnown(track, ghosts);
-const spoofing = spoofedSince(track, ghosts, spoofed);
+const spoofing = spoofHeadline(track, ghosts, spoofed);
 // What the About panel needs to say about this instance: whose site, where
 // its source lives, and where the project it is an instance of lives.
 const site = { ...siteConfig, upstream: UPSTREAM_REPO };
@@ -134,7 +134,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           {last
             ? `${ended ? "Flight ended · last" : "Newest"} position ${last.utc} UTC${
               last.coarse ? " (grid square only)" : ""}${
-              spoofing ? ` · GPS spoofed since ${spoofing.utc.slice(11, 16)}` : ""}`
+              spoofing ? ` · ${spoofing}` : ""}`
             : "No positions yet"}
         </p>
       </div>
@@ -196,7 +196,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
   import {
-    believe, spoofedSince, spoofModeFromSearch, urlWithSpoofMode, type SpoofMode,
+    believe, spoofedSince, spoofHeadline, spoofModeFromSearch, urlWithSpoofMode,
+    withHandSpoofed, type SpoofMode,
   } from "../lib/spoof";
   import { trackerDetailsHtml } from "../lib/trackerinfo";
   import type {
@@ -346,7 +347,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         // the build does.
         if (trackResp.ok && ghostResp.ok) {
           ({ track, ghosts, spoofed } = believe(
-            await trackResp.json() as TrackPoint[],
+            withHandSpoofed(await trackResp.json() as TrackPoint[], meta),
             settledGhosts(await ghostResp.json() as GhostPoint[]), detect));
         } else if (!detect) {
           ({ track, ghosts, spoofed } = rejoined());
@@ -838,9 +839,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (!known) return "No positions yet";
       // Heard since, but not where: the position above is the last true
       // one, and the reader should know why it is not newer.
-      const since = spoofedSince(track, ghosts, spoofed);
+      const spoofing = spoofHeadline(track, ghosts, spoofed);
       return `${prefix} position ${known.utc} UTC${known.coarse ? " (grid square only)" : ""}`
-        + (since ? ` · GPS spoofed since ${since.utc.slice(11, 16)}` : "");
+        + (spoofing ? ` · ${spoofing}` : "");
     }
 
     function paintCards() {
@@ -992,10 +993,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // The card only says "Flight ended"; this is where the date goes. A
       // newest report that was a ghost is named too, because every number
       // on the cards is from an older report than the one heard last.
+      const lastSpoofed = spoofedSince(track, ghosts, spoofed);
       const lastHeard = (ended()
         ? `${heard.lastUtc.slice(5, 16)} UTC`
         : `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`) +
-        (spoofedSince(track, ghosts, spoofed) ? " · GPS spoofed"
+        (lastSpoofed
+          ? (lastSpoofed.spoof_note != null ? " · probable GPS spoofing" : " · GPS spoofed")
           : lastKnown(track, ghosts)?.coarse ? " · position only" : "");
       // A ghost is the tracker heard with only half its report: the
       // Regular message with the grid square, never the telemetry. The
@@ -1014,7 +1017,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // `?spoofing=show` puts them on the map anyway; this is where the
       // reader finds that out.
       const lied = spoofed.length
-        ? mini("GPS spoofed", `${fmtInt(spoofed.length)} position${
+        ? mini(spoofed.every((p) => p.spoof_note != null) ? "Probable GPS spoofing" : "GPS spoofed",
+          `${fmtInt(spoofed.length)} position${
           spoofed.length === 1 ? "" : "s"} faked · <button type="button"
           class="linklike" data-spoof-toggle>${
             spoofMode === "show" ? "hide" : "show on map"}</button>`)

@@ -29,6 +29,11 @@ _FLIGHT_FIELDS = {
     "flight_id", "callsign", "band", "channel", "active", "launch_utc", "end_utc",
     "launch_lat", "launch_lon", "status", "close_reason", "float_m", "tracker",
     "sensor",
+    # [[flights.spoofed]]: fixes set aside as spoofed by hand. Site-only:
+    # the tool never decodes them, so it accepts them and reads nothing from
+    # them; src/lib/config.ts validates them, and the site build fails on a
+    # bad one.
+    "spoofed",
 }
 
 # Sensors a tracker can declare. "bme280" is the Petrel tracker's board

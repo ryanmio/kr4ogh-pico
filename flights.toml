@@ -62,6 +62,17 @@ callsign = "KR4OGH"
 # An optional [flights.tracker] table right after a flight holds build
 # details for the Tracker panel: any labels you like, in the order written.
 # A value may link out, written [text](https://...).
+#
+# Optional [[flights.spoofed]] entries after a flight are fixes you judged
+# GPS-spoofed by hand, for a spoof the decoder cannot reach (say, a report
+# sent off its slot because the spoofer faked the tracker's clock too). They
+# are never drawn as track: the page hides them, `?spoofing=show` draws them
+# in rose, and the page calls each one probable, not proven. Every field is
+# required, and utc must fall inside the flight:
+#   utc, grid6, altitude_m, speed_kt, voltage_v, temperature_c,
+#   rx_station_count   the fix as decoded (rx_station_count: the stations
+#                      that heard both halves)
+#   note               why it is taken to be spoofed; shown on the map
 
 # Launched 2026-08-29, heard 18:40-20:20 UTC, then silent. Left inactive so
 # it stays off the site; flip active on only if it is heard again.
@@ -305,3 +316,24 @@ float_m = 12080
 "Frequency" = "14.097180 MHz (20 m)"
 "Channel" = "178"
 "Schedule" = "every 10 min from :04"
+
+# Probable GPS spoofing over the Black Sea, 2026-11-14. Last normal pair
+# 09:54/09:56 (KN52sv, 12,120 m). Then KR4OGH FH17 at 11:36 and 0H8LNA GJ06 57
+# at 11:38, both 2 minutes late for channel 178 (Regular due at :x4,
+# telemetry at :x6), on PT-02's frequency, heard by 23 and 27 stations, 17 of
+# them hearing both, within 1 Hz of each other. The tracker takes its clock
+# and position from GPS, so a clock 2 min slow and a position in Peru at
+# 1,000 m both point to a spoofer. Strong but circumstantial. The decoder
+# drops off-slot reports (rightly: channel 179 has this frequency and id13
+# and sends at :x6/:x8), so the fix is entered here by hand. The 11:46
+# 008FPD BE16 53 is left out: it decodes as an extended message, not basic
+# telemetry, so there is no position to plot.
+[[flights.spoofed]]
+utc = "2026-11-14 11:36:00"
+grid6 = "FH17lx"
+altitude_m = 1000
+speed_kt = 82
+voltage_v = 4.15
+temperature_c = -17
+rx_station_count = 17
+note = "clock ran 2 min slow, position faked"

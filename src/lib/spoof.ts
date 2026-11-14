@@ -102,7 +102,7 @@ export function splitSpoofed(track: TrackPoint[]): SpoofSplit {
   const spoofed: TrackPoint[] = [];
   for (const p of track) {
     const anchor = kept.at(-1);
-    if (pressureDisagrees(p)
+    if (p.spoof_note != null || pressureDisagrees(p)
       || (anchor && unreachable(anchor, p.utc, p.lat, p.lon, GRID6_SLACK_KM))) {
       spoofed.push(p);
     } else {
@@ -156,11 +156,16 @@ export interface Believed {
  * across a spoofed fix measures the jump to the spoofer and back.
  *
  * With `detect` false nothing is set aside: the track as decoded, which is
- * what `?spoofing=normal` shows. */
+ * what `?spoofing=normal` shows. A fix entered by hand as spoofed is no
+ * part of what was decoded, so that view leaves it out altogether rather
+ * than draw it as track. */
 export function believe(
   raw: TrackPoint[], rawGhosts: GhostPoint[], detect = true,
 ): Believed {
-  if (!detect) return { track: resolveTrackSpeeds(raw), ghosts: rawGhosts, spoofed: [] };
+  if (!detect) {
+    const decoded = raw.filter((p) => p.spoof_note == null);
+    return { track: resolveTrackSpeeds(decoded), ghosts: rawGhosts, spoofed: [] };
+  }
   const { track, spoofed } = splitSpoofed(raw);
   return {
     track: resolveTrackSpeeds(track),
@@ -178,6 +183,36 @@ export function spoofedSince(
 ): TrackPoint | null {
   const believed = [track.at(-1)?.utc ?? "", ghosts.at(-1)?.utc ?? ""].sort().at(-1)!;
   return spoofed.find((p) => p.utc > believed) ?? null;
+}
+
+/** A flight's decoded fixes with its hand-entered spoofed ones
+ * (FlightMeta.spoofed) added, oldest first, ready for `believe`, which
+ * always sets the hand-entered ones aside. A decoded fix in the same slot
+ * wins: the decoder reached it after all. */
+export function withHandSpoofed(
+  raw: TrackPoint[], flight: { spoofed?: TrackPoint[] },
+): TrackPoint[] {
+  const extra = (flight.spoofed ?? []).filter((h) => !raw.some((p) => p.utc === h.utc));
+  if (!extra.length) return raw;
+  return [...raw, ...extra].sort((a, b) => a.utc.localeCompare(b.utc));
+}
+
+/** What the page's header says about spoofing, after the newest position,
+ * or "" for nothing.
+ *
+ * A detected spoof still going on reads "GPS spoofed since HH:MM", and
+ * stops being said the moment a fix to believe comes back. A hand-entered
+ * one is named as probable and pinned to when it happened, "probable GPS
+ * spoofing around 2026-11-14 11:36 UTC", during and after alike: the
+ * evidence for it is circumstantial, and "since" would claim it is still
+ * going on, which nobody knows. */
+export function spoofHeadline(
+  track: TrackPoint[], ghosts: GhostPoint[], spoofed: TrackPoint[],
+): string {
+  const since = spoofedSince(track, ghosts, spoofed);
+  if (since && since.spoof_note == null) return `GPS spoofed since ${since.utc.slice(11, 16)}`;
+  const probable = spoofed.findLast((p) => p.spoof_note != null);
+  return probable ? `probable GPS spoofing around ${probable.utc.slice(0, 16)} UTC` : "";
 }
 
 /** One spoof, as the map draws it with `?spoofing=show`: the spoofed fixes

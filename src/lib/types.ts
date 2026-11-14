@@ -44,6 +44,10 @@ export interface TrackPoint {
   /** The same for the sensor reading, which is paired on its own. */
   sensor_tier?: "inferred";
   sensor_pairing?: string;
+  /** Present only on a spoofed fix entered by hand in flights.toml
+   * (FlightMeta.spoofed): why it is taken to be spoofed. The site calls
+   * such a fix probable, not proven, everywhere it names it. */
+  spoof_note?: string;
 }
 
 /** A slot where only the Regular message was heard: the callsign, a 4-char
@@ -98,6 +102,11 @@ export interface FlightMeta {
    * "bme280" the slot-3 message is fetched and decoded onto each fix, and
    * the Data table gains its three columns once there is a reading. */
   sensor?: "bme280" | null;
+  /** Spoofed fixes entered by hand in flights.toml, each with its
+   * `spoof_note`: ones the decoder could not reach, such as a report sent
+   * off its slot because the spoofer faked the tracker's clock too. Always
+   * set aside as spoofed (lib/spoof.ts), never drawn as track. */
+  spoofed?: TrackPoint[];
 }
 
 /** Another flight drawn on the same map for comparison (lib/overlay.ts):

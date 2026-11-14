@@ -17,9 +17,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import {
-  believe, dropSpoofedGhosts, pressureAltitudeM, spoofedSince, spoofRuns,
-  spoofModeFromSearch, splitSpoofed, urlWithSpoofMode,
+  believe, dropSpoofedGhosts, pressureAltitudeM, spoofedSince, spoofHeadline, spoofRuns,
+  spoofModeFromSearch, splitSpoofed, urlWithSpoofMode, withHandSpoofed,
 } from "../src/lib/spoof";
+import { parseConfig } from "../src/lib/config";
 import type { GhostPoint, TrackPoint } from "../src/lib/types";
 
 let failures = 0;
@@ -103,6 +104,92 @@ const raw = believe(iran, ghosts, false);
 check("with detection off, every fix and ghost is kept as decoded",
   raw.track.length === iran.length && raw.ghosts.length === ghosts.length
   && raw.spoofed.length === 0);
+
+// ---------- 1b. spoofed fixes entered by hand (flights.toml) ----------
+
+// PT-02 over the Black Sea, 2026-11-14: two true fixes, then a report sent
+// two minutes off its slot, from Peru at 1,000 m, entered by hand.
+const pt02 = [
+  fix("2026-11-14 09:44:00", "KN52qt", 42.85, 31.38, 12100, 82),
+  fix("2026-11-14 09:54:00", "KN52sv", 42.90, 31.54, 12120, 82),
+];
+const hand: TrackPoint = {
+  ...fix("2026-11-14 11:36:00", "FH17lx", -12.02, -77.04, 1000, 82),
+  spoof_note: "clock ran 2 min slow, position faked",
+};
+const meta = { spoofed: [hand] };
+const withHand = believe(withHandSpoofed(pt02, meta), []);
+check("a hand-entered fix is set aside, never on the track",
+  withHand.spoofed.length === 1 && withHand.spoofed[0] === hand
+  && withHand.track.length === 2 && !withHand.track.includes(hand));
+// Even where the jump test would pass it: the hand marks it, not distance.
+const nearby = { ...hand, grid6: "KN52sw", lat: 42.94, lon: 31.54, altitude_m: 12100 };
+check("a hand-entered fix is set aside even when it is within reach",
+  believe(withHandSpoofed(pt02, { spoofed: [nearby] }), []).spoofed[0] === nearby);
+check("?spoofing=normal leaves a hand-entered fix out, rather than on the track",
+  believe(withHandSpoofed(pt02, meta), [], false).track.every((p) => p.spoof_note == null)
+  && believe(withHandSpoofed(pt02, meta), [], false).track.length === 2);
+check("a decoded fix in the same slot wins over the hand-entered one",
+  withHandSpoofed([...pt02, fix("2026-11-14 11:36:00", "KN52tv", 42.9, 31.6, 12100, 82)], meta)
+    .filter((p) => p.utc === hand.utc).every((p) => p.spoof_note == null));
+
+const handOngoing = spoofHeadline(withHand.track, [], withHand.spoofed);
+check("while nothing newer is believed, the header calls it probable and pins it to its time",
+  handOngoing === "probable GPS spoofing around 2026-11-14 11:36 UTC", handOngoing);
+const back = believe(withHandSpoofed(
+  [...pt02, fix("2026-11-14 14:04:00", "KN63ba", 43.0, 32.0, 12100, 60)], meta), []);
+const handAfter = spoofHeadline(back.track, [], back.spoofed);
+check("once true fixes return, the header still says around, never since",
+  handAfter === "probable GPS spoofing around 2026-11-14 11:36 UTC" && spoofedSince(back.track, [], back.spoofed) === null,
+  handAfter);
+const detected = believe(iran, ghosts);
+check("a detected spoof still going on keeps its \"since\"",
+  /^GPS spoofed since \d\d:\d\d$/.test(spoofHeadline(detected.track, [], [...detected.spoofed,
+    fix("2026-11-01 23:00:00", "LM53ql", 33.5, 48.1, 200, 0, 250)])));
+
+const toml = (spoofed: string, end = "") => `
+[site]
+callsign = "N0CALL"
+[[flights]]
+flight_id = "T1"
+callsign = "N0CALL"
+band = "20m"
+channel = 178
+launch_utc = "2026-11-11 15:00:00"
+${end}
+[[flights.spoofed]]
+${spoofed}`;
+const good = `utc = "2026-11-14 11:36:00"
+grid6 = "FH17lx"
+altitude_m = 1000
+speed_kt = 82
+voltage_v = 4.15
+temperature_c = -17
+rx_station_count = 17
+note = "clock ran 2 min slow, position faked"`;
+const rejects = (text: string, why: RegExp) => {
+  try {
+    parseConfig(text);
+    return false;
+  } catch (err) {
+    return why.test(String(err));
+  }
+};
+const parsed = parseConfig(toml(good)).flights[0]!.spoofed;
+check("flights.toml: a good entry parses, placed at its square's centre",
+  parsed?.length === 1 && parsed[0]!.grid6 === "FH17lx" && parsed[0]!.spoof_note !== undefined
+  && Math.abs(parsed[0]!.lat - -12.02) < 0.01 && Math.abs(parsed[0]!.lon - -77.04) < 0.01);
+check("flights.toml: an entry before launch is refused",
+  rejects(toml(good.replace("2026-11-14", "2026-11-10")), /outside this flight/));
+check("flights.toml: an entry after end_utc is refused",
+  rejects(toml(good, 'end_utc = "2026-11-13 00:00:00"'), /outside this flight/));
+check("flights.toml: an entry without a note is refused",
+  rejects(toml(good.replace(/^note = .*$/m, "")), /note: required/)
+  && rejects(toml(good.replace(/^note = .*$/m, 'note = "  "')), /note: required/));
+check("flights.toml: a missing field, a bad square or a stray field is refused",
+  rejects(toml(good.replace(/^altitude_m = .*$/m, "")), /altitude_m: required/)
+  && rejects(toml(good.replace("FH17lx", "FH17")), /grid6/)
+  && rejects(toml(`${good}\nlat = -12`), /unknown field/));
 
 // ---------- 2. every committed track ----------
 

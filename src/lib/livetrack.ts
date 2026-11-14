@@ -77,7 +77,10 @@ export async function refreshTrack(
   // asked about again until a fix lands there. A spoofed fix counts: its
   // slot is complete, and a spoof lasting hours would otherwise be fetched
   // again on every refresh.
-  const last = raw.at(-1);
+  // A hand-entered spoofed fix (FlightMeta.spoofed) does not count: the
+  // decoder never reached its slot, and the fixes before it may not have
+  // been fetched yet.
+  const last = raw.findLast((p) => p.spoof_note == null);
   const lastMs = last ? Date.parse(last.utc.replace(" ", "T") + "Z") : NaN;
   let fromMs = Number.isFinite(lastMs)
     ? Math.max(lastMs - OVERLAP_MS, now.getTime() - MAX_LOOKBACK_MS)
@@ -94,8 +97,10 @@ export async function refreshTrack(
   try {
     // Every fix decoded so far goes in as context: the inferred pairing
     // tier measures each candidate against the last fix before it.
+    // Nor is it context for decoding.
     const fresh = await fetchWindow(
-      flight, new Date(fromMs), new Date(toMs), opts.signal, raw);
+      flight, new Date(fromMs), new Date(toMs), opts.signal,
+      raw.filter((p) => p.spoof_note == null));
     const known = new Set(raw.map((p) => p.utc));
     const knownGhosts = new Set(bundledGhosts.map((g) => g.utc));
     // Re-derived over the whole merged track, not just the tail: a

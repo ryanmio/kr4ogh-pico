@@ -11,7 +11,7 @@
  * directory is a valid state: the site builds, and the pages say so.
  */
 import { configuredFlights, siteConfig } from "./config";
-import { believe, type Believed } from "./spoof";
+import { believe, withHandSpoofed, type Believed } from "./spoof";
 import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 
 const trackModules = import.meta.glob<{ default: TrackPoint[] }>(
@@ -80,7 +80,7 @@ export function featuredFlight(): FlightMeta | undefined {
  * point, and the browser keeps adding those; the same pass runs again on
  * every live refresh. */
 export function flightData(flight: FlightMeta): Believed {
-  return believe(rawTrackFor(flight), rawGhostsFor(flight));
+  return believe(withHandSpoofed(rawTrackFor(flight), flight), rawGhostsFor(flight));
 }
 
 export function trackFor(flight: FlightMeta): TrackPoint[] {
