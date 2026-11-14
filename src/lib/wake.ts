@@ -39,7 +39,7 @@ const NIGHT_MIN_MS = 3 * 3_600_000;
 const NIGHT_MAX_MS = 20 * 3_600_000;
 
 /** Nights the flight must have woken from before its cutoff is trusted. */
-const MIN_NIGHTS = 3;
+const MIN_NIGHTS = 2;
 
 type Heard = { utc: string; lat: number; lon: number };
 
