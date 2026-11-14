@@ -360,6 +360,18 @@ export const RECORD_PIN_SVG =
   ' stroke-linejoin="round"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4' +
   'l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
 
+/** The expected-wake mark on the forecast line (lib/wake.ts): a small sun,
+ * the records' pale gold, rays and all, so it reads as "sunrise" without a
+ * word. Drawn at 14 px. */
+export const WAKE_SUN_SVG =
+  '<svg viewBox="0 0 24 24"><g stroke="#fde68a" stroke-width="2.2" stroke-linecap="round">' +
+  [0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
+    const r = (a * Math.PI) / 180;
+    const p = (d: number) => `${(12 + d * Math.cos(r)).toFixed(1)} ${(12 + d * Math.sin(r)).toFixed(1)}`;
+    return `<path d="M${p(7.5)}L${p(10.5)}"/>`;
+  }).join("") +
+  '</g><circle cx="12" cy="12" r="4.5" fill="#fde68a" stroke="#0b1020" stroke-width="1"/></svg>';
+
 /** The records' own colour: a medal's gold, which is neither the track's
  * white, the overlays' grey, the forecast's lavender nor a step on the
  * altitude ramp. */

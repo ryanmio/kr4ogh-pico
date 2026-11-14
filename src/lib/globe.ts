@@ -30,8 +30,9 @@ import {
   unwrapLons,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
+import { fmtLocal } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
-import { esc, RECORD_PIN_SVG } from "./render";
+import { esc, RECORD_PIN_SVG, WAKE_SUN_SVG } from "./render";
 import { spoofRuns } from "./spoof";
 import {
   buildWeatherToggle, cloudTiles, rainTiles, renderCloudTile,
@@ -443,28 +444,6 @@ function addForecast(
         "line-dasharray": [0.1, 3],
       } },
   );
-  // Where a sleeping balloon is expected back (lib/wake.ts), as on the
-  // flat map: a pale gold dot on the line.
-  if (f.wake && coords[f.wake.index]) {
-    const w = f.wake;
-    style.sources["forecast-wake"] = {
-      type: "geojson",
-      data: {
-        type: "Feature", properties: {},
-        geometry: {
-          type: "Point",
-          coordinates: [unwrapNear(w.point.lon, coords[w.index]![0]), w.point.lat],
-        },
-      },
-    };
-    style.layers.push({
-      id: "forecast-wake", type: "circle", source: "forecast-wake",
-      paint: {
-        "circle-radius": 6, "circle-color": "#fde68a",
-        "circle-stroke-color": FORECAST_COLOR, "circle-stroke-width": 2,
-      },
-    });
-  }
   const marks = dayMarks(f)
     .map((m) => coords[f.points.indexOf(m.point)])
     .filter((c): c is [number, number] => !!c);
@@ -644,6 +623,11 @@ export function renderGlobe(
   const fc = opts.forecast && pos.lons.length
     ? forecastCoords(opts.forecast, pos.lons.at(-1)!) : [];
   if (fc.length) addForecast(style, opts.forecast!, fc);
+  // Where a sleeping balloon is expected back (lib/wake.ts): the flat map's
+  // small sun, placed beside the line, as a DOM marker below.
+  const w = fc.length ? opts.forecast!.wake : null;
+  const wakeAt: [number, number] | null = w && fc[w.index]
+    ? [unwrapNear(w.point.lon, fc[w.index]![0]), w.point.lat] : null;
   // The fit covers the overlays too, this flight's balloon still last. Not
   // the forecast: the opening view is the flight, as on the flat map.
   const fit: Positions = {
@@ -706,6 +690,15 @@ export function renderGlobe(
       `<span class="overlay-label record-label${m.focus ? " record-label-focus" : ""}" ` +
       `style="position:absolute;left:${size + 4}px;top:${size / 2 - 9}px">${esc(m.label)}</span>`;
     new Marker({ element: el }).setLngLat([m.lon, m.lat]).addTo(map);
+  }
+
+  if (w && wakeAt) {
+    const el = document.createElement("div");
+    el.className = "wake-sun-icon";
+    el.style.width = el.style.height = "14px";
+    el.title = `Expected wake ~${fmtLocal(w.point.utc)}`;
+    el.innerHTML = `<span class="wake-sun">${WAKE_SUN_SVG}</span>`;
+    new Marker({ element: el }).setLngLat(wakeAt).addTo(map);
   }
 
   if (pos.here) {

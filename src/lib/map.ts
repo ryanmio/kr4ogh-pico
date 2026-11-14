@@ -21,7 +21,7 @@ import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal, isInferred } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
-import { esc, INFERRED_LABEL, RECORD_PIN_SVG } from "./render";
+import { esc, INFERRED_LABEL, RECORD_PIN_SVG, WAKE_SUN_SVG } from "./render";
 import { speedText } from "./speed";
 import { pressureAltitudeM, spoofRuns } from "./spoof";
 import { altitude as fmtAltitude, temperature as fmtTemperature, type Units } from "./units";
@@ -612,9 +612,12 @@ function drawForecast(
   if (f.wake && line[f.wake.index]) {
     const w = f.wake;
     const place = L.latLng(w.point.lat, unwrapNear(w.point.lon, line[w.index]!.lng));
-    worlds.add(map, (at) => L.circleMarker(at(place), {
-      radius: 6, color: FORECAST_COLOR, weight: 2,
-      fillColor: "#fde68a", fillOpacity: 1,
+    worlds.add(map, (at) => L.marker(at(place), {
+      icon: L.divIcon({
+        className: "wake-sun-icon", html: `<span class="wake-sun">${WAKE_SUN_SVG}</span>`,
+        iconSize: [14, 14],
+      }),
+      keyboard: false,
     }).bindTooltip(wakeText(w)));
   }
   for (const m of dayMarks(f)) {
