@@ -631,7 +631,7 @@ function drawForecast(
 
 /** The wake mark's tooltip: just when. */
 function wakeText(w: NonNullable<Forecast["wake"]>): string {
-  return `<b>Expected back</b> ~${fmtLocal(w.point.utc)}`;
+  return `<b>Expected wake</b> ~${fmtLocal(w.point.utc)}`;
 }
 
 /** How far the view can reach from the home copy of the world, in degrees

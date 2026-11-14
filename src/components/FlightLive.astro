@@ -1003,7 +1003,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       // A sleeping balloon's expected return, off the forecast line.
       const wake = currentWake();
       const back = wake
-        ? mini("Expected back", `~${wake.point.utc.slice(11, 16)} UTC · in ${
+        ? mini("Expected wake", `~${wake.point.utc.slice(11, 16)} UTC · in ${
           fmtDuration(parseUtc(wake.point.utc).getTime() - Date.now())}`)
         : "";
       const partial = ghosts.length
