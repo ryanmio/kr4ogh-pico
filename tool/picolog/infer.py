@@ -57,6 +57,7 @@ from .channels import Channel
 from .decode import (
     BME280_SLOT, decode_bme280_slot3, decode_callsign, decode_grid_power,
     maidenhead_to_latlon,
+    spot_grid4,
 )
 
 NAME = "cross-receiver"
@@ -174,8 +175,8 @@ class _Squares:
         by_cycle: dict[str, dict[str, set]] = {}
         first_spot: dict[tuple, dict] = {}
         for spot in regulars:
-            grid4 = (spot["tx_loc"] or "")[:4].upper()
-            if len(grid4) != 4:
+            grid4 = spot_grid4(spot["tx_loc"])
+            if grid4 is None:
                 continue
             by_cycle.setdefault(spot["time"], {}).setdefault(grid4, set()).add(spot["rx_sign"])
             # The spot that lends the square: the lowest id, so the choice

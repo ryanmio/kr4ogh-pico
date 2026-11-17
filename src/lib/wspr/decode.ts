@@ -157,12 +157,25 @@ export function decodeGridPower(grid: string, powerDbm: number): GridPowerTeleme
   };
 }
 
+/** A legal 4- or 6-character Maidenhead locator: field A-R, square 0-9,
+ * subsquare A-X, any case. wspr.live passes uploaders' text through
+ * unchecked, so a spot can carry "ZZ99" or "FM1#". */
+const LOCATOR = /^[A-R]{2}[0-9]{2}([A-X]{2})?$/i;
+
+/** The upper-cased 4-character square from a spot's tx_loc, or null when
+ * that square is not a legal locator. */
+export function spotGrid4(txLoc: string | null | undefined): string | null {
+  const g = (txLoc ?? "").slice(0, 4).toUpperCase();
+  return LOCATOR.test(g) ? g : null;
+}
+
 /** Center of a 4- or 6-character Maidenhead locator box, in degrees —
- * the same convention wspr.live uses for its own lat/lon columns. */
+ * the same convention wspr.live uses for its own lat/lon columns. Throws
+ * DecodeError on anything that is not a legal locator. */
 export function maidenheadToLatLon(grid: string): [number, number] {
   const g = grid.trim().toUpperCase();
-  if (g.length !== 4 && g.length !== 6) {
-    throw new DecodeError(`locator must be 4 or 6 chars: ${grid}`);
+  if (!LOCATOR.test(g)) {
+    throw new DecodeError(`not a Maidenhead locator: ${grid}`);
   }
   let lon = (g.charCodeAt(0) - 65) * 20.0 - 180.0 + Number(g[2]) * 2.0;
   let lat = (g.charCodeAt(1) - 65) * 10.0 - 90.0 + Number(g[3]) * 1.0;

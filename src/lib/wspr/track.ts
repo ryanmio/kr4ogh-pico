@@ -15,7 +15,7 @@ import type { GhostPoint, TrackPoint } from "../types";
 import { channel20m, slotMinute, type Channel } from "./channels";
 import {
   BME280_SLOT, DecodeError, decodeBme280Slot3, decodeCallsign, decodeGridPower,
-  maidenheadToLatLon, sensorFailed,
+  maidenheadToLatLon, sensorFailed, spotGrid4,
 } from "./decode";
 import { infer, type Decision, type KnownFix } from "./infer";
 import {
@@ -72,9 +72,9 @@ export function decodeMatch(m: Match): TrackPoint | null {
   }
   if (gridPowerPart.hdrType !== 1) return null; // 1 = standard Basic Telemetry
 
-  const grid6 = m.regularSpot.tx_loc.slice(0, 4).toUpperCase()
-    + callsignPart.grid5.toLowerCase()
-    + callsignPart.grid6.toLowerCase();
+  const grid4 = spotGrid4(m.regularSpot.tx_loc);
+  if (grid4 === null) return null; // the regular spot's square is not a locator
+  const grid6 = grid4 + callsignPart.grid5.toLowerCase() + callsignPart.grid6.toLowerCase();
   const [lat, lon] = maidenheadToLatLon(grid6);
   return {
     utc: m.slotUtc,

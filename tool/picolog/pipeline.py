@@ -13,6 +13,7 @@ from .config import Flight
 from .decode import (
     BME280_SLOT, decode_bme280_slot3, decode_callsign, decode_grid_power,
     maidenhead_to_latlon,
+    spot_grid4,
 )
 from .match import NAME as MATCHER_NAME
 from .match import VERSION as MATCHER_VERSION
@@ -254,8 +255,10 @@ def _decode_match(flight: Flight, m: Match) -> dict | None:
     if grid_power_part.hdr_type != 1:  # 1 = standard Basic Telemetry
         return None
 
-    grid6 = (m.regular_spot["tx_loc"][:4].upper()
-             + callsign_part.grid5.lower() + callsign_part.grid6.lower())
+    grid4 = spot_grid4(m.regular_spot["tx_loc"])
+    if grid4 is None:  # the regular spot's square is not a locator
+        return None
+    grid6 = grid4 + callsign_part.grid5.lower() + callsign_part.grid6.lower()
     lat, lon = maidenhead_to_latlon(grid6)
     return {
         "flight_id": flight.flight_id,

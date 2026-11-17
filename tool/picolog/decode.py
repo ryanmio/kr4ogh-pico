@@ -24,6 +24,7 @@ groups as one combined number. The only extended message decoded here is the
 Petrel tracker's BME280 sensor reading in slot 3; see decode_bme280_slot3.
 """
 
+import re
 from dataclasses import dataclass
 
 # Value spaces of the two encode groups. If an unpack disagrees with these,
@@ -172,15 +173,30 @@ def decode_grid_power(grid: str, power_dbm: int) -> GridPowerTelemetry:
     )
 
 
+# A legal 4- or 6-character Maidenhead locator: field A-R, square 0-9,
+# subsquare A-X, any case. wspr.live passes uploaders' text through
+# unchecked, so a spot can carry "ZZ99" or "FM1#". ASCII-only on purpose:
+# str.isdigit() would accept other scripts' digits.
+_LOCATOR = re.compile(r"[A-R]{2}[0-9]{2}(?:[A-X]{2})?", re.IGNORECASE | re.ASCII)
+
+
+def spot_grid4(tx_loc: str | None) -> str | None:
+    """The upper-cased 4-character square from a spot's tx_loc, or None
+    when that square is not a legal locator."""
+    g = (tx_loc or "")[:4].upper()
+    return g if _LOCATOR.fullmatch(g) else None
+
+
 def maidenhead_to_latlon(grid: str) -> tuple[float, float]:
     """Center of a 4- or 6-character Maidenhead locator box, in degrees.
 
     wspr.live's own lat/lon columns use the same convention ("the center of
-    the reported locator box", https://wspr.live/).
+    the reported locator box", https://wspr.live/). Raises ValueError on
+    anything that is not a legal locator.
     """
     g = grid.strip().upper()
-    if len(g) not in (4, 6):
-        raise ValueError(f"locator must be 4 or 6 chars: {grid!r}")
+    if not _LOCATOR.fullmatch(g):
+        raise ValueError(f"not a Maidenhead locator: {grid!r}")
     lon = (ord(g[0]) - ord("A")) * 20.0 - 180.0 + int(g[2]) * 2.0
     lat = (ord(g[1]) - ord("A")) * 10.0 - 90.0 + int(g[3]) * 1.0
     if len(g) == 6:

@@ -12,6 +12,7 @@
  * U4B-40 flight, that loses roughly 6% of otherwise-recoverable records,
  * concentrated where receiver density is low, over oceans.
  */
+import { spotGrid4 } from "./decode";
 import type { Spot } from "./query";
 
 export const MATCHER_NAME = "fingerprint";
@@ -133,8 +134,8 @@ export function regularOnlySlots(
   const bySlot = new Map<string, Map<string, Set<string>>>();
   for (const spot of regularSpots) {
     if (matched.has(spot.time)) continue;
-    const grid4 = spot.tx_loc.slice(0, 4).toUpperCase();
-    if (grid4.length !== 4) continue;
+    const grid4 = spotGrid4(spot.tx_loc);
+    if (grid4 === null) continue;
     let byGrid = bySlot.get(spot.time);
     if (!byGrid) bySlot.set(spot.time, (byGrid = new Map()));
     let rxs = byGrid.get(grid4);

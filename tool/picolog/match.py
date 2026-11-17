@@ -22,6 +22,8 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from .decode import spot_grid4
+
 NAME = "fingerprint"
 VERSION = 1
 
@@ -120,8 +122,8 @@ def regular_only_slots(regular_spots: list[dict],
     for spot in regular_spots:
         if spot["time"] in matched:
             continue
-        grid4 = (spot["tx_loc"] or "")[:4].upper()
-        if len(grid4) != 4:
+        grid4 = spot_grid4(spot["tx_loc"])
+        if grid4 is None:
             continue
         by_slot.setdefault(spot["time"], {}).setdefault(grid4, set()).add(
             spot["rx_sign"])

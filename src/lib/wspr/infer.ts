@@ -25,7 +25,7 @@ import type { Channel } from "./channels";
 import { slotMinute } from "./channels";
 import {
   BME280_SLOT, DecodeError, decodeBme280Slot3, decodeCallsign, decodeGridPower,
-  maidenheadToLatLon, sensorFailed,
+  maidenheadToLatLon, sensorFailed, spotGrid4,
 } from "./decode";
 import type { Spot } from "./query";
 
@@ -151,8 +151,8 @@ class Squares {
   constructor(regulars: Spot[]) {
     const byCycle = new Map<string, Map<string, Set<string>>>();
     for (const spot of regulars) {
-      const grid4 = (spot.tx_loc ?? "").slice(0, 4).toUpperCase();
-      if (grid4.length !== 4) continue;
+      const grid4 = spotGrid4(spot.tx_loc);
+      if (grid4 === null) continue;
       let byGrid = byCycle.get(spot.time);
       if (!byGrid) byCycle.set(spot.time, (byGrid = new Map()));
       let rxs = byGrid.get(grid4);

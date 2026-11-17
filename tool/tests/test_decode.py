@@ -218,3 +218,46 @@ def test_basic_telemetry_is_not_a_sensor_reading():
     grid, power = encode_grid_power(10, 25, 20, 1, 1)
     with pytest.raises(ValueError):
         decode_bme280_slot3(encode_callsign("10", "J", "K", 10000), grid, power)
+
+
+# ---------- Maidenhead locators ----------
+
+from picolog.decode import maidenhead_to_latlon, spot_grid4  # noqa: E402
+
+
+@pytest.mark.parametrize("grid, expected", [
+    # Centres, pinned to the values the length-only decoder gave.
+    ("FM18", (38.5, -77.0)),
+    ("fm18", (38.5, -77.0)),
+    ("FM18lw", (38.9375, -77.04167)),
+    ("AA00aa", (-89.97917, -179.95833)),
+    ("RR99xx", (89.97917, 179.95833)),
+])
+def test_maidenhead_legal_locators_decode_to_box_centres(grid, expected):
+    assert maidenhead_to_latlon(grid) == expected
+
+
+@pytest.mark.parametrize("grid", [
+    "ZZ99aa",  # field letter past R: latitude 169 degrees under the old check
+    "SA00",    # first field letter just past R
+    "DM35ye",  # subsquare letter past X
+    "FM1#",    # non-digit square: int() raised mid-pipeline before
+    "FMAB",    # letters where the square digits go
+    "FM18l",   # 5 characters
+    "FM1",     # too short
+    "FM18lwxx",
+    "",
+])
+def test_maidenhead_rejects_illegal_locators(grid):
+    with pytest.raises(ValueError):
+        maidenhead_to_latlon(grid)
+
+
+def test_spot_grid4_takes_a_legal_square_or_nothing():
+    assert spot_grid4("fm18lw") == "FM18"
+    assert spot_grid4("FM18") == "FM18"
+    assert spot_grid4("ZZ99aa") is None
+    assert spot_grid4("FM1#") is None
+    assert spot_grid4("FM1") is None
+    assert spot_grid4("") is None
+    assert spot_grid4(None) is None
