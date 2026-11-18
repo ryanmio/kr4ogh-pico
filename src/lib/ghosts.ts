@@ -28,11 +28,32 @@ export function pruneGhosts(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoi
  * appears only when its telemetry really was lost. */
 export const GHOST_HOLD_MS = 10 * 60 * 1000;
 
-/** The ghosts old enough to show: every one whose slot began at least
- * GHOST_HOLD_MS before `now`. A closed flight's are all old enough. */
-export function settledGhosts(ghosts: GhostPoint[], now: Date = new Date()): GhostPoint[] {
+/** A ghost heard after a silence longer than this is not held. The hold
+ * stops the beacon hopping away from a fix ten minutes old and back; after
+ * an hour or a night of nothing there is no such fix to hop from, and the
+ * first report back is the one everyone is waiting for. */
+export const GHOST_HOLD_SILENCE_MS = 60 * 60 * 1000;
+
+/** The ghosts ready to show: every one whose slot began at least
+ * GHOST_HOLD_MS before `now`, and any younger one that ends a silence of
+ * more than GHOST_HOLD_SILENCE_MS. `track` is every fix decoded, spoofed
+ * ones included, since they too are the tracker being heard. A closed
+ * flight's ghosts are all old enough. */
+export function settledGhosts(
+  ghosts: GhostPoint[], track: { utc: string }[], now: Date = new Date(),
+): GhostPoint[] {
   const cutoff = now.getTime() - GHOST_HOLD_MS;
-  return ghosts.filter((g) => parseUtc(g.utc).getTime() <= cutoff);
+  return ghosts.filter((g) => {
+    const t = parseUtc(g.utc).getTime();
+    if (t <= cutoff) return true;
+    // The newest report of either kind before this one.
+    let prev = -Infinity;
+    for (const r of [...track, ...ghosts]) {
+      const h = parseUtc(r.utc).getTime();
+      if (h < t && h > prev) prev = h;
+    }
+    return t - prev > GHOST_HOLD_SILENCE_MS;
+  });
 }
 
 /** The ghosts newer than the last full fix, oldest first: the coarse tail

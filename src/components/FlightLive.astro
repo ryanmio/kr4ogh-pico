@@ -55,9 +55,10 @@ const {
   flight, track, ghosts: allGhosts = [], spoofed = [], flights = [flight], mode = "permalink",
 } = Astro.props;
 // A ghost from the last few minutes is held back (lib/ghosts.ts,
-// GHOST_HOLD_MS): its telemetry may simply not have arrived yet. The page
-// carries them all, and the script shows each once its hold is up.
-const ghosts = settledGhosts(allGhosts);
+// GHOST_HOLD_MS): its telemetry may simply not have arrived yet, unless it
+// ends a silence. The page carries them all, and the script shows each once
+// its hold is up.
+const ghosts = settledGhosts(allGhosts, [...track, ...spoofed]);
 const ended = flight.status === "closed";
 // The "Next flight" link, as built; the script re-aims it at the reader's
 // current flight and carries their toggles along.
@@ -228,10 +229,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let meta = JSON.parse(root.dataset.flight!) as FlightMeta;
     const site = JSON.parse(root.dataset.site!) as SiteConfig & { upstream: string };
     let track = JSON.parse(root.dataset.track!) as TrackPoint[];
-    let ghosts = settledGhosts(JSON.parse(root.dataset.ghosts!) as GhostPoint[]);
     // Fixes whose GPS was spoofed (lib/spoof.ts): kept off the map and out
     // of every number, but the tracker was heard in them.
     let spoofed = JSON.parse(root.dataset.spoofed ?? "[]") as TrackPoint[];
+    let ghosts = settledGhosts(
+      JSON.parse(root.dataset.ghosts!) as GhostPoint[], [...track, ...spoofed]);
     // `?spoofing=show` draws them anyway, where the GPS said they were:
     // a spoof over a war zone is part of the story of the flight. The
     // Signal panel toggles that. `?spoofing=normal` turns detection off for
@@ -346,9 +348,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         // Both files are the raw record; the page believes them the way
         // the build does.
         if (trackResp.ok && ghostResp.ok) {
+          const fixes = withHandSpoofed(await trackResp.json() as TrackPoint[], meta);
           ({ track, ghosts, spoofed } = believe(
-            withHandSpoofed(await trackResp.json() as TrackPoint[], meta),
-            settledGhosts(await ghostResp.json() as GhostPoint[]), detect));
+            fixes, settledGhosts(await ghostResp.json() as GhostPoint[], fixes), detect));
         } else if (!detect) {
           ({ track, ghosts, spoofed } = rejoined());
         }
@@ -374,11 +376,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const p = (async (): Promise<OverlayTrack> => {
         try {
           const [t, g] = await Promise.all([at("track.json"), at("ghosts.json")]);
+          const fixes = t.ok ? await t.json() as TrackPoint[] : [];
           return {
             meta: f,
             ...believe(
-              t.ok ? await t.json() as TrackPoint[] : [],
-              g.ok ? settledGhosts(await g.json() as GhostPoint[]) : [], detect),
+              fixes, g.ok ? settledGhosts(await g.json() as GhostPoint[], fixes) : [], detect),
           };
         } catch {
           fetchedOverlays.delete(f.flight_id);

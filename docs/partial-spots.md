@@ -205,3 +205,15 @@ The hold is applied where ghosts reach the page (the build's render, the
 bundled data, the fetched files and `refreshTrack`); the stored and
 committed ghosts are unchanged. A held ghost appears on the first refresh
 after its hold ends, at most one refresh interval (2 min) late.
+
+## Since: not after a silence (2026-11-17)
+
+PT-02's first slot after a 16-hour night, 21:44 UTC on 17 Nov over the
+North Pacific, was a ghost, and the hold kept it off the page until
+21:54, while everyone watching was waiting for exactly that report. The
+hold exists to stop the beacon hopping away from a fix ten minutes old;
+after a long silence there is no such fix. A ghost that follows more than
+an hour with nothing heard, fix or ghost (`GHOST_HOLD_SILENCE_MS`), is now
+shown at once. If its telemetry turns up, the slot becomes a fix in the
+same grid square. Only the first ghost back skips the hold: the next one is
+ten minutes behind it, so it is held as usual.

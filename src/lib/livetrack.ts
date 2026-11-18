@@ -64,14 +64,16 @@ export async function refreshTrack(
   opts: { signal?: AbortSignal; detect?: boolean } = {},
 ): Promise<LiveTrackResult> {
   const now = new Date();
-  // A ghost younger than one cycle is held back (lib/ghosts.ts,
-  // GHOST_HOLD_MS): its telemetry is most likely still on the way.
-  const unchanged = {
-    track: bundled, ghosts: settledGhosts(bundledGhosts, now), spoofed: bundledSpoofed, added: 0,
-  };
   // Every fix decoded so far, believed or not: the spoof test is re-run
   // over all of them, since a fix is judged against the ones before it.
   const raw = mergeTrack(bundled, bundledSpoofed);
+  // A ghost younger than one cycle is held back (lib/ghosts.ts,
+  // GHOST_HOLD_MS): its telemetry is most likely still on the way. Not
+  // after a silence, when it is the first word in an hour or more.
+  const unchanged = {
+    track: bundled, ghosts: settledGhosts(bundledGhosts, raw, now), spoofed: bundledSpoofed,
+    added: 0,
+  };
   // The window opens at the last full fix even when ghosts are newer: a
   // ghost's slot is one the slower stations may yet complete, so it is
   // asked about again until a fix lands there. A spoofed fix counts: its
@@ -115,7 +117,7 @@ export async function refreshTrack(
     // completes its slot as much as a believed one does. A ghost still
     // inside its hold is left out for now; the window opens at the last
     // fix, so the next refresh asks about its slot again.
-    const ghosts = settledGhosts(pruneGhosts(all, b.ghosts), now);
+    const ghosts = settledGhosts(pruneGhosts(all, b.ghosts), all, now);
     return {
       track: b.track,
       ghosts,
