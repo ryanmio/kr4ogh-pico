@@ -16,7 +16,8 @@
     "gen:channels": "node dev/gen-channels.mjs",
     "gen:og": "node dev/gen-og.mjs",
     "live-check": "tsx dev/live-check.ts",
-    "browser-check": "node dev/browser-check.mjs"
+    "browser-check": "node dev/browser-check.mjs",
+    "reel": "node dev/reel.mjs"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reel</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; }
+  body { display: grid; place-items: center; overflow: hidden; }
+  /* 9:16, as large as the window allows. dev/reel.mjs opens the page at
+     exactly that shape, so there the stage is the whole viewport. */
+  #stage { height: 100vh; aspect-ratio: 9 / 16; max-width: 100vw; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

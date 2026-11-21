@@ -413,6 +413,64 @@ typecheck could see it.
 `npm run dev` shows real flights immediately: the data is in git, so there is
 nothing to configure and no local services to start.
 
+## The reel
+
+`npm run reel` renders a flight as a short vertical video, 1080 by 1920,
+for sharing: the flight replayed from just behind the balloon, launch to
+wherever it is now, ending on a pull-back that holds the whole path.
+
+```sh
+npm run reel                      # the featured flight, whole, 15 s
+npm run reel -- PT02 --hours 24   # a named flight, its first 24 hours
+npm run reel -- --seconds 20      # longer; a week or more wants 20
+npm run reel -- --units metric    # imperial without
+npm run reel -- --cta "kr4ogh-pico.vercel.app"   # a closing line
+npm run reel -- --no-lights       # no town lights on the night side
+npm run reel -- --stills 2,9,15   # PNGs at those seconds instead
+npm run reel -- --preview         # serve it, to watch it play in a browser
+```
+
+The video lands in `reels/`, which git ignores. It needs the system Chrome
+and `ffmpeg`. A live flight is first brought up to the minute from
+wspr.live, the page's own refresh; `--no-live` renders the committed track.
+
+The planet is NASA's Blue Marble, with the site's own imagery brought in
+over it close to the ground, and the towns on the night side are NASA's
+Black Marble (`src/lib/reel/sources.ts`). That night picture NASA draws to
+order, some twenty seconds a time, so the first render fetches it once and
+keeps it under `node_modules/.cache/pico-reel/`. A render that cannot get
+it stops and says so, since a film with its nights quietly left dark is
+not the one asked for; `--no-lights` asks for that one.
+
+Everything in it is the flight's data, in `src/lib/reel/`:
+
+- **The path** is the map's line (`flightLegs`), turned into a position for
+  every instant (`flightpath.ts`). The flight's clock runs at one steady
+  rate, so the balloon crosses the screen at the speed it flew, and a
+  silence is crossed at the one speed its distance and hours allow.
+- **The light** is where the sun was (`sky.ts`): day, dusk, night with the
+  towns lit, dawn. The tracker is solar, so its silences are the dark
+  stretches, and the line is dashed across them.
+- **Each thin post** under the line is a report that was heard.
+- **Height is drawn far taller than life**, by however much makes the climb
+  and the float readable at the speed the film plays; to scale, 12 km over
+  a path of thousands is flat on the ground. The drop line's ticks are
+  real height, every 10,000 ft or 2,500 m, and the numbers are the real
+  ones. They are held and rounded so they step a few times a second
+  instead of blurring.
+- **The camera** rides on the side of the track that puts the sunrises in
+  the frame, since dawn is when the tracker wakes. The closing view is
+  from over the middle of the path with north up; for a flight most of
+  the way round the world the middle is the pole, and the path is a ring.
+
+The renderer (`dev/reel.mjs`) asks the page for one frame at a time and
+waits until every tile of it has loaded, so the result does not depend on
+the machine or the connection, only the time it takes: a few minutes.
+
+The scene is a module with `seek` and `play` and no knowledge of the
+renderer, written to be put on the site as it is. It is not on the site
+yet: it is reachable only through `dev/reel/`, which the build does not see.
+
 ## Refreshing the committed data
 
 From the repo root, against the authoritative SQLite record (the tool
