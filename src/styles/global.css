@@ -729,12 +729,26 @@ a.fv-chip { text-decoration: none; }
 .fv-about { font-size: 0.88rem; }
 .fv-about p { margin: 0.5rem 0; }
 .fv-about-links { display: flex; flex-wrap: wrap; gap: 1.2rem; }
-.fv-tracker { max-width: 62rem; }
-.fv-tracker p {
-  margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--text-dim);
-  max-width: 46rem;
+/* The tracker's build sheet: label and value side by side, hairlines
+   between rows, flowing down as many columns as the panel has room for. */
+.fv-spec { margin: 0; columns: 3 16.5rem; column-gap: 2.4rem; }
+.fv-spec-row {
+  break-inside: avoid;
+  display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: 0.8rem;
+  align-items: baseline;
+  padding: 0.36rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
-.fv-tracker a { color: var(--accent); }
+.fv-spec dt {
+  font-size: 0.64rem; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.fv-spec dd {
+  margin: 0; font-size: 0.86rem; line-height: 1.4; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.fv-spec a { color: var(--accent); }
 
 /* ----- records ----- */
 

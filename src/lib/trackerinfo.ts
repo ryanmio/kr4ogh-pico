@@ -28,7 +28,11 @@ export function trackerDetailsHtml(tracker: Record<string, string> | undefined):
   if (!entries.length) {
     return '<p class="empty-note">No build details recorded for this flight.</p>';
   }
-  const minis = entries.map(([label, value]) =>
-    `<div class="fv-mini"><span>${esc(label)}</span><b>${valueHtml(value)}</b></div>`);
-  return `<div class="fv-tracker"><div class="fv-minis">${minis.join("")}</div></div>`;
+  // A spec sheet: a row per fact, label beside value, read down each
+  // column. These are a dozen short phrases, not three headline numbers,
+  // so they are set as text, not in the big stat style the metric panels
+  // lead with.
+  const rows = entries.map(([label, value]) =>
+    `<div class="fv-spec-row"><dt>${esc(label)}</dt><dd>${valueHtml(value)}</dd></div>`);
+  return `<dl class="fv-spec">${rows.join("")}</dl>`;
 }
