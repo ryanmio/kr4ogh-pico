@@ -975,7 +975,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         const fromLaunchKm = haversineKm(
           track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
         return [
-          mini("Distance covered", u.distance(s.distanceKm, units).text),
+          mini("Distance", u.distance(s.distanceKm, units).text),
           mini("From launch", u.distance(fromLaunchKm, units).text),
           mini("Time aloft",
             fmtDuration(parseUtc(s.lastUtc).getTime() - parseUtc(s.firstUtc).getTime())),
@@ -1161,7 +1161,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         statusPanelBody();
       } else if (panel === "tracker") {
         panelTitle.textContent = `The tracker · ${meta.callsign} ${meta.flight_id}`;
-        panelBody.innerHTML = trackerDetailsHtml(meta.tracker);
+        panelBody.innerHTML = trackerDetailsHtml(meta.tracker, {
+          more: moreButton(), open: detailsOpen,
+        });
       } else if (panel === "records") {
         const all = summaries();
         panelTitle.textContent = `Records · ${all.length} flights`;

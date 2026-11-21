@@ -23,7 +23,14 @@ function valueHtml(value: string): string {
   return html + esc(value.slice(at));
 }
 
-export function trackerDetailsHtml(tracker: Record<string, string> | undefined): string {
+/** Rows a phone shows before "More details": the build itself, then mass
+ * and power. A desktop panel has the columns to show every row. */
+const PHONE_ROWS = 5;
+
+export function trackerDetailsHtml(
+  tracker: Record<string, string> | undefined,
+  opts: { more: string; open: boolean },
+): string {
   const entries = Object.entries(tracker ?? {});
   if (!entries.length) {
     return '<p class="empty-note">No build details recorded for this flight.</p>';
@@ -32,7 +39,10 @@ export function trackerDetailsHtml(tracker: Record<string, string> | undefined):
   // column. These are a dozen short phrases, not three headline numbers,
   // so they are set as text, not in the big stat style the metric panels
   // lead with.
-  const rows = entries.map(([label, value]) =>
-    `<div class="fv-spec-row"><dt>${esc(label)}</dt><dd>${valueHtml(value)}</dd></div>`);
-  return `<dl class="fv-spec">${rows.join("")}</dl>`;
+  const rows = entries.map(([label, value], i) =>
+    `<div class="fv-spec-row${i >= PHONE_ROWS ? " fv-spec-extra" : ""}"><dt>${
+      esc(label)}</dt><dd>${valueHtml(value)}</dd></div>`);
+  const more = entries.length > PHONE_ROWS
+    ? `<div class="fv-spec-more">${opts.more}</div>` : "";
+  return `<dl class="fv-spec${opts.open ? " is-open" : ""}">${rows.join("")}</dl>${more}`;
 }

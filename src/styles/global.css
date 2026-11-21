@@ -729,6 +729,8 @@ a.fv-chip { text-decoration: none; }
   .fv-panel-action-text { display: none; }
   .fv-wide-only { display: none; }
   .fv-narrow-only { display: block; }
+  .fv-spec:not(.is-open) .fv-spec-extra { display: none; }
+  .fv-panel .fv-spec-more { display: block; }
 }
 .fv-mini span {
   display: block;
@@ -777,6 +779,10 @@ a.fv-chip { text-decoration: none; }
   font-variant-numeric: tabular-nums;
 }
 .fv-spec a { color: var(--accent); }
+/* A phone shows the first rows and the rest behind More details; a desktop
+   has the columns for all of them, so the button is not there. */
+.fv-spec-more { display: none; margin-top: 0.6rem; }
+.fv-spec-more .fv-more { margin-left: 0; }
 
 /* ----- records ----- */
 
