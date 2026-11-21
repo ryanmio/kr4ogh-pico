@@ -941,7 +941,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         });
         return {
           label: "Distance covered", unit: labels.distance, color: m.color,
-          values, domain, decimals: 0,
+          values, domain, decimals: 0, foldGaps: true,
         };
       }
       const get: Record<string, (p: TrackPoint) => number> = {
@@ -958,7 +958,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       return {
         label: m.label, unit: unit[key]!, color: m.color,
         values: pts.map((p, i) => ({ t: t[i]!, v: get[key]!(p) })),
-        domain, decimals: key === "voltage" ? 2 : 0,
+        domain, decimals: key === "voltage" ? 2 : 0, foldGaps: true,
       };
     }
 
