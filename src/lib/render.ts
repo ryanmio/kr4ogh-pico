@@ -148,7 +148,7 @@ export function sidebarHtml(
     return tracker + `<div class="fv-status"><p class="empty-note">Loading the
       track&hellip;</p></div>` + records;
   }
-  const s = trackStats(track, waypoints(track, ghosts));
+  const s = trackStats(track, waypoints(track, ghosts, opts.spoofed ?? []));
   if (!s) {
     const heard = heardBounds(track, ghosts);
     // Heard, but never with its telemetry: the map has a square to show

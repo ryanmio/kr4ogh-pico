@@ -280,7 +280,7 @@ export function summarize(
 ): FlightSummary | null {
   // Distance, and where a crossing was made, follow the line the map
   // draws, through the ghosts it is routed through.
-  const way = waypoints(track, ghosts);
+  const way = waypoints(track, ghosts, spoofed);
   const s = trackStats(track, way);
   if (!s) return null;
   // A record read off one fix (highest, fastest, most heard, coldest) is

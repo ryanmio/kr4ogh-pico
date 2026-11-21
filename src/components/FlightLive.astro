@@ -645,7 +645,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
-            ghosts, spoofed: drawnSpoofed(), overlays: mapOverlays(),
+            ghosts, waypoints: waypoints(track, ghosts, spoofed),
+            spoofed: drawnSpoofed(), overlays: mapOverlays(),
             marks: recordMarks(), forecast: drawnForecast(), onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
             weather: { ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
@@ -665,7 +666,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         }
       }
       const held = renderMapInto(mapSlot, meta, track, {
-        units, metric, ghosts, spoofed: drawnSpoofed(), overlays: mapOverlays(),
+        units, metric, ghosts, waypoints: waypoints(track, ghosts, spoofed),
+        spoofed: drawnSpoofed(), overlays: mapOverlays(),
         marks: recordMarks(),
         forecast: drawnForecast(), sizing: "fill", onOverlayClick: openFlight,
         ...(wide ? { legendInto: ctlSlot } : {}),
@@ -911,7 +913,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function metricMinis(key: MetricKey): string {
-      const s = trackStats(track, waypoints(track, ghosts))!;
+      const s = trackStats(track, waypoints(track, ghosts, spoofed))!;
       const volts = track.map((p) => p.voltage_v);
       const temps = track.map((p) => p.temperature_c);
       const alts = track.map((p) => p.altitude_m);

@@ -52,10 +52,9 @@ const EARTH_KM = 6371;
  * that matters is far apart: on Mercator a straight line between two points
  * a thousand kilometres apart is not a path anything takes, and the globe
  * needs the bend too, since MapLibre lays a segment straight in Mercator
- * before wrapping it on the sphere. This is the line for the detour out to
- * a spoofed fix, where nothing better than the shortest way across is
- * known. The track itself goes through flightPath, which knows when each
- * report was. */
+ * before wrapping it on the sphere. This is the line for the dashed tail of
+ * ghosts, where nothing better than the shortest way across is known. The
+ * track itself goes through flightLine, which knows when each fix was. */
 export function greatCircleLine(pts: number[][]): number[][] {
   const out: number[][] = [];
   for (let i = 0; i < pts.length; i++) {
@@ -73,8 +72,8 @@ export function greatCircleLine(pts: number[][]): number[][] {
  * two. Reports come every ten minutes in sunlight; the tracker is quiet
  * from dusk to dawn, and now and then for an afternoon over an ocean no
  * station is listening to. Across a hole the path is unknown and any line
- * is a guess; flightLine draws the best one. It is also how far from every
- * fix a ghost has to be before the line is routed through it
+ * is a guess; flightLine draws the best one. It is also how far from the
+ * fixes either side a ghost has to be before the line is routed through it
  * (lib/ghosts.ts, waypoints): inside a hole, a grid square is evidence. */
 export const BEND_GAP_MS = 2 * 60 * 60 * 1000;
 
@@ -96,20 +95,8 @@ export interface Leg {
   /** When each end was heard, as the reports' own `utc`. */
   fromUtc: string;
   toUtc: string;
-  /** True when either end is a ghost: this stretch is known to a grid
-   * square, not to a fix, and is drawn dashed. */
-  coarse: boolean;
   /** [lon, lat] along the stretch, both ends included. */
   pts: number[][];
-}
-
-/** The line, split by what it claims. Each run is a list of [lon, lat]
- * points; a run ends where the other kind begins, on a shared point. */
-export interface FlightPath {
-  /** Fix to fix: the track. */
-  solid: number[][][];
-  /** Through ghosts: the stretches known only to a grid square. */
-  coarse: number[][][];
 }
 
 /** A position the line goes through: a fix, or a ghost standing in for
@@ -159,12 +146,21 @@ function anchorsOf(track: TimedPoint[], lons: number[], via: Via[]): Anchor[] {
  * `lons` are the track's longitudes unwrapped (unwrapLons), in track order;
  * the fixes themselves are read only for their latitudes and times.
  *
- * This is the line through the fixes alone. A silence the tracker was
- * heard in without telemetry has more evidence than its two ends, and
- * flightPath routes the line through that. */
-export function flightLine(track: TimedPoint[], lons: number[]): number[][] {
+ * `via` are the ghosts the line is routed through, oldest first
+ * (lib/ghosts.ts, waypoints): the grid squares the tracker was heard in
+ * deep inside a silence, which are then more than the two ends to go on.
+ * The curve across that silence passes through each. A ghost is a vertex
+ * like a fix, with two differences. Its heading is not read off the
+ * reports next to it, which are hours away: the line passes through it
+ * along the chord from the position before it to the one after, so the
+ * curve is smooth through a square the balloon was only somewhere in. And
+ * a fix never takes its heading from a ghost: that still comes from the
+ * fixes on its own side of the silence, since a square centre up to 100 km
+ * off would swing it. With no `via` this is the line through the fixes
+ * alone, and everywhere outside a routed silence it is that line still. */
+export function flightLine(track: TimedPoint[], lons: number[], via: Via[] = []): number[][] {
   const out: number[][] = [];
-  const anchors = anchorsOf(track, lons, []);
+  const anchors = anchorsOf(track, lons, via);
   for (let i = 0; i < anchors.length; i++) {
     if (i > 0) between(out, anchors, i);
     out.push([anchors[i]!.lon, anchors[i]!.lat]);
@@ -172,18 +168,9 @@ export function flightLine(track: TimedPoint[], lons: number[]): number[][] {
   return out;
 }
 
-/** Every stretch of the line in order, routed through `via` where the
- * tracker was heard inside a silence without telemetry.
- *
- * `via` are those ghosts, oldest first (lib/ghosts.ts, lineGhosts), and
- * with none this is flightLine cut at each fix. A ghost is a vertex like a
- * fix, with two differences. Its heading is not read off the reports next
- * to it, which are hours away: the line passes through it along the chord
- * from the position before it to the one after, so the curve is smooth
- * through a square the balloon was only somewhere in. And a fix never
- * takes its heading from a ghost: that still comes from the fixes on its
- * own side of the silence, since a square centre up to 100 km off would
- * swing it. */
+/** flightLine cut into its stretches, each from one position to the next,
+ * for whatever needs to say where and when along the line something
+ * happened. */
 export function flightLegs(track: TimedPoint[], lons: number[], via: Via[] = []): Leg[] {
   const anchors = anchorsOf(track, lons, via);
   const legs: Leg[] = [];
@@ -193,24 +180,9 @@ export function flightLegs(track: TimedPoint[], lons: number[], via: Via[] = [])
     const pts = [[a.lon, a.lat]];
     between(pts, anchors, i);
     pts.push([b.lon, b.lat]);
-    legs.push({ fromUtc: a.utc, toUtc: b.utc, coarse: a.coarse || b.coarse, pts });
+    legs.push({ fromUtc: a.utc, toUtc: b.utc, pts });
   }
   return legs;
-}
-
-/** The line as the map draws it: the solid track from fix to fix, and the
- * dashed stretches that pass through a ghost. See flightLegs. */
-export function flightPath(track: TimedPoint[], lons: number[], via: Via[] = []): FlightPath {
-  const path: FlightPath = { solid: [], coarse: [] };
-  let last: boolean | null = null;
-  for (const leg of flightLegs(track, lons, via)) {
-    const runs = leg.coarse ? path.coarse : path.solid;
-    // The leg starts on the point the run so far ends on.
-    if (last === leg.coarse) runs.at(-1)!.push(...leg.pts.slice(1));
-    else runs.push([...leg.pts]);
-    last = leg.coarse;
-  }
-  return path;
 }
 
 /** Push the points strictly between anchor i-1 and anchor i. */
@@ -219,10 +191,7 @@ function between(out: number[][], anchors: Anchor[], i: number): void {
   const b = anchors[i]!;
   const d = angle(a.v, b.v);
   // Not bent across a short hop: the headings either side would be
-  // mostly grid noise, and the curve would wiggle for nothing. That holds
-  // for a ghost too: one the line is routed through is hours from the
-  // fixes either side and is bent to, while the beacon's ghost minutes
-  // after the last fix is reached straight.
+  // mostly grid noise, and the curve would wiggle for nothing.
   const bent = b.ms - a.ms >= BEND_GAP_MS && d * EARTH_KM >= 2 * HEADING_MIN_KM
     ? bend(a.v, b.v, travelTangent(anchors, i - 1, -1), travelTangent(anchors, i, +1))
     : null;

@@ -51,12 +51,12 @@ const MAX_GROUND_SPEED_KT = 300;
  * of the leg: a grid6 subsquare is under 10 km across, a grid4 square
  * about 110 by 220 km. */
 const GRID6_SLACK_KM = 15;
-const GRID4_SLACK_KM = 140;
+export const GRID4_SLACK_KM = 140;
 
 /** A ghost reporting a square that a spoofed fix reported within this long
  * is taken to be spoofed too: the Regular message carries the same faked
  * square as the fix, and a spoofer tends to hold one place for hours. */
-const SPOOF_SQUARE_WINDOW_MS = 6 * 3600 * 1000;
+export const SPOOF_SQUARE_WINDOW_MS = 6 * 3600 * 1000;
 
 const KM_PER_NM = 1.852;
 
@@ -76,8 +76,9 @@ export function pressureDisagrees(p: TrackPoint): boolean {
 
 /** True when getting from `from` to (lat, lon) by `utc` would have taken
  * more than the fastest wind there is. */
-function unreachable(
-  from: TrackPoint, utc: string, lat: number, lon: number, slackKm: number,
+export function unreachable(
+  from: { utc: string; lat: number; lon: number }, utc: string, lat: number, lon: number,
+  slackKm: number,
 ): boolean {
   const hours = Math.abs(parseUtc(utc).getTime() - parseUtc(from.utc).getTime()) / 3_600_000;
   const km = haversineKm(from.lat, from.lon, lat, lon);

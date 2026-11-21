@@ -26,12 +26,12 @@ setWorkerUrl(workerUrl);
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 import {
-  fitRegion, flightPath, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL,
-  unwrapLons, type FlightPath,
+  fitRegion, flightLine, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL,
+  unwrapLons, type Via,
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal } from "./format";
-import { lastKnown, lineGhosts, trailingGhosts, unwrapGhostLons, unwrapNear } from "./ghosts";
+import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints } from "./ghosts";
 import { esc, RECORD_PIN_SVG, WAKE_SUN_SVG } from "./render";
 import { spoofRuns } from "./spoof";
 import {
@@ -120,9 +120,9 @@ function baseStyle(): StyleSpecification {
 interface Positions {
   lons: number[];
   ghostLons: number[];
-  /** The line split into its solid runs, fix to fix, and the dashed runs
-   * that pass through a ghost: flightPath, as on the flat map. */
-  path: FlightPath;
+  /** The ghosts the track is routed through (lib/ghosts.ts, waypoints),
+   * placed for flightLine. */
+  via: Via[];
   /** Where the balloon was last heard, or null with nothing to show. */
   here: { lon: number; lat: number; coarse: boolean } | null;
   /** All latitudes and longitudes, balloon last: fitRegion's contract. */
@@ -130,13 +130,13 @@ interface Positions {
   fitLons: number[];
 }
 
-function positions(track: TrackPoint[], ghosts: GhostPoint[]): Positions {
+function positions(track: TrackPoint[], ghosts: GhostPoint[], way: GhostPoint[]): Positions {
   const lons = unwrapLons(track);
   const ghostLons = unwrapGhostLons(track, lons, ghosts);
+  const wayLons = unwrapGhostLons(track, lons, way);
+  const via = way.map((g, i) => ({ utc: g.utc, lat: g.lat, lon: wayLons[i]! }));
   const known = lastKnown(track, ghosts);
   const tail = trailingGhosts(track, ghosts);
-  const path = flightPath(track, lons, lineGhosts(track, ghosts).map((g) => (
-    { utc: g.utc, lat: g.lat, lon: ghostLons[ghosts.indexOf(g)]! })));
   const here = !known ? null : known.coarse
     ? { lon: ghostLons[ghostLons.length - 1]!, lat: known.lat, coarse: true }
     : { lon: lons[lons.length - 1]!, lat: known.lat, coarse: false };
@@ -145,7 +145,7 @@ function positions(track: TrackPoint[], ghosts: GhostPoint[]): Positions {
     ? [...track.map((p, i) => [p.lat, lons[i]!]), ...ghosts.map((g, i) => [g.lat, ghostLons[i]!])]
     : [...ghosts.map((g, i) => [g.lat, ghostLons[i]!]), ...track.map((p, i) => [p.lat, lons[i]!])];
   return {
-    lons, ghostLons, path, here,
+    lons, ghostLons, via, here,
     fitLats: pts.map((p) => p[0]!), fitLons: pts.map((p) => p[1]!),
   };
 }
@@ -205,9 +205,10 @@ const SPOOF_COLOR = "#fb7185";
  * and weights as the flat map, and the same dark casing, for the same
  * reason: over imagery or weather a lone thin grey line vanishes. */
 function addTrack(
-  style: StyleSpecification, meta: FlightMeta, ghosts: GhostPoint[], pos: Positions,
+  style: StyleSpecification, meta: FlightMeta, track: TrackPoint[],
+  ghosts: GhostPoint[], pos: Positions,
 ): void {
-  const { ghostLons, path, here } = pos;
+  const { lons, ghostLons, here } = pos;
   if (meta.launch_lat != null && meta.launch_lon != null) {
     style.sources.launch = {
       type: "geojson",
@@ -246,12 +247,15 @@ function addTrack(
       },
     });
   }
-  if (path.solid.length) {
+  if (track.length) {
     style.sources.flight = {
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "MultiLineString", coordinates: path.solid },
+        geometry: {
+          type: "LineString",
+          coordinates: flightLine(track, lons, pos.via),
+        },
       },
     };
     style.layers.push(
@@ -261,15 +265,20 @@ function addTrack(
         paint: { "line-color": "#e2e8f0", "line-width": 2.6, "line-opacity": 0.9 } },
     );
   }
-  // Dashed wherever the line passes through a ghost, the tail out to the
-  // newest one included, for the reason the flat map gives: a square is
-  // not a fix.
-  if (path.coarse.length) {
+  // The dashed tail from the last fix out along the ghosts heard since,
+  // for the reason the flat map gives: a square is not a fix.
+  const tail = trailingGhosts(track, ghosts);
+  if (tail.length) {
+    const from = ghosts.length - tail.length;
+    const coords = [
+      ...(track.length ? [[lons[lons.length - 1]!, track[track.length - 1]!.lat]] : []),
+      ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
+    ];
     style.sources.tail = {
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "MultiLineString", coordinates: path.coarse },
+        geometry: { type: "LineString", coordinates: greatCircleLine(coords) },
       },
     };
     style.layers.push(
@@ -337,16 +346,19 @@ function addTrack(
  * featured flight's layers. Its beacon is a DOM marker, added by the
  * caller, since only the DOM animates. */
 function addOverlay(
-  style: StyleSpecification, pos: Positions, n: number,
+  style: StyleSpecification, o: OverlayTrack, pos: Positions, n: number,
 ): void {
-  const { path, here } = pos;
+  const { lons, ghostLons, here } = pos;
   if (!here) return;
-  if (path.solid.length) {
+  if (o.track.length) {
     style.sources[`overlay-${n}`] = {
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "MultiLineString", coordinates: path.solid },
+        geometry: {
+          type: "LineString",
+          coordinates: flightLine(o.track, lons, pos.via),
+        },
       },
     };
     style.layers.push(
@@ -356,12 +368,20 @@ function addOverlay(
         paint: { "line-color": OVERLAY_COLOR, "line-width": 2, "line-opacity": 0.75 } },
     );
   }
-  if (path.coarse.length) {
+  const tail = trailingGhosts(o.track, o.ghosts);
+  if (tail.length) {
+    const from = o.ghosts.length - tail.length;
     style.sources[`overlay-${n}-tail`] = {
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "MultiLineString", coordinates: path.coarse },
+        geometry: {
+          type: "LineString",
+          coordinates: greatCircleLine([
+            ...(o.track.length ? [[lons[lons.length - 1]!, o.track[o.track.length - 1]!.lat]] : []),
+            ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
+          ]),
+        },
       },
     };
     style.layers.push({
@@ -496,6 +516,8 @@ export interface GlobeOpts {
   weather?: GlobeWeather;
   /** Slots heard without telemetry, drawn as ghosts beside the track. */
   ghosts?: GhostPoint[];
+  /** The few of those the track is routed through, as on the flat map. */
+  waypoints?: GhostPoint[];
   /** Fixes whose GPS was spoofed, drawn where the GPS said, as on the flat
    * map. */
   spoofed?: TrackPoint[];
@@ -596,13 +618,13 @@ export function renderGlobe(
 ): GlobeHandle {
   el.classList.add("fv-map-fill", "fv-globe");
   const ghosts = opts.ghosts ?? [];
-  const pos = positions(track, ghosts);
+  const pos = positions(track, ghosts, opts.waypoints ?? []);
   const style = baseStyle();
   const overlays = (opts.overlays ?? [])
-    .map((o) => ({ o, pos: positions(o.track, o.ghosts) }))
+    .map((o) => ({ o, pos: positions(o.track, o.ghosts, waypoints(o.track, o.ghosts, o.spoofed)) }))
     .filter((x) => x.pos.here);
-  overlays.forEach((x, n) => addOverlay(style, x.pos, n));
-  addTrack(style, meta, ghosts, pos);
+  overlays.forEach((x, n) => addOverlay(style, x.o, x.pos, n));
+  addTrack(style, meta, track, ghosts, pos);
   if (opts.spoofed?.length) addSpoofed(style, track, pos, opts.spoofed);
   // From the last full fix, where the prediction starts, not a newer ghost.
   const fc = opts.forecast && pos.lons.length

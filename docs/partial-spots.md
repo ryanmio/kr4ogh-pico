@@ -218,54 +218,75 @@ shown at once. If its telemetry turns up, the slot becomes a fix in the
 same grid square. Only the first ghost back skips the hold: the next one is
 ten minutes behind it, so it is held as usual.
 
-## Since: routed through the ones deep in a silence (2026-11-20)
+## Since: the track runs through the ones deep in a silence (2026-11-20)
 
 PT-02 was heard without telemetry for two days over the Gulf of Alaska:
 a last fix at 20:24 UTC on 18 Nov, a ghost in BO56 two and a half hours
 later, one in CO45 the next afternoon, and no fix until 18:34 on the 20th
 off Vancouver Island. While the ghosts were the newest reports they were
-the dashed tail. The moment telemetry came back the tail went, and the
-line ran from one fix straight to the other, 177 km from the centre of
-BO56 and 271 km from CO45: the only two positions known in those two days,
-and the line ignored both.
+the dashed tail, as ever. The moment telemetry came back the tail went,
+and the track ran from one fix straight to the other, 177 km from the
+centre of BO56 and 271 km from CO45: the only two positions known in those
+two days, and the track ignored both.
 
-A ghost is now a **waypoint** when no fix was decoded within two hours of
-it, before or after, and its square is at least 150 km from the position
-before it on the line and from the fix after it (`waypoints` in
-`src/lib/ghosts.ts`). The line is routed through the waypoints
-(`flightPath` in `src/lib/basemap.ts`), dashed wherever it touches one,
-solid from fix to fix as before.
+Such a ghost is now a **waypoint** (`waypoints` in `src/lib/ghosts.ts`),
+and the track's curve across the silence passes through it (`flightLine`
+in `src/lib/basemap.ts`). The track stays the solid line it is everywhere
+else: a night with nothing heard is already drawn solid as the best guess
+across it, and a silence with squares in it is better known than that, not
+worse. Nothing new is dashed.
 
-- **Two hours** is the silence the line already called a hole
+A ghost moves the track only on all of these terms:
+
+- **A fix before it and a fix after it, each at least two hours away.**
+  Two hours is the silence the line already called a hole
   (`BEND_GAP_MS`). Of the 85 ghosts on the first eight flights, 74 were
-  under an hour from a fix and three were two hours or more: F1B's HN08
-  and PT-02's two. The rest are the ordinary kind, a telemetry message
-  lost beside fixes that say where the balloon was far better than a
-  square does, and they stay rings beside the line that move nothing.
-- **150 km** is one square. A square's centre is up to 95 km from the
-  balloon, so a line bent to reach a centre one square away would be
-  drawing that error. It also makes one waypoint of a run of ghosts in one
-  square.
-- **The curve.** A waypoint is a vertex like a fix, bent to the same way.
-  Its heading is the chord from the position before it to the one after;
-  a fix still takes its heading from the fixes on its own side only.
-- **The tail is the same line.** The dashed tail is the line through the
-  trailing waypoints and on to the newest ghost, which is always on it
-  because the beacon stands there. When telemetry comes back the dashed
-  stretch stays on its waypoints; only the stretch into the last of them
-  is reshaped, by the chord to the new fix.
-- **It can be taken back.** A fix decoded within two hours after a ghost
-  takes that ghost off the line: the fix is now the better position.
-- **Distance** covered, and the distance record, follow the waypoints, as
-  Traquito's does. Where and when a crossing was made (`src/lib/records.ts`)
-  is read off the routed line. Altitude, speed, the charts, the forecast
-  and every record read off one fix are untouched.
+  under an hour from a fix: a telemetry message lost beside fixes that say
+  where the balloon was far better than a square does. Those stay rings
+  beside the line and move nothing. A ghost newer than the last fix moves
+  nothing either: it is the tail and the beacon until a fix comes back to
+  judge it by.
+- **Its square at least 150 km**, one square, from the position before it
+  on the line and from the fix after. A square's centre is up to 95 km
+  from the balloon, and a line bent to reach a centre one square away
+  would be drawing that error. It also makes one waypoint of a run of
+  ghosts in one square.
+- **Inside the corridor the two fixes allow**: the way round by the ghost
+  no more than 1.5 times the straight way between them
+  (`WAYPOINT_MAX_DETOUR`). Between fixes half a day to two and a half days
+  apart, 95% of the balloon's own positions on these flights were within
+  that; the rest were loops in slack air, and a true ghost out there stays
+  a ring, which is all it was before.
+- **Within reach** of both fixes at the 300 kt of `src/lib/spoof.ts`.
+- **No sign of GPS spoofing near the silence**: no fix set aside as
+  spoofed from six hours before the fix that starts it to six hours after
+  the one that ends it. A Regular message carries whatever square the GPS
+  was told, and with spoofing about a square proves nothing.
+- **The ghosts of one silence agreeing**: if one cannot be reached from
+  the one before it, something lied, there is no saying which, and the
+  silence is drawn fix to fix.
 
-Nothing stored changed: the rule is applied where the line is drawn.
-`npm run waypoint-check` tests the rule at its edges and, on every
-committed flight, that the solid line is point for point what it was
-wherever no waypoint is.
+The curve: a waypoint is a vertex like a fix. Its heading is the chord
+from the position before it to the one after; a fix still takes its
+heading from the fixes on its own side only.
 
-Known limit: a spoofed square deep in a long silence would be a waypoint.
-`dropSpoofedGhosts` drops a ghost out of reach of the fix before it, and
-after a day's silence nearly anywhere is in reach.
+**Distance** covered, and the distance record, go through the waypoints,
+as Traquito's does; because a waypoint needs a fix after it, the figure
+never runs ahead of the last fix. Where and when a crossing was made
+(`src/lib/records.ts`) is read off the same line. Altitude, speed, the
+charts, the forecast, the tail and every record read off one fix are
+untouched. Nothing stored changed: the rule is applied where the line is
+drawn.
+
+`npm run waypoint-check` tests the rule at its edges; that on every
+committed flight the line is point for point what it was outside a routed
+silence; and the attack, a false square at every grid square on Earth in
+every silence of every flight. Of 874,800 tried, 99.2% are refused, every
+one accepted is inside the corridor, and none is accepted with a spoofed
+fix heard in the silence.
+
+What is left is what no rule can close: a false square that sits inside
+the corridor, in a silence where nothing else was heard, is the same
+message as a true one. It can pull the track sideways by at most 0.56 of
+the distance between the two fixes. Tightening `WAYPOINT_MAX_DETOUR`
+shrinks that and turns more true ghosts back into rings.

@@ -10,6 +10,7 @@
  */
 import { BEND_GAP_MS } from "./basemap";
 import { haversineKm, parseUtc } from "./format";
+import { GRID4_SLACK_KM, SPOOF_SQUARE_WINDOW_MS, unreachable } from "./spoof";
 import type { GhostPoint, TrackPoint } from "./types";
 
 /** Drop every ghost whose slot has a full fix. A refresh can complete a
@@ -65,12 +66,12 @@ export function trailingGhosts(track: TrackPoint[], ghosts: GhostPoint[]): Ghost
   return ghosts.filter((g) => g.utc > lastFix);
 }
 
-/** How far from every fix, before and after, a ghost has to be heard for
- * the line to be routed through it: the silence the line already treats as
- * a hole (lib/basemap.ts). Nearly every ghost is nearer a fix than this --
- * the slot before the first fix of a morning, the ones after the last of
- * an evening -- and the fix says where the balloon was far better than the
- * square does. */
+/** How far from the fix before it, and from the fix after, a ghost has to
+ * be heard for the track to be routed through it: the silence the line
+ * already treats as a hole (lib/basemap.ts). Nearly every ghost is nearer
+ * a fix than this -- the slot before the first fix of a morning, the ones
+ * after the last of an evening -- and the fix says where the balloon was
+ * far better than the square does. */
 export const WAYPOINT_GAP_MS = BEND_GAP_MS;
 
 /** How far a ghost's square has to be from the position before it on the
@@ -80,58 +81,94 @@ export const WAYPOINT_GAP_MS = BEND_GAP_MS;
  * It is also what makes one waypoint of a run of ghosts in one square. */
 export const WAYPOINT_MIN_KM = 150;
 
+/** How much longer the way round by a ghost may be than the straight way
+ * between the fixes either side of it. Measured on the first eight
+ * flights, between fixes half a day to two and a half days apart, 95% of
+ * the balloon's own positions were within this, and the rest were loops
+ * in slack air. A square further out than this is possible, but nothing
+ * says so except the square itself, and that is not enough to move the
+ * track. */
+export const WAYPOINT_MAX_DETOUR = 1.5;
+
 /** The ghosts the track is routed through: the ones heard deep enough in a
- * silence to be the only word on where the balloon was.
+ * silence to be the only word on where the balloon was, and that the fixes
+ * either side of the silence bear out.
  *
  * Usually the tracker loses a telemetry message here and there and the
  * fixes either side say where it was; those ghosts sit beside the line and
  * change nothing. But a tracker can go a whole day heard only by its
  * Regular message (PT-02 on 19 Nov 2026, over the Gulf of Alaska: no fix
  * for two days, two grid squares), and then a line drawn from the last fix
- * straight to the next one ignores the only positions there are. A ghost
- * is a waypoint when no fix was decoded within WAYPOINT_GAP_MS of it on
- * either side and its square is WAYPOINT_MIN_KM clear of the position
- * before it and of the fix after.
+ * straight to the next one ignores the only positions there are.
  *
- * Both lists oldest first. The answer can change as the flight goes on: a
- * fix decoded within two hours after a ghost takes it off the line again,
- * which is the rule working, since that fix is now the better position. */
-export function waypoints(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoint[] {
-  const fixMs = track.map((p) => parseUtc(p.utc).getTime());
+ * The track is the site's claim of where the balloon went, so a ghost
+ * moves it only on these terms, all of them:
+ *
+ *  - A fix before it and a fix after it, each at least WAYPOINT_GAP_MS
+ *    away. A ghost newer than the last fix moves nothing: it is the dashed
+ *    tail and the beacon, as ever, until a fix comes back to judge it by.
+ *  - Its square WAYPOINT_MIN_KM clear of the position before it on the
+ *    line and of the fix after.
+ *  - Inside the corridor those two fixes allow: the way round by the ghost
+ *    no more than WAYPOINT_MAX_DETOUR times the straight way between them.
+ *  - Within reach, at the fastest a balloon is carried (lib/spoof.ts), of
+ *    both fixes.
+ *  - No sign of GPS spoofing near the silence: no fix set aside as spoofed
+ *    (`spoofed`) from SPOOF_SQUARE_WINDOW_MS before the fix that starts it
+ *    to as long after the fix that ends it. A Regular message carries
+ *    whatever square the GPS was told, and with spoofing about a square
+ *    proves nothing.
+ *  - The ghosts of one silence agreeing with each other: if one cannot be
+ *    reached from the one before it, something lied, there is no saying
+ *    which, and that silence is drawn fix to fix as it always was.
+ *
+ * A ghost that fails any of these stays a ring beside the line. What a
+ * false square can still do is bounded by the corridor: one that sits
+ * between the two fixes, in a silence nothing else was heard in, cannot be
+ * told from a true one by anything the tracker sends.
+ *
+ * All three lists oldest first. */
+export function waypoints(
+  track: TrackPoint[], ghosts: GhostPoint[], spoofed: { utc: string }[] = [],
+): GhostPoint[] {
   const out: GhostPoint[] = [];
-  let next = 0;
-  for (const g of ghosts) {
-    const t = parseUtc(g.utc).getTime();
-    while (next < track.length && fixMs[next]! <= t) next++;
-    const before = track[next - 1];
-    const after = track[next];
-    if (before && t - fixMs[next - 1]! < WAYPOINT_GAP_MS) continue;
-    if (after && fixMs[next]! - t < WAYPOINT_GAP_MS) continue;
-    // The position before this one on the line: the fix, or a waypoint
-    // already taken since it.
-    const way = out.at(-1);
-    const prev = way && (!before || way.utc > before.utc) ? way : before;
-    if (prev && haversineKm(prev.lat, prev.lon, g.lat, g.lon) < WAYPOINT_MIN_KM) continue;
-    if (after && haversineKm(g.lat, g.lon, after.lat, after.lon) < WAYPOINT_MIN_KM) continue;
-    out.push(g);
+  const ms = (utc: string) => parseUtc(utc).getTime();
+  const km = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) =>
+    haversineKm(a.lat, a.lon, b.lat, b.lon);
+  const spoofMs = spoofed.map((p) => ms(p.utc));
+  let g = 0;
+  for (let i = 1; i < track.length; i++) {
+    const a = track[i - 1]!;
+    const b = track[i]!;
+    const ta = ms(a.utc);
+    const tb = ms(b.utc);
+    if (tb - ta < 2 * WAYPOINT_GAP_MS) continue;
+    while (g < ghosts.length && ghosts[g]!.utc <= a.utc) g++;
+    if (spoofMs.some((t) => t >= ta - SPOOF_SQUARE_WINDOW_MS && t <= tb + SPOOF_SQUARE_WINDOW_MS)) {
+      continue;
+    }
+    const direct = km(a, b);
+    const taken: GhostPoint[] = [];
+    let agree = true;
+    for (let k = g; k < ghosts.length && ghosts[k]!.utc < b.utc; k++) {
+      const w = ghosts[k]!;
+      const t = ms(w.utc);
+      if (t - ta < WAYPOINT_GAP_MS || tb - t < WAYPOINT_GAP_MS) continue;
+      if (km(a, w) + km(w, b) > WAYPOINT_MAX_DETOUR * direct) continue;
+      if (unreachable(a, w.utc, w.lat, w.lon, GRID4_SLACK_KM)
+        || unreachable(b, w.utc, w.lat, w.lon, GRID4_SLACK_KM)) continue;
+      const prev = taken.at(-1);
+      // Two squares that pass on their own and cannot both be true.
+      if (prev && unreachable(prev, w.utc, w.lat, w.lon, 2 * GRID4_SLACK_KM)) {
+        agree = false;
+        break;
+      }
+      if (km(prev ?? a, w) < WAYPOINT_MIN_KM || km(w, b) < WAYPOINT_MIN_KM) continue;
+      taken.push(w);
+    }
+    if (agree) out.push(...taken);
   }
   return out;
-}
-
-/** The ghosts the drawn line passes through, oldest first: the waypoints,
- * and the newest ghost of all when it is newer than the last fix. That one
- * is where the beacon stands, so the line has to reach it whether or not
- * it would make a waypoint; once a fix follows it is judged like any
- * other. Left out when it shares a square with the waypoint before it,
- * where the line already ends. */
-export function lineGhosts(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoint[] {
-  const way = waypoints(track, ghosts);
-  const newest = trailingGhosts(track, ghosts).at(-1);
-  if (!newest || way.includes(newest)) return way;
-  const last = way.at(-1);
-  const lastFix = track.at(-1)?.utc ?? "";
-  if (last && last.utc > lastFix && last.grid4 === newest.grid4) return way;
-  return [...way, newest];
 }
 
 export interface LastKnown {
