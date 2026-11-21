@@ -170,6 +170,9 @@ export function renderMap(
   });
   smoothWheelZoom(map);
   if (fill) L.control.zoom({ position: "topright" }).addTo(map);
+  // No "Leaflet" credit: the library asks for none, and it is the one that
+  // pushed the phone's credits onto a second line.
+  map.attributionControl.setPrefix(false);
   if (fill) {
     const credits = foldCredits(map.attributionControl.getContainer());
     if (credits) {
