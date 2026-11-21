@@ -173,6 +173,14 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         <button type="button" data-range="ascent" aria-pressed="false">Ascent</button>
         <button type="button" data-range="recent" aria-pressed="false">Last 24 h</button>
       </div>
+      <button type="button" class="fv-panel-action" id="download" hidden
+        aria-label="Download JSON" title="Download the full track as JSON">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <path d="M8 2.5v8M4.5 7.5 8 11l3.5-3.5M3 13.5h10" fill="none" stroke="currentColor"
+            stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="fv-panel-action-text">Download JSON</span>
+      </button>
       <button type="button" class="fv-panel-close" id="panel-close" aria-label="Close panel">×</button>
     </header>
     <div class="fv-panel-body" id="panel-body"></div>
@@ -207,7 +215,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     isRecordKey, recordHolders, recordPins, recordsHeldBy, recordsSet, summarize,
     type FlightSummary, type RecordKey,
   } from "../lib/records";
-  import { recordsHtml, sidebarHtml, tableHtml, type ActiveCard } from "../lib/render";
+  import {
+    recordsHtml, sidebarHtml, tableHtml, tableNotes, type ActiveCard,
+  } from "../lib/render";
   import {
     groundSpeedKt, hasSaturatedSpeed, speedText, SPEED_CEILING_KT,
   } from "../lib/speed";
@@ -308,6 +318,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const panelTitle = root.querySelector<HTMLElement>("#panel-title")!;
     const panelInfo = root.querySelector<HTMLButtonElement>("#panel-info")!;
     const panelInfoPop = root.querySelector<HTMLElement>("#panel-info-pop")!;
+    const downloadBtn = root.querySelector<HTMLButtonElement>("#download")!;
     const panelBody = root.querySelector<HTMLElement>("#panel-body")!;
     const rangeToggle = panelEl.querySelector<HTMLElement>(".range-toggle")!;
     const updatedEl = root.querySelector<HTMLElement>("#updated")!;
@@ -1106,6 +1117,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       rangeToggle.hidden = !hasChart || spanMs(track) <= RANGE_MIN_SPAN_MS;
       paintRangeToggle();
       setPanelInfo("");
+      downloadBtn.hidden = panel !== "data";
+      // The table fills the desktop panel and scrolls under its own header.
+      panelEl.classList.toggle("is-table", panel === "data");
       if (isMetric) {
         const key = panel as MetricKey;
         panelTitle.textContent = METRICS[key].label;
@@ -1156,14 +1170,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           units, focus: recordFocus, hrefFor: flightHref,
         });
       } else if (panel === "data") {
-        panelTitle.textContent = "Telemetry data";
-        panelBody.innerHTML =
-          `<p class="fv-panel-note">Every report the tracker has sent, newest
-            first. <button class="linklike" id="download" type="button">Download
-            the full track as JSON</button>.</p>` +
-          tableHtml(track);
-        const details = panelBody.querySelector("details");
-        if (details) details.open = true;
+        panelTitle.textContent = `Telemetry data · ${fmtInt(track.length)} report${
+          track.length === 1 ? "" : "s"}`;
+        setPanelInfo(tableNotes(track, units));
+        panelBody.innerHTML = track.length
+          ? tableHtml(track, units)
+          : '<p class="empty-note">No decoded telemetry yet.</p>';
       } else {
         panelTitle.textContent = "About";
         // Traquito's own dashboard for this flight, from launch day to
@@ -1200,12 +1212,19 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
     }
 
-    /** The text behind the title's info button; empty hides the button. A
-     * re-render keeps the popover open if it was, with the new text. */
-    function setPanelInfo(text: string) {
-      panelInfoPop.textContent = text.replace(/\s+/g, " ").trim();
-      panelInfo.hidden = !text;
-      if (!text) showPanelInfo(false);
+    /** The text behind the title's info button, a paragraph per string;
+     * none hides the button. A re-render keeps the popover open if it was,
+     * with the new text. */
+    function setPanelInfo(text: string | string[]) {
+      const paras = (Array.isArray(text) ? text : [text])
+        .map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+      panelInfoPop.replaceChildren(...paras.map((t) => {
+        const el = document.createElement("p");
+        el.textContent = t;
+        return el;
+      }));
+      panelInfo.hidden = !paras.length;
+      if (!paras.length) showPanelInfo(false);
     }
     function showPanelInfo(open: boolean) {
       panelInfoPop.hidden = !open;
@@ -1420,9 +1439,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       if (recordFocus) flyToRecord(key);
     });
 
-    // The download button lives inside the re-rendered data panel.
-    panelBody.addEventListener("click", (ev) => {
-      if (!(ev.target as HTMLElement).closest("#download")) return;
+    downloadBtn.addEventListener("click", () => {
       act("Download", { flight: meta.flight_id });
       const blob = new Blob([JSON.stringify({ ...meta, track, ghosts }, null, 1)],
         { type: "application/json" });

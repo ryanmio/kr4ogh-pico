@@ -459,6 +459,8 @@ the page and leaves, or a script calling `.click()`, sends none of them.
 | `Engaged` | `after` (30s/2m/10m), `flight` | that much visible time after it |
 | `Panel` | `panel`, `flight` | a card or chip opens a panel |
 | `Chart read` | `panel`, `flight` | the pointer crosses a chart; once per panel per load |
+| `Panel info` | `panel`, `flight` | a panel title's info button is opened |
+| `Panel details` | `panel`, `flight` | a panel's More details is opened |
 | `Range` | `range`, `panel` | a chart range is picked |
 | `Record` | `record`, `flight` | a record tile is pressed; the map flies to it |
 | `Map moved` | `view`, `flight` | the first pan or zoom of a load |

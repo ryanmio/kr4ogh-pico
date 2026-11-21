@@ -3,7 +3,7 @@
  * from a live wspr.live query. */
 
 import {
-  bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocal, fmtLocalDay, fmtRelative, fmtUtc,
+  fmtDuration, fmtInt, fmtLocal, fmtLocalDay, fmtRelative, fmtUtc,
   haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
 import { heardBounds, waypoints } from "./ghosts";
@@ -172,12 +172,6 @@ export function sidebarHtml(
   const spd = (kt: number) => u.speed(kt, units).text;
   const tmp = (c: number) => u.temperature(c, units).text;
 
-  // Heading over the last leg. One fix is not a direction, so it stays blank
-  // rather than inventing one.
-  const prev = track.length >= 2 ? track[track.length - 2]! : null;
-  const heading = prev
-    ? bearingDeg(prev.lat, prev.lon, s.last.lat, s.last.lon)
-    : null;
   const aloftMs = parseUtc(heard.lastUtc).getTime() - parseUtc(heard.firstUtc).getTime();
   const fromLaunchKm = haversineKm(
     track[0]!.lat, track[0]!.lon, s.last.lat, s.last.lon);
@@ -211,9 +205,9 @@ export function sidebarHtml(
     metricCard(
       "journey",
       u.distance(s.distanceKm, units).text,
-      heading === null
+      track.length < 2
         ? "flown so far"
-        : `${compassPoint(heading)} · ${u.distance(fromLaunchKm, units).text} from launch`,
+        : `${u.distance(fromLaunchKm, units).text} from launch`,
       active,
     ),
     metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active,
@@ -245,23 +239,24 @@ export function sidebarHtml(
   return tracker + status + cards.join("") + records;
 }
 
-/** The speed column. A fix under the field's ceiling prints the integer the
- * tracker sent. At the ceiling the tracker only proved a lower bound, so the
- * cell prints either "82+" or the tilde-marked estimate the track measured,
- * never a bare 82 that would read as a measurement. */
-function speedCell(p: TrackPoint): string {
-  if (!isSpeedFloor(p) && p.speed_kt_est === undefined) return `${p.speed_kt}`;
-  return isSpeedFloor(p)
-    ? `${p.speed_kt}+`
-    : `~${Math.round(groundSpeedKt(p))}`;
+/** The speed column, in the reader's units. A fix under the field's ceiling
+ * prints what the tracker sent. At the ceiling the tracker only proved a
+ * lower bound, so the cell prints either "152+" or the tilde-marked estimate
+ * the track measured, never a bare 152 that would read as a measurement. */
+function speedCell(p: TrackPoint, units: Units): string {
+  const v = (kt: number) => fmtInt(Math.round(u.convert.speed(kt, units)));
+  if (!isSpeedFloor(p) && p.speed_kt_est === undefined) return v(p.speed_kt);
+  return isSpeedFloor(p) ? `${v(p.speed_kt)}+` : `~${v(groundSpeedKt(p))}`;
 }
 
-/** Telemetry table, newest first. Long flights are capped so a two-month
- * flight stays a reasonable download; the full track is always in the
- * flight's JSON. */
-export function tableHtml(track: TrackPoint[], maxRows = 500): string {
+/** Telemetry table, newest first, in the reader's units. Long flights are
+ * capped so a two-month flight stays a reasonable page; the full track is
+ * always in the flight's JSON. What the marks in it mean is tableNotes'. */
+export function tableHtml(track: TrackPoint[], units: Units, maxRows = TABLE_MAX_ROWS): string {
   if (track.length === 0) return "";
-  const capped = track.length > maxRows;
+  const lbl = u.unitLabels(units);
+  const alt = (m: number) => fmtInt(Math.round(u.convert.altitude(m, units)));
+  const tmp = (c: number) => `${Math.round(u.convert.temperature(c, units))}`;
   // The sensor columns exist only on a flight whose tracker has sent a
   // reading (a Petrel's BME280, see lib/wspr/decode.ts): the one place on
   // the page the reading is shown. A fix whose reading was not heard
@@ -269,15 +264,12 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
   const sensor = track.some((p) => p.pressure_hpa !== undefined);
   const sensorCells = (p: TrackPoint) => sensor
     ? `<td class="mono num">${p.pressure_hpa ?? ""}</td>
-    <td class="mono num">${p.board_temp_c ?? ""}</td>
+    <td class="mono num">${p.board_temp_c === undefined ? "" : tmp(p.board_temp_c)}</td>
     <td class="mono num">${p.humidity_pct ?? ""}</td>`
     : "";
   const sensorHeads = sensor
-    ? "<th>hPa</th><th>Board (°C)</th><th>RH (%)</th>" : "";
-  // A pairing column, only once an inferred fix or reading is on the track
-  // (docs/cross-receiver-pairing.md): every other row is a same-station
-  // pair, and the column would say so 400 times.
-  const tiers = track.some((p) => isInferred(p) || p.sensor_tier === "inferred");
+    ? `<th>hPa</th><th>Board (${lbl.temperature})</th><th>RH (%)</th>` : "";
+  const tiers = hasTiers(track);
   const tierCell = (p: TrackPoint) => {
     if (!tiers) return "";
     const what = isInferred(p) ? INFERRED_LABEL
@@ -290,47 +282,56 @@ export function tableHtml(track: TrackPoint[], maxRows = 500): string {
     <td class="mono">${esc(p.grid6)}</td>
     <td class="mono num">${p.lat.toFixed(4)}</td>
     <td class="mono num">${p.lon.toFixed(4)}</td>
-    <td class="mono num">${fmtInt(p.altitude_m)}</td>
-    <td class="mono num">${speedCell(p)}</td>
+    <td class="mono num">${alt(p.altitude_m)}</td>
+    <td class="mono num">${speedCell(p, units)}</td>
     <td class="mono num">${p.voltage_v.toFixed(2)}</td>
-    <td class="mono num">${p.temperature_c}</td>
+    <td class="mono num">${tmp(p.temperature_c)}</td>
     ${sensorCells(p)}
     <td class="mono num">${p.rx_station_count}</td>
     ${tierCell(p)}
   </tr>`);
-  const label = capped
-    ? `Telemetry table · latest ${fmtInt(maxRows)} of ${fmtInt(track.length)}` +
-      " records (full track in the JSON download)"
-    : `Telemetry table · ${fmtInt(track.length)} records`;
-  // Only worth the line on a flight that actually hit the ceiling, which is
-  // the only flight where the column needs explaining.
-  const ceilingNote = hasSaturatedSpeed(track)
-    ? `<p class="fv-panel-note">The speed field stops at
-      ${SPEED_CEILING_KT} kt, so "${SPEED_CEILING_KT}+" is the tracker saying
-      "at least this". A "~" speed is measured from the distance flown either
-      side of the fix instead.</p>`
-    : "";
-  const tierNote = tiers
-    ? `<p class="fv-panel-note">A "${INFERRED_LABEL}" row is a fix whose
-      telemetry was heard by a different station from the one that heard
-      the callsign message. It is kept only when it is the one message in
-      its slot that fits the flight's path and altitude. It is drawn as a
-      ring on the map, and sets no record.</p>`
-    : "";
-  return `<details class="telemetry-table">
-    <summary>${label}</summary>
-    ${ceilingNote}
-    ${tierNote}
-    <div class="table-scroll"><table>
+  return `<div class="telemetry-table"><div class="table-scroll"><table>
       <thead><tr>
         <th>UTC</th><th>Grid</th><th>Lat</th><th>Lon</th>
-        <th>Alt (m)</th><th>Speed (kt)</th><th>Volts</th>
-        <th>Die temp (°C)</th>${sensorHeads}<th>RX stations</th>${
+        <th>Alt (${lbl.altitude})</th><th>Speed (${lbl.speed})</th><th>Volts</th>
+        <th>Die temp (${lbl.temperature})</th>${sensorHeads}<th>RX stations</th>${
   tiers ? "<th>Pairing</th>" : ""}
       </tr></thead>
       <tbody>${rows.join("")}</tbody>
-    </table></div>
-  </details>`;
+    </table></div></div>`;
+}
+
+export const TABLE_MAX_ROWS = 500;
+
+/** A pairing column, only once an inferred fix or reading is on the track
+ * (docs/cross-receiver-pairing.md): every other row is a same-station pair,
+ * and the column would say so 400 times. */
+function hasTiers(track: TrackPoint[]): boolean {
+  return track.some((p) => isInferred(p) || p.sensor_tier === "inferred");
+}
+
+/** What the table's marks mean, one paragraph each, for the panel's info
+ * button. Each only on a flight where the table actually shows the mark. */
+export function tableNotes(track: TrackPoint[], units: Units, maxRows = TABLE_MAX_ROWS): string[] {
+  const notes: string[] = [];
+  if (track.length > maxRows) {
+    notes.push(`The table shows the latest ${fmtInt(maxRows)} of
+      ${fmtInt(track.length)} reports; the JSON download has every one.`);
+  }
+  if (hasSaturatedSpeed(track)) {
+    const top = fmtInt(Math.round(u.convert.speed(SPEED_CEILING_KT, units)));
+    notes.push(`The speed field stops at ${u.speed(SPEED_CEILING_KT, units).text},
+      so "${top}+" is the tracker saying "at least this". A "~" speed is
+      measured from the distance flown either side of the report instead.`);
+  }
+  if (hasTiers(track)) {
+    notes.push(`A "${INFERRED_LABEL}" row is a fix whose telemetry was heard
+      by a different station from the one that heard the callsign message. It
+      is kept only when it is the one message in its slot that fits the
+      flight's path and altitude. It is drawn as a ring on the map, and sets
+      no record.`);
+  }
+  return notes;
 }
 
 // ---------- records ----------

@@ -668,13 +668,25 @@ a.fv-chip { text-decoration: none; }
 .fv-panel-info:hover, .fv-panel-info[aria-expanded="true"] { color: var(--accent); }
 .fv-panel-info-pop {
   position: absolute; z-index: 2; top: calc(100% + 0.4rem); left: 0;
-  width: max-content; max-width: min(24rem, calc(100cqw - 2rem));
+  width: max-content; max-width: min(30rem, calc(100cqw - 2rem));
   font-size: 0.82rem; line-height: 1.45; color: var(--text-dim);
   background: var(--bg-raised); border: 1px solid var(--glass-border);
   border-radius: 10px; padding: 0.55rem 0.7rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 .fv-panel-info-pop[hidden] { display: none; }
+.fv-panel-info-pop p { margin: 0; }
+.fv-panel-info-pop p + p { margin-top: 0.5rem; }
+/* A panel's one action, where a chart panel has its range toggle. */
+.fv-panel-action {
+  grid-column: 2; grid-row: 1;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font: inherit; font-size: 0.78rem; color: var(--text-dim); cursor: pointer;
+  background: none; border: 1px solid var(--border); border-radius: 99px;
+  padding: 0.3rem 0.75rem;
+}
+.fv-panel-action[hidden] { display: none; }
+.fv-panel-action:hover { color: var(--accent); border-color: var(--accent); }
 .fv-panel-head .range-toggle { grid-column: 2; grid-row: 1; }
 .fv-panel-head .range-toggle[hidden] { display: none; }
 .fv-panel-close {
@@ -712,6 +724,9 @@ a.fv-chip { text-decoration: none; }
 @container (max-width: 420px) {
   /* Three stats to a row on a phone, as on a desktop. */
   .fv-minis { column-gap: 1.1rem; }
+  /* The title keeps its one line; the action keeps its icon. */
+  .fv-panel-action { padding: 0.38rem; }
+  .fv-panel-action-text { display: none; }
   .fv-wide-only { display: none; }
   .fv-narrow-only { display: block; }
 }
@@ -728,6 +743,17 @@ a.fv-chip { text-decoration: none; }
 .fv-panel .chart-tooltip { top: 1rem; }
 .fv-panel-note { margin: 0 0 0.6rem; font-size: 0.82rem; color: var(--text-dim); }
 .fv-panel .telemetry-table { margin: 0; background: rgba(15, 23, 42, 0.5); }
+.fv-panel .table-scroll { border-top: 0; }
+/* On a desktop the table takes the rest of the panel and scrolls inside it,
+   so its column heads stay in view; the panel itself does not scroll. */
+@media (min-width: 900px) {
+  .fv-panel.is-table:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+  .fv-panel.is-table .fv-panel-body,
+  .fv-panel.is-table .telemetry-table {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  }
+  .fv-panel.is-table .table-scroll { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
 .fv-about { font-size: 0.88rem; }
 .fv-about p { margin: 0.5rem 0; }
 .fv-about-links { display: flex; flex-wrap: wrap; gap: 1.2rem; }
