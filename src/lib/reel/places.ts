@@ -10,10 +10,8 @@
  *
  * A name is only worth showing if it can be read, and a reel covers
  * ground fast: over Europe a country lasts a few frames. So the line is
- * settled over the whole film before any of it is shown (`settle`): at
- * each instant it takes the most particular name that stays true long
- * enough to read, falling back from a mountain range to its country to
- * the continent.
+ * settled over the whole film before any of it is shown (`overLine`), and
+ * what it shows at each instant is the name that can be read there.
  */
 
 /** src/data/places.json: rings are flat [x, y, x, y, ...] in twentieths
@@ -121,10 +119,12 @@ export function placeFinder(data: PlaceData): (lonDeg: number, latDeg: number) =
 
 /** The line on screen at one frame. */
 export interface OverLine {
+  /** A country, a sea or an ocean; or where no country lasts long enough,
+   * the feature that spans them, the Balkan Peninsula. */
   name: string;
-  /** The country or continent a land feature is in, when that too holds
-   * still long enough. */
-  within: string | null;
+  /** Under it, smaller: the feature of the land being crossed, the Kazakh
+   * Steppe under Kazakhstan; or under a feature, what it is in. */
+  detail: string | null;
   /** Frames since this name came up, for its entrance. */
   since: number;
 }
@@ -141,40 +141,79 @@ function runLengths(v: (string | null)[]): number[] {
   return out;
 }
 
-/** One name for each frame out of several lists of them, the most
- * particular list first, such that no name is on screen for less than
- * `min` frames.
+/** The value that most of a stretch of frames has, if at least `share` of
+ * them do. */
+function mostly(values: (string | null)[], share: number): string | null {
+  const counts = new Map<string, number>();
+  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  const [top, count] = [...counts].sort((x, y) => y[1] - x[1])[0] ?? [null, 0];
+  return top && count >= share * values.length ? top : null;
+}
+
+/** The "over" line for every frame of a film, from the names at each, such
+ * that no name is up for less than `min` frames.
  *
- * Each frame first takes the most particular name that holds for `min`
- * frames unbroken, and failing any, the broadest there is. What is then
- * still too brief is a strip of something else across the path: the
- * Adriatic between Italy and the Balkans, a corner of a neighbouring
- * country. It joins a neighbour: one that is itself too brief, if there
- * is one, so that a run of scraps (a coast, a strait, an island, a sea)
- * adds up to a name that can be read, the largest scrap's; otherwise the
- * neighbour that is its own broader name (sea between two stretches of
- * "Europe" is, at that grain, Europe), or the longer one. That is the one
- * place a name stands over ground it is not strictly the name of, for
- * less than `min` frames at a time.
+ * Where a country lasts that long, it is the name: countries are what a
+ * viewer knows. Where none does but one feature spans them (the Iberian
+ * Peninsula over Portugal and Spain), that is. At sea it is the sea or
+ * gulf, else the ocean.
  *
- * The first name and the last are left as they are however brief: where
- * the flight began and where it is now are the two places that matter
- * most, and the first is the frame a film is judged by. */
-function settle(levels: (string | null)[][], min: number): (string | null)[] {
-  const n = levels[0]?.length ?? 0;
-  const runs = levels.map(runLengths);
-  const out: (string | null)[] = [];
-  for (let f = 0; f < n; f++) {
-    let pick: string | null = null;
-    for (let k = 0; k < levels.length && pick == null; k++) {
-      if (levels[k]![f] != null && runs[k]![f]! >= min) pick = levels[k]![f]!;
+ * What is left is scraps: a stretch where nothing holds for `min` frames,
+ * a coast, a strait, an island, a corner of three countries. A stretch of
+ * scraps long enough to read gets one name, the one most of it shares if
+ * there is such a name, else whichever piece there is most of: Korea, the
+ * Sea of Japan and Japan in a fifth of a second each go by as the Sea of
+ * Japan. A shorter stretch joins a neighbour: one that names part of it,
+ * else one of its own kind, land to land. These are the places a name stands over ground it is not strictly
+ * the name of, for less than `min` frames at a time.
+ *
+ * The first name and the last stand however brief: where the flight began
+ * and where it is now are the two places that matter most, and the first
+ * is the frame a film is judged by. */
+export function overLine(found: Named[], min: number): (OverLine | null)[] {
+  const n = found.length;
+  // The outlines are coarse, and a fjord coast can fall between the land
+  // and the sea with no name at all: such a frame takes its neighbour's.
+  const blank = (p: Named) => !p.feature && !p.country && !p.wide;
+  const named = found.map((p, f) => {
+    if (!blank(p)) return p;
+    for (let d = 1; d < n; d++) {
+      const near = [found[f - d], found[f + d]].find((q) => q && !blank(q));
+      if (near) return near;
     }
-    for (let k = levels.length - 1; k >= 0 && pick == null; k--) pick = levels[k]![f] ?? null;
-    out.push(pick);
+    return p;
+  });
+  const features = named.map((p) => p.feature);
+  const countries = named.map((p) => p.country);
+  const wides = named.map((p) => p.wide);
+  const lasts = { feature: runLengths(features), country: runLengths(countries), wide: runLengths(wides) };
+
+  // What holds on its own.
+  const name: (string | null)[] = named.map((p, f) => {
+    if (p.country) {
+      return lasts.country[f]! >= min ? p.country
+        : p.feature && lasts.feature[f]! >= min ? p.feature : null;
+    }
+    return p.feature && lasts.feature[f]! >= min ? p.feature
+      : p.wide && lasts.wide[f]! >= min ? p.wide : null;
+  });
+
+  // The scraps, a stretch at a time.
+  const piece = named.map((p) => p.country ?? p.feature ?? p.wide);
+  for (let a = 0; a < n;) {
+    let b = a;
+    while (b < n && (name[b] == null) === (name[a] == null)) b++;
+    if (name[a] == null && (b - a >= min || a === 0 || b === n)) {
+      const shared = mostly(features.slice(a, b), 0.7) ?? mostly(countries.slice(a, b), 0.7)
+        ?? mostly(wides.slice(a, b), 0.7);
+      name.fill(shared ?? mostly(piece.slice(a, b), 0), a, b);
+    }
+    a = b;
   }
+  // Whatever is still too brief joins a neighbour: a short stretch of
+  // scraps, or a name cut short by the one beside it.
   for (;;) {
-    const lengths = runLengths(out);
-    // The briefest run between two others.
+    const lengths = runLengths(name);
     let at = -1;
     let least = min;
     for (let a = 0; a < n; a += lengths[a]!) {
@@ -182,74 +221,45 @@ function settle(levels: (string | null)[][], min: number): (string | null)[] {
     }
     if (at < 0) break;
     const end = at + least;
-    const before = { name: out[at - 1]!, length: lengths[at - 1]!, edge: at - lengths[at - 1]! === 0 };
-    const after = { name: out[end]!, length: lengths[end]!, edge: end + lengths[end]! === n };
-    const brief = (r: typeof before) => r.length < min && !r.edge;
-    const broader = (r: typeof before) => r.name != null
-      && levels.some((l) => l.slice(at, end).some((v) => v === r.name));
-    const to = brief(before) !== brief(after) ? (brief(before) ? before : after)
-      : broader(before) !== broader(after) ? (broader(before) ? before : after)
-      : before.length >= after.length ? before : after;
-    out.fill(to.name, at, end);
+    const names = (to: string | null) => to != null && named.slice(at, end)
+      .some((p) => p.feature === to || p.country === to || p.wide === to);
+    const before = name[at - 1]!;
+    const after = name[end]!;
+    const land = (f: number) => named[f]!.country != null;
+    const kin = (f: number) => land(f) === land(at + (least >> 1));
+    const to = names(before) !== names(after) ? (names(before) ? before : after)
+      : kin(at - 1) !== kin(end) ? (kin(at - 1) ? before : after)
+      : lengths[at - 1]! >= lengths[end]! ? before : after;
+    name.fill(to, at, end);
   }
-  return out;
-}
 
-/** The "over" line for every frame of a film, from the names at each. */
-export function overLine(found: Named[], minFrames: number): (OverLine | null)[] {
-  // The outlines are coarse, and a fjord coast can fall between the land
-  // and the sea with no name at all: such a frame takes its neighbour's.
-  const blank = (p: Named) => !p.feature && !p.country && !p.wide;
-  const named = found.map((p, f) => {
-    if (!blank(p)) return p;
-    for (let d = 1; d < found.length; d++) {
-      const near = [found[f - d], found[f + d]].find((q) => q && !blank(q));
-      if (near) return near;
-    }
-    return p;
-  });
-  const name = settle([
-    named.map((p) => p.feature),
-    named.map((p) => p.country),
-    named.map((p) => p.wide),
-  ], minFrames);
-  // At the two ends, where a brief name is let stand, the country says
-  // more than the continent it fell back to.
-  for (const [from, step] of [[0, 1], [named.length - 1, -1]] as const) {
-    const first = name[from];
-    for (let f = from; f >= 0 && f < named.length && name[f] === first; f += step) {
-      if (named[f]!.wide === first && named[f]!.country) name[f] = named[f]!.country;
-    }
-  }
-  // What a land feature is in: its country, or its continent when it
-  // spans several, one answer for as long as the name is up.
-  const within = new Array<string | null>(named.length).fill(null);
-  for (let a = 0; a < named.length;) {
+  // The smaller line, one answer for as long as a name is up, or for as
+  // long as the balloon is over one feature of a country.
+  const detail = new Array<string | null>(n).fill(null);
+  for (let a = 0; a < n;) {
     let b = a;
-    while (b < named.length && name[b] === name[a]) b++;
-    if (named.slice(a, b).some((p) => p.country != null && p.feature === name[a])) {
-      for (const pick of [(p: Named) => p.country, (p: Named) => p.wide]) {
-        const counts = new Map<string, number>();
-        for (let f = a; f < b; f++) {
-          const v = pick(named[f]!);
-          if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
-        }
-        const [top, count] = [...counts].sort((x, y) => y[1] - x[1])[0] ?? [null, 0];
-        if (top && count >= 0.85 * (b - a)) { within.fill(top, a, b); break; }
+    while (b < n && name[b] === name[a]) b++;
+    if (countries.slice(a, b).some((c) => c === name[a])) {
+      // Under a country, what part of it.
+      for (let f = a; f < b;) {
+        let g = f;
+        while (g < b && features[g] === features[f]) g++;
+        if (features[f] && countries[f] === name[a] && g - f >= min) detail.fill(features[f]!, f, g);
+        f = g;
       }
+    } else if (named.slice(a, b).some((p) => p.country != null && p.feature === name[a])) {
+      // Under a feature of the land, what it is in.
+      detail.fill(mostly(countries.slice(a, b), 0.85) ?? mostly(wides.slice(a, b), 0.85), a, b);
     }
     a = b;
   }
+
   const out: (OverLine | null)[] = [];
   let since = 0;
-  for (let f = 0; f < named.length; f++) {
+  for (let f = 0; f < n; f++) {
     // The first name was there before the film began: it does not arrive.
     since = f === 0 ? 1e6 : name[f] === name[f - 1] ? since + 1 : 0;
-    out.push(name[f] == null ? null : {
-      name: name[f]!,
-      within: within[f] !== name[f] ? within[f]! : null,
-      since,
-    });
+    out.push(name[f] == null ? null : { name: name[f]!, detail: detail[f]!, since });
   }
   return out;
 }

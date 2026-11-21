@@ -542,7 +542,8 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
 
   // ---- where it is ----
   /** What the balloon is over, frame by frame through the chase, settled
-   * so that no name is up for less than about two thirds of a second. */
+   * so that no name is up for less than a third of a second: about as
+   * briefly as two words can be shown and still be caught. */
   const OVER_HZ = 30;
   const find = await places;
   const overFrames = (() => {
@@ -552,7 +553,7 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
       const [lon, lat] = lonLat(path.at(flightMs(f / OVER_HZ)).pos);
       named.push(find(lon, lat));
     }
-    return overLine(named, Math.round(0.65 * OVER_HZ));
+    return overLine(named, Math.round(OVER_HZ / 3));
   })();
   const overEl = q<HTMLDivElement>(".reel-over");
 
@@ -595,9 +596,9 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
 
     const at = overFrames[Math.min(overFrames.length - 1, Math.floor(t * OVER_HZ))];
     const nameEl = overEl.querySelector("b")!;
-    const withinEl = overEl.querySelector("span")!;
+    const detailEl = overEl.querySelector("span")!;
     if (at && nameEl.textContent !== at.name) nameEl.textContent = at.name;
-    if (withinEl.textContent !== (at?.within ?? "")) withinEl.textContent = at?.within ?? "";
+    if (detailEl.textContent !== (at?.detail ?? "")) detailEl.textContent = at?.detail ?? "";
     // Each name comes up over a fifth of a second; the line leaves as the
     // camera does, when the planet itself says where the balloon is.
     const arrive = at ? smooth(0, 0.2, at.since / OVER_HZ) : 0;
