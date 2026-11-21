@@ -710,6 +710,8 @@ a.fv-chip { text-decoration: none; }
 .fv-panel.details-open { max-height: min(72%, 520px); }
 .fv-narrow-only { display: none; }
 @container (max-width: 420px) {
+  /* Three stats to a row on a phone, as on a desktop. */
+  .fv-minis { column-gap: 1.1rem; }
   .fv-wide-only { display: none; }
   .fv-narrow-only { display: block; }
 }

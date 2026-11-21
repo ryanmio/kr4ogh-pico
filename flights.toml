@@ -98,14 +98,13 @@ status = "closed"
 close_reason = "Silent since 2026-09-01 11:04 UTC"
 
 [flights.tracker]
-"Hardware" = "Traquito Jetpack (RP2040)"
+"Board" = "Traquito Jetpack (RP2040)"
 "Mass as flown" = "17.73 g"
 "Power" = "solar only — no battery"
 "Transmit power" = "20 mW"
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ superpressure"
 "Free lift" = "5.97 g of helium"
-"Float" = "10,660 m ± 60 m"
 "Launched" = "2026-08-30 12:51 UTC · Summit Point, WV"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
@@ -127,14 +126,14 @@ launch_lat = 39.2645
 launch_lon = -77.9759
 
 [flights.tracker]
-"Hardware" = "Traquito Jetpack (RP2040) · JP-03"
+"Board" = "Traquito Jetpack (RP2040)"
+"Serial" = "JP-03"
 "Mass as flown" = "18 g"
 "Power" = "solar only — no battery"
 "Transmit power" = "20 mW"
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ clear 4D sphere"
 "Free lift" = "5.7 g"
-"Float" = "10,500–10,700 m"
 "Launched" = "2026-09-06 14:14 UTC · Summit Point, WV (180 m)"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
@@ -158,14 +157,14 @@ launch_lat = 39.2645
 launch_lon = -77.9759
 
 [flights.tracker]
-"Hardware" = "Traquito Jetpack (RP2040) · JP-04"
+"Board" = "Traquito Jetpack (RP2040)"
+"Serial" = "JP-04"
 "Mass as flown" = "15.53 g"
 "Power" = "solar only, PowerFilm — no battery"
 "Transmit power" = "20 mW"
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ clear 4D sphere"
 "Free lift" = "5.7 g"
-"Float" = "10,980 m"
 "Launched" = "2026-09-06 14:27 UTC · Summit Point, WV (180 m)"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
@@ -187,7 +186,8 @@ close_reason = "Down — weather; silent since 2026-10-03 16:02 UTC"
 float_m = 10300
 
 [flights.tracker]
-"Hardware" = "Traquito Jetpack (RP2040) · JP-05"
+"Board" = "Traquito Jetpack (RP2040)"
+"Serial" = "JP-05"
 "Mass as flown" = "17.4–18.2 g"
 "Power" = "solar only, Solar System panel"
 "Transmit power" = "20 mW"
@@ -214,7 +214,8 @@ close_reason = "Down — weather; silent since 2026-10-03 16:40 UTC"
 float_m = 10300
 
 [flights.tracker]
-"Hardware" = "Traquito Jetpack (RP2040) · JP-06"
+"Board" = "Traquito Jetpack (RP2040)"
+"Serial" = "JP-06"
 "Mass as flown" = "18.9 g"
 "Power" = "solar only, Solar System panel"
 "Transmit power" = "20 mW"
@@ -242,14 +243,14 @@ launch_lon = -77.9759
 float_m = 10500
 
 [flights.tracker]
-"Hardware" = "Traquito Jetpack (RP2040) · JP-08"
+"Board" = "Traquito Jetpack (RP2040)"
+"Serial" = "JP-08"
 "Mass as flown" = "17.89 g"
 "Power" = "solar only, Solar System panel"
 "Transmit power" = "20 mW"
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ clear 4D sphere"
 "Free lift" = "7.31 g"
-"Float" = "10,400–10,920 m"
 "Launched" = "2026-10-10 13:24 UTC · Summit Point, WV"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097060 MHz (20 m)"
@@ -274,14 +275,14 @@ float_m = 10500
 sensor = "bme280"
 
 [flights.tracker]
-"Hardware" = "[Petrel rev A](https://github.com/ryanmio/petrel) (RP2040) — custom add-on board, stock Traquito firmware"
+"Board" = "[Petrel rev A](https://github.com/ryanmio/petrel) (RP2040) — custom add-on board"
+"Firmware" = "stock Traquito"
 "Mass as flown" = "16.95 g"
 "Power" = "solar only"
 "Transmit power" = "20 mW"
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ superpressure"
 "Free lift" = "6.75 g of helium"
-"Float" = "10,860 m ± 90 m"
 "Launched" = "2026-10-24 14:55 UTC · Summit Point, WV"
 "Mode" = "WSPR + U4B telemetry + BME280 sensor (temp/pressure/humidity)"
 "Frequency" = "14.097060 MHz (20 m)"
@@ -303,14 +304,15 @@ launch_lon = -77.9759
 float_m = 12080
 
 [flights.tracker]
-"Hardware" = "[Petrel rev A](https://github.com/ryanmio/petrel) (RP2040) — custom add-on board, stock Traquito firmware · PT-02"
+"Board" = "[Petrel rev A](https://github.com/ryanmio/petrel) (RP2040) — custom add-on board"
+"Firmware" = "stock Traquito"
+"Serial" = "PT-02"
 "Mass as flown" = "18.76 g"
 "Power" = "solar only — no battery"
 "Transmit power" = "20 mW"
 "Antenna" = "20 m half-wave dipole"
 "Balloon" = "CYMYLAR 60″ superpressure"
 "Free lift" = "6.4 g of 99% helium"
-"Float" = "≈12,080 m"
 "Launched" = "2026-11-11 15:00 UTC · Summit Point, WV"
 "Mode" = "WSPR + U4B telemetry"
 "Frequency" = "14.097180 MHz (20 m)"
