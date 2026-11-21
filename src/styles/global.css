@@ -642,22 +642,32 @@ a.fv-chip { text-decoration: none; }
   background: var(--glass); border: 1px solid var(--glass-border);
   border-radius: 16px; padding: 0.8rem 1rem 0.9rem;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  container-type: inline-size;
 }
+/* Title, then the chart-range toggle when a chart has one, then the close
+   button. The close button is pinned to the first row's last column, so it
+   sits in the top-right corner whatever the panel holds; when the panel is
+   too narrow for the toggle beside the title, the toggle takes a row of its
+   own below rather than pushing the close button down with it. */
 .fv-panel-head {
-  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center; gap: 0.5rem 0.8rem;
   margin-bottom: 0.6rem;
 }
-.fv-panel-title { font-size: 1rem; margin: 0; letter-spacing: 0.01em; }
-.fv-panel-head .range-toggle { margin-left: auto; }
+.fv-panel-title { grid-column: 1; grid-row: 1; font-size: 1rem; margin: 0; letter-spacing: 0.01em; }
+.fv-panel-head .range-toggle { grid-column: 2; grid-row: 1; }
 .fv-panel-head .range-toggle[hidden] { display: none; }
 .fv-panel-close {
+  grid-column: 3; grid-row: 1; align-self: start;
   font: inherit; font-size: 1.15rem; line-height: 1;
   color: var(--text-faint); cursor: pointer;
   background: none; border: 0; padding: 0.15rem 0.35rem;
-  margin-left: 0.2rem;
+  margin-right: -0.35rem;
 }
-.fv-panel-head .range-toggle:not([hidden]) + .fv-panel-close { margin-left: 0.2rem; }
 .fv-panel-close:hover { color: var(--text); }
+@container (max-width: 560px) {
+  .fv-panel-head .range-toggle { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
+}
 
 .fv-minis { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; margin-bottom: 0.6rem; }
 .fv-mini span {
