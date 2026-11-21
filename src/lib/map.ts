@@ -17,6 +17,7 @@ import {
   fitRegion, flightLine, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL,
   unwrapLons,
 } from "./basemap";
+import { foldCredits } from "./credits";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal, isInferred } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints } from "./ghosts";
@@ -169,6 +170,14 @@ export function renderMap(
   });
   smoothWheelZoom(map);
   if (fill) L.control.zoom({ position: "topright" }).addTo(map);
+  if (fill) {
+    const credits = foldCredits(map.attributionControl.getContainer());
+    if (credits) {
+      // A press on the (i) is not a press on the map under it.
+      L.DomEvent.disableClickPropagation(credits.button);
+      map.on("click", credits.close);
+    }
+  }
   // Classed so CSS can treat the basemap, the labels and a weather layer
   // differently; see global.css.
   L.tileLayer(TILE_URL, {

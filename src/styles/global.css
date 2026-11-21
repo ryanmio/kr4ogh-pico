@@ -867,6 +867,23 @@ a.fv-chip { text-decoration: none; }
   background: rgba(11, 16, 32, 0.75) !important;
 }
 
+/* A phone folds the credits behind an (i) in their corner (lib/credits.ts),
+   so they stop running over the color key and the weather switch. */
+.credits-btn { display: none; }
+@media (max-width: 899px) {
+  .credits-fold:not(.credits-open) .leaflet-control-attribution,
+  .credits-fold:not(.credits-open) .maplibregl-ctrl-attrib { display: none; }
+  .credits-btn {
+    display: grid; place-items: center;
+    float: right; clear: both; pointer-events: auto; cursor: pointer;
+    width: 24px; height: 24px; margin: 4px 8px 8px 0; padding: 0;
+    color: var(--text-dim);
+    background: rgba(11, 16, 32, 0.75);
+    border: 1px solid var(--border); border-radius: 50%;
+  }
+  .credits-open .credits-btn { color: var(--accent); border-color: var(--accent); }
+}
+
 /* ----- maplibre furniture, globe view only ----- */
 
 /* Space behind the sphere: darker than the flat map's ocean fill, because

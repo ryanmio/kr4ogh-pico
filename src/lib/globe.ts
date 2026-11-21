@@ -29,6 +29,7 @@ import {
   fitRegion, flightLine, greatCircleLine, LABEL_URL, TILE_ATTRIBUTION, TILE_URL,
   unwrapLons, type Via,
 } from "./basemap";
+import { foldCredits } from "./credits";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal } from "./format";
 import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints } from "./ghosts";
@@ -654,6 +655,8 @@ export function renderGlobe(
   map.on("error", (e) => console.warn("globe:", e.error?.message ?? e.error));
   map.addControl(
     new NavigationControl({ showCompass: false }), "top-right");
+  const credits = foldCredits(el.querySelector<HTMLElement>(".maplibregl-ctrl-attrib"));
+  if (credits) map.on("click", credits.close);
 
   aimCamera(map, meta, fit, !!opts.overlaid);
 
