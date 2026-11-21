@@ -183,6 +183,7 @@ npm run dev        # http://localhost:4321
 npm run build      # static output in dist/
 npm run check      # types
 npm run verify     # the TypeScript decoder against the Python decoder's vector
+npm run waypoint-check  # the rule that routes the track through ghosts
 ```
 
 The tool, from the repository root:

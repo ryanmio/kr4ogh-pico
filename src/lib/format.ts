@@ -147,12 +147,24 @@ export function isInferred(p: TrackPoint): boolean {
   return p.tier === "inferred";
 }
 
-/** Distance is over every fix, inferred ones included. The peak and the
- * fastest are records, and come from confirmed fixes only, unless there
- * are none. */
-export function trackStats(track: TrackPoint[]): TrackStats | null {
+/** Distance is over every fix, inferred ones included, and through `via`:
+ * the ghosts the line is routed through (lib/ghosts.ts, waypoints), oldest
+ * first, so a day heard without telemetry counts the squares the balloon
+ * was heard in and the figure matches the line on the map. The peak and
+ * the fastest are records, and come from confirmed fixes only, unless
+ * there are none. */
+export function trackStats(
+  track: TrackPoint[], via: { utc: string; lat: number; lon: number }[] = [],
+): TrackStats | null {
   if (track.length === 0) return null;
   let distanceKm = 0;
+  // The position before the one in hand, fix or waypoint.
+  let at: { lat: number; lon: number } | null = null;
+  let k = 0;
+  const reach = (p: { lat: number; lon: number }) => {
+    if (at) distanceKm += haversineKm(at.lat, at.lon, p.lat, p.lon);
+    at = p;
+  };
   let maxAltitudeM = -Infinity;
   let maxSpeedKt = -Infinity;
   const onlyInferred = track.every(isInferred);
@@ -165,11 +177,10 @@ export function trackStats(track: TrackPoint[]): TrackStats | null {
       // between the two is not worth one expression.
       maxSpeedKt = Math.max(maxSpeedKt, p.speed_kt_est ?? p.speed_kt);
     }
-    if (i > 0) {
-      const q = track[i - 1]!;
-      distanceKm += haversineKm(q.lat, q.lon, p.lat, p.lon);
-    }
+    while (k < via.length && via[k]!.utc < p.utc) reach(via[k++]!);
+    reach(p);
   }
+  while (k < via.length) reach(via[k++]!);
   return {
     points: track.length,
     firstUtc: track[0]!.utc,

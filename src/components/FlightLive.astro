@@ -174,7 +174,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import { featureFromSearch, urlWithFeature } from "../lib/feature";
   import { renderMapInto } from "../lib/flightview";
   import { unwrapLons } from "../lib/basemap";
-  import { heardBounds, lastKnown, settledGhosts, unwrapNear } from "../lib/ghosts";
+  import {
+    heardBounds, lastKnown, settledGhosts, unwrapNear, waypoints,
+  } from "../lib/ghosts";
   import { addCornerControl } from "../lib/map";
   import type { GlobeHandle } from "../lib/globe";
   import {
@@ -909,7 +911,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function metricMinis(key: MetricKey): string {
-      const s = trackStats(track)!;
+      const s = trackStats(track, waypoints(track, ghosts))!;
       const volts = track.map((p) => p.voltage_v);
       const temps = track.map((p) => p.temperature_c);
       const alts = track.map((p) => p.altitude_m);

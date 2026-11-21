@@ -12,6 +12,7 @@
     "speed-check": "tsx dev/speed-check.ts",
     "records-check": "tsx dev/records-check.ts",
     "spoof-check": "tsx dev/spoof-check.ts",
+    "waypoint-check": "tsx dev/waypoint-check.ts",
     "gen:channels": "node dev/gen-channels.mjs",
     "gen:og": "node dev/gen-og.mjs",
     "live-check": "tsx dev/live-check.ts",

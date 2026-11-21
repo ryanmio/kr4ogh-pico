@@ -22,11 +22,11 @@
  * Pure, and shared: the build runs it over the committed tracks and the
  * browser runs it again over the live one.
  */
-import { flightLineBetween, unwrapLons } from "./basemap";
+import { flightLegs, unwrapLons, type Via } from "./basemap";
 import {
   fmtDuration, haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
-import { heardBounds } from "./ghosts";
+import { heardBounds, unwrapGhostLons, waypoints } from "./ghosts";
 import { groundSpeedKt, isSpeedFloor } from "./speed";
 import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 import * as u from "./units";
@@ -166,21 +166,27 @@ const ATLANTIC_START_LON = -50;
  * A crossing counts once a confirmed fix is past its line: an inferred
  * fix is a lower-confidence pairing, too weak alone to say a flight got
  * somewhere. Where it crossed is then read off the line the map draws
- * between the last fix short of the line and the first past it (flightLine,
- * bent across the night the way the map bends it), so the star sits on the
- * track. When is that point's share of the way along the line, between the
- * two fixes' times: the balloon taken as keeping a steady speed across the
- * gap. Solar trackers sleep at night, so the gap is often a whole night and
- * the estimate is only as good as that line; the fixes it came from travel
- * with it, for the reader to judge.
+ * between the last fix short of the line and the first past it (flightLegs,
+ * bent across the night the way the map bends it, and through `way`, the
+ * ghosts the map routes it through), so the star sits on the track. When
+ * is that point's share of the way along its stretch of the line, between
+ * the times of the two reports that stretch joins: the balloon taken as
+ * keeping a steady speed from one to the other. Solar trackers sleep at
+ * night, so the gap is often a whole night and the estimate is only as
+ * good as that line; the fixes it came from travel with it, for the reader
+ * to judge.
  *
  * Longitude is unwrapped along the track, so a flight's progress round the
  * globe is counted through the date line, and a westward flight counts as
  * much as an eastward one for going round. Unwrapping takes neighbouring
  * fixes as less than half the globe apart, which a balloon never goes in
  * the longest night a tracker sleeps through. */
-function crossings(track: TrackPoint[]): Partial<Record<CrossingKey, Spot>> {
+function crossings(
+  track: TrackPoint[], way: GhostPoint[] = [],
+): Partial<Record<CrossingKey, Spot>> {
   const lons = unwrapLons(track);
+  const wayLons = unwrapGhostLons(track, lons, way);
+  const via = way.map((g, i) => ({ utc: g.utc, lat: g.lat, lon: wayLons[i]! }));
   const start = lons[0]!;
   // How far past each line a point is: past at zero or more.
   const lines: [CrossingKey, (lon: number, lat: number) => number][] = [
@@ -198,7 +204,7 @@ function crossings(track: TrackPoint[]): Partial<Record<CrossingKey, Spot>> {
     // confirmed one ends: any fix past it was past it.
     let j = c;
     while (j > 0 && past(lons[j - 1]!, track[j - 1]!.lat) >= 0) j--;
-    out[key] = j === 0 ? spot(track[0]!) : estimate(track, lons, j, past);
+    out[key] = j === 0 ? spot(track[0]!) : estimate(track, lons, via, j, past);
   }
   return out;
 }
@@ -206,35 +212,42 @@ function crossings(track: TrackPoint[]): Partial<Record<CrossingKey, Spot>> {
 /** Where and when the line was crossed between fix j-1, short of it, and
  * fix j, past it. */
 function estimate(
-  track: TrackPoint[], lons: number[], j: number,
+  track: TrackPoint[], lons: number[], via: Via[], j: number,
   past: (lon: number, lat: number) => number,
 ): Spot {
   const a = track[j - 1]!;
   const b = track[j]!;
-  const pts = flightLineBetween(track, lons, j);
+  // The stretches of the line from one fix to the other: one, or one for
+  // each ghost the line is routed through between them.
+  const legs = flightLegs(track, lons, via)
+    .filter((l) => l.fromUtc >= a.utc && l.toUtc <= b.utc);
   const km = (p: number[], q: number[]) => haversineKm(p[1]!, p[0]!, q[1]!, q[0]!);
-  let total = 0;
-  for (let k = 1; k < pts.length; k++) total += km(pts[k - 1]!, pts[k]!);
-  let along = 0;
-  let at = pts.at(-1)!;
-  for (let k = 1; k < pts.length; k++) {
-    const p = pts[k - 1]!;
-    const q = pts[k]!;
-    const mq = past(q[0]!, q[1]!);
-    if (mq < 0) {
-      along += km(p, q);
-      continue;
+  let at = legs.at(-1)!.pts.at(-1)!;
+  let t = parseUtc(b.utc).getTime();
+  search: for (const leg of legs) {
+    const { pts } = leg;
+    let along = 0;
+    for (let k = 1; k < pts.length; k++) {
+      const p = pts[k - 1]!;
+      const q = pts[k]!;
+      const mq = past(q[0]!, q[1]!);
+      if (mq < 0) {
+        along += km(p, q);
+        continue;
+      }
+      // The samples are a degree apart at most, so straight between them.
+      const mp = past(p[0]!, p[1]!);
+      const f = mp < 0 ? mp / (mp - mq) : 0;
+      at = [p[0]! + f * (q[0]! - p[0]!), p[1]! + f * (q[1]! - p[1]!)];
+      along += km(p, at);
+      let total = 0;
+      for (let n = 1; n < pts.length; n++) total += km(pts[n - 1]!, pts[n]!);
+      const t0 = parseUtc(leg.fromUtc).getTime();
+      const t1 = parseUtc(leg.toUtc).getTime();
+      t = t0 + (total > 0 ? along / total : 1) * (t1 - t0);
+      break search;
     }
-    // The samples are a degree apart at most, so straight between them.
-    const mp = past(p[0]!, p[1]!);
-    const f = mp < 0 ? mp / (mp - mq) : 0;
-    at = [p[0]! + f * (q[0]! - p[0]!), p[1]! + f * (q[1]! - p[1]!)];
-    along += km(p, at);
-    break;
   }
-  const t0 = parseUtc(a.utc).getTime();
-  const t1 = parseUtc(b.utc).getTime();
-  const t = t0 + (total > 0 ? along / total : 1) * (t1 - t0);
   const minute = new Date(Math.round(t / 60_000) * 60_000);
   return {
     utc: minute.toISOString().slice(0, 19).replace("T", " "),
@@ -265,7 +278,10 @@ export function summarize(
   meta: FlightMeta, track: TrackPoint[], ghosts: GhostPoint[] = [],
   spoofed: TrackPoint[] = [],
 ): FlightSummary | null {
-  const s = trackStats(track);
+  // Distance, and where a crossing was made, follow the line the map
+  // draws, through the ghosts it is routed through.
+  const way = waypoints(track, ghosts);
+  const s = trackStats(track, way);
   if (!s) return null;
   // A record read off one fix (highest, fastest, most heard, coldest) is
   // set by a confirmed fix only: an inferred one is a lower-confidence
@@ -283,7 +299,7 @@ export function summarize(
   const heardBy = extreme(confirmed, (p) => p.rx_station_count, "max");
   const cold = extreme(confirmed, (p) => p.temperature_c, "min");
   const start = parseUtc(heard.firstUtc).getTime();
-  const crossed = crossings(track);
+  const crossed = crossings(track, way);
   const values: FlightSummary["values"] = {
     longest: aloftMs,
     distance: s.distanceKm,

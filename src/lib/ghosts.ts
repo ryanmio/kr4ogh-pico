@@ -8,7 +8,8 @@
  * temperature keeps reading the track alone, because a ghost knows none of
  * those.
  */
-import { parseUtc } from "./format";
+import { BEND_GAP_MS } from "./basemap";
+import { haversineKm, parseUtc } from "./format";
 import type { GhostPoint, TrackPoint } from "./types";
 
 /** Drop every ghost whose slot has a full fix. A refresh can complete a
@@ -62,6 +63,75 @@ export function settledGhosts(
 export function trailingGhosts(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoint[] {
   const lastFix = track.at(-1)?.utc ?? "";
   return ghosts.filter((g) => g.utc > lastFix);
+}
+
+/** How far from every fix, before and after, a ghost has to be heard for
+ * the line to be routed through it: the silence the line already treats as
+ * a hole (lib/basemap.ts). Nearly every ghost is nearer a fix than this --
+ * the slot before the first fix of a morning, the ones after the last of
+ * an evening -- and the fix says where the balloon was far better than the
+ * square does. */
+export const WAYPOINT_GAP_MS = BEND_GAP_MS;
+
+/** How far a ghost's square has to be from the position before it on the
+ * line, and from the fix after it. A square is about 110 km by 150 km and
+ * the balloon may be anywhere in it, so its centre is up to 95 km wrong: a
+ * line bent to reach a centre one square away would be drawing that error.
+ * It is also what makes one waypoint of a run of ghosts in one square. */
+export const WAYPOINT_MIN_KM = 150;
+
+/** The ghosts the track is routed through: the ones heard deep enough in a
+ * silence to be the only word on where the balloon was.
+ *
+ * Usually the tracker loses a telemetry message here and there and the
+ * fixes either side say where it was; those ghosts sit beside the line and
+ * change nothing. But a tracker can go a whole day heard only by its
+ * Regular message (PT-02 on 19 Nov 2026, over the Gulf of Alaska: no fix
+ * for two days, two grid squares), and then a line drawn from the last fix
+ * straight to the next one ignores the only positions there are. A ghost
+ * is a waypoint when no fix was decoded within WAYPOINT_GAP_MS of it on
+ * either side and its square is WAYPOINT_MIN_KM clear of the position
+ * before it and of the fix after.
+ *
+ * Both lists oldest first. The answer can change as the flight goes on: a
+ * fix decoded within two hours after a ghost takes it off the line again,
+ * which is the rule working, since that fix is now the better position. */
+export function waypoints(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoint[] {
+  const fixMs = track.map((p) => parseUtc(p.utc).getTime());
+  const out: GhostPoint[] = [];
+  let next = 0;
+  for (const g of ghosts) {
+    const t = parseUtc(g.utc).getTime();
+    while (next < track.length && fixMs[next]! <= t) next++;
+    const before = track[next - 1];
+    const after = track[next];
+    if (before && t - fixMs[next - 1]! < WAYPOINT_GAP_MS) continue;
+    if (after && fixMs[next]! - t < WAYPOINT_GAP_MS) continue;
+    // The position before this one on the line: the fix, or a waypoint
+    // already taken since it.
+    const way = out.at(-1);
+    const prev = way && (!before || way.utc > before.utc) ? way : before;
+    if (prev && haversineKm(prev.lat, prev.lon, g.lat, g.lon) < WAYPOINT_MIN_KM) continue;
+    if (after && haversineKm(g.lat, g.lon, after.lat, after.lon) < WAYPOINT_MIN_KM) continue;
+    out.push(g);
+  }
+  return out;
+}
+
+/** The ghosts the drawn line passes through, oldest first: the waypoints,
+ * and the newest ghost of all when it is newer than the last fix. That one
+ * is where the beacon stands, so the line has to reach it whether or not
+ * it would make a waypoint; once a fix follows it is judged like any
+ * other. Left out when it shares a square with the waypoint before it,
+ * where the line already ends. */
+export function lineGhosts(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoint[] {
+  const way = waypoints(track, ghosts);
+  const newest = trailingGhosts(track, ghosts).at(-1);
+  if (!newest || way.includes(newest)) return way;
+  const last = way.at(-1);
+  const lastFix = track.at(-1)?.utc ?? "";
+  if (last && last.utc > lastFix && last.grid4 === newest.grid4) return way;
+  return [...way, newest];
 }
 
 export interface LastKnown {

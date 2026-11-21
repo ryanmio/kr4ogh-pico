@@ -6,7 +6,7 @@ import {
   bearingDeg, compassPoint, fmtDuration, fmtInt, fmtLocal, fmtLocalDay, fmtRelative, fmtUtc,
   haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
-import { heardBounds } from "./ghosts";
+import { heardBounds, waypoints } from "./ghosts";
 import { METRICS, type MetricKey } from "./metrics";
 import { RECORDS, type FlightSummary, type Holders, type RecordKey } from "./records";
 import {
@@ -148,7 +148,7 @@ export function sidebarHtml(
     return tracker + `<div class="fv-status"><p class="empty-note">Loading the
       track&hellip;</p></div>` + records;
   }
-  const s = trackStats(track);
+  const s = trackStats(track, waypoints(track, ghosts));
   if (!s) {
     const heard = heardBounds(track, ghosts);
     // Heard, but never with its telemetry: the map has a square to show
