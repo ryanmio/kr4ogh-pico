@@ -654,7 +654,27 @@ a.fv-chip { text-decoration: none; }
   align-items: center; gap: 0.5rem 0.8rem;
   margin-bottom: 0.6rem;
 }
-.fv-panel-title { grid-column: 1; grid-row: 1; font-size: 1rem; margin: 0; letter-spacing: 0.01em; }
+.fv-panel-titlebox {
+  grid-column: 1; grid-row: 1; min-width: 0;
+  position: relative; display: flex; align-items: center; gap: 0.35rem;
+}
+.fv-panel-title { font-size: 1rem; margin: 0; letter-spacing: 0.01em; }
+.fv-panel-info {
+  display: grid; place-items: center; flex: none;
+  color: var(--text-faint); cursor: pointer;
+  background: none; border: 0; padding: 0.2rem; border-radius: 50%;
+}
+.fv-panel-info[hidden] { display: none; }
+.fv-panel-info:hover, .fv-panel-info[aria-expanded="true"] { color: var(--accent); }
+.fv-panel-info-pop {
+  position: absolute; z-index: 2; top: calc(100% + 0.4rem); left: 0;
+  width: max-content; max-width: min(24rem, calc(100cqw - 2rem));
+  font-size: 0.82rem; line-height: 1.45; color: var(--text-dim);
+  background: var(--bg-raised); border: 1px solid var(--glass-border);
+  border-radius: 10px; padding: 0.55rem 0.7rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.fv-panel-info-pop[hidden] { display: none; }
 .fv-panel-head .range-toggle { grid-column: 2; grid-row: 1; }
 .fv-panel-head .range-toggle[hidden] { display: none; }
 .fv-panel-close {

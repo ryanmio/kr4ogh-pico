@@ -154,7 +154,20 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
   <div class="fv-panel" id="panel" hidden>
     <header class="fv-panel-head">
-      <h2 class="fv-panel-title" id="panel-title"></h2>
+      {/* A panel's fine print -- what a number means, where it comes from --
+        * sits behind the info button, so it costs the panel no height. */}
+      <div class="fv-panel-titlebox">
+        <h2 class="fv-panel-title" id="panel-title"></h2>
+        <button type="button" class="fv-panel-info" id="panel-info" hidden
+          aria-label="About this data" aria-expanded="false" aria-controls="panel-info-pop">
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M8 7.2v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="8" cy="4.9" r="0.95" fill="currentColor"/>
+          </svg>
+        </button>
+        <div class="fv-panel-info-pop" id="panel-info-pop" role="note" hidden></div>
+      </div>
       <div class="range-toggle" role="group" aria-label="Chart range" hidden>
         <button type="button" data-range="all" aria-pressed="true">Whole flight</button>
         <button type="button" data-range="ascent" aria-pressed="false">Ascent</button>
@@ -291,6 +304,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const cardsSlot = root.querySelector<HTMLElement>(".fv-cards-slot")!;
     const panelEl = root.querySelector<HTMLElement>("#panel")!;
     const panelTitle = root.querySelector<HTMLElement>("#panel-title")!;
+    const panelInfo = root.querySelector<HTMLButtonElement>("#panel-info")!;
+    const panelInfoPop = root.querySelector<HTMLElement>("#panel-info-pop")!;
     const panelBody = root.querySelector<HTMLElement>("#panel-body")!;
     const rangeToggle = panelEl.querySelector<HTMLElement>(".range-toggle")!;
     const updatedEl = root.querySelector<HTMLElement>("#updated")!;
@@ -1056,6 +1071,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       const hasChart = isMetric || panel === "status";
       rangeToggle.hidden = !hasChart || spanMs(track) <= RANGE_MIN_SPAN_MS;
       paintRangeToggle();
+      setPanelInfo("");
       if (isMetric) {
         const key = panel as MetricKey;
         panelTitle.textContent = METRICS[key].label;
@@ -1066,14 +1082,15 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         // Only the speed panel, and only on a flight that has actually
         // outrun its own telemetry: the reader is looking at a number the
         // tracker could not send and deserves to know where it came from.
-        const note = key === "speed" && hasSaturatedSpeed(track)
-          ? `<p class="fv-panel-note">The tracker cannot encode more than
-              ${u.speed(SPEED_CEILING_KT, units).text}. Above that, speed is
-              measured from the distance flown either side of each
-              report.</p>`
-          : "";
+        if (key === "speed" && hasSaturatedSpeed(track)) {
+          setPanelInfo(`Speed gets 42 possible values, about 5 bits of a
+            50-bit radio message, so the tracker cannot send anything faster
+            than ${u.speed(SPEED_CEILING_KT, units).text}. Above that, speed
+            is measured from the distance flown either side of each
+            report.`);
+        }
         panelBody.innerHTML =
-          `<div class="fv-minis">${metricMinis(key)}</div>` + note +
+          `<div class="fv-minis">${metricMinis(key)}</div>` +
           '<div class="fv-panel-chart"></div>';
         const pts = filterRange(track, range);
         if (pts.length >= 2) {
@@ -1149,6 +1166,18 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
     }
 
+    /** The text behind the title's info button; empty hides the button. A
+     * re-render keeps the popover open if it was, with the new text. */
+    function setPanelInfo(text: string) {
+      panelInfoPop.textContent = text.replace(/\s+/g, " ").trim();
+      panelInfo.hidden = !text;
+      if (!text) showPanelInfo(false);
+    }
+    function showPanelInfo(open: boolean) {
+      panelInfoPop.hidden = !open;
+      panelInfo.setAttribute("aria-expanded", String(open));
+    }
+
     function escText(s: string): string {
       return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
@@ -1161,6 +1190,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
      * they have seen it, nor rewrite the URL that just asked for it. */
     function showPanel(kind: PanelKind) {
       const wasRecords = panel === "records";
+      if (kind !== panel) showPanelInfo(false);
       panel = kind;
       renderPanel();
       paintCards();
@@ -1291,6 +1321,20 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       });
     }
     root.querySelector("#panel-close")!.addEventListener("click", closePanel);
+    panelInfo.addEventListener("click", () => {
+      const open = panelInfoPop.hidden;
+      showPanelInfo(open);
+      if (open) act("Panel info", { panel: panel ?? "", flight: meta.flight_id });
+    });
+    // Put away by a tap anywhere else, or Escape.
+    document.addEventListener("click", (e) => {
+      if (!panelInfoPop.hidden && !(e.target as Element).closest?.(".fv-panel-titlebox")) {
+        showPanelInfo(false);
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !panelInfoPop.hidden) showPanelInfo(false);
+    });
 
     for (const b of rangeToggle.querySelectorAll<HTMLButtonElement>("[data-range]")) {
       b.addEventListener("click", () => {
