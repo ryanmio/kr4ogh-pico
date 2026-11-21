@@ -607,7 +607,7 @@ function drawForecast(
     dashArray: "1 7", lineCap: "round",
     attribution: FORECAST_ATTRIBUTION,
   }).bindTooltip(
-    `Forecast from the report of ${fmtLocal(f.from.utc)} ` +
+    `Predicted path from the report of ${fmtLocal(f.from.utc)} ` +
     `to ${fmtLocal(f.points.at(-1)!.utc)}<br>` +
     (f.from.climb_mps !== null
       ? `climbing at ${f.from.climb_mps.toFixed(1)} m/s to float at ` +
@@ -634,7 +634,7 @@ function drawForecast(
       radius: 3.5, color: SPOT_OUTLINE, weight: 1.5,
       fillColor: FORECAST_COLOR, fillOpacity: 1,
     }).bindTooltip(
-      `Forecast +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtLocal(m.point.utc)}`,
+      `Predicted +${m.days} day${m.days === 1 ? "" : "s"} · ${fmtLocal(m.point.utc)}`,
     ));
   }
 }

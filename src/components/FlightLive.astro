@@ -286,7 +286,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let forecastMode: ForecastMode = resolveForecastMode(location.search);
     let forecast: Forecast | null = null;
     // The newest full report is older than any wind the predictor holds, so
-    // there is no line until the balloon is heard again; the button says so.
+    // there is no line until the balloon is heard again. Asked whether the
+    // line is on or off, so the button is paused from the moment the page
+    // knows, not only once someone presses it.
     let forecastQuiet = false;
     // Where the forecast line says the balloon wakes, when it is asleep
     // (lib/wake.ts), as last drawn: a change redraws the map.
@@ -542,26 +544,29 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     /** One button: the predicted path on or off. Built for a live flight
      * only; a closed flight's balloon is nowhere, so there is nothing to
-     * predict and no button. */
+     * predict and no button. Paused, it is shown but not offered, on or
+     * off alike: the reader's choice is kept and applies again once the
+     * balloon is heard. */
     function buildForecastToggle(): HTMLElement {
       const div = document.createElement("div");
       div.className = "weather-toggle forecast-toggle";
       div.setAttribute("role", "group");
-      div.setAttribute("aria-label", "Forecast");
+      div.setAttribute("aria-label", "Predicted path");
       const b = document.createElement("button");
       b.type = "button";
       const fix = track.at(-1);
-      const paused = forecastMode === "on" && forecastQuiet && fix;
-      b.textContent = paused ? "Forecast paused" : "Forecast";
+      const paused = forecastQuiet && fix;
+      b.textContent = paused ? "Predicted path paused" : "Predicted path";
       b.title = paused
-        ? `The forecast returns with the balloon's next full report. The ` +
-          `last one, at ${fmtUtc(fix.utc)}, is older than the wind data ` +
-          "the predictor holds, and a line started from it now would " +
+        ? `The predicted path returns with the balloon's next full report. ` +
+          `The last one, at ${fmtUtc(fix.utc)}, is older than the wind data ` +
+          "the predictor holds, and a path started from it now would " +
           "leave out every hour of drift since."
         : `Where the wind takes it next: a ${HORIZON_HOURS / 24}-day float ` +
           "prediction from the newest report at its altitude, by SondeHub's " +
           "Tawhiri predictor on GFS winds. A guess, drawn as one.";
-      b.setAttribute("aria-pressed", String(forecastMode === "on"));
+      b.disabled = Boolean(paused);
+      b.setAttribute("aria-pressed", String(!paused && forecastMode === "on"));
       b.addEventListener("click", () =>
         void selectForecast(forecastMode === "on" ? "off" : "on"));
       div.appendChild(b);
@@ -580,8 +585,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     /** Bring `forecast` in line with the flight and the choice: predicted
-     * from the newest report (the module caches it), or null. True when
-     * what is held changed and the map has something new to draw.
+     * from the newest report (the module caches it), or null. Asked with
+     * the line off too, so `forecastQuiet` is known before anyone presses
+     * the button; only drawing waits on the choice. True when what is held
+     * changed and the map has something new to draw.
      *
      * Only the newest call is allowed to land. A slow answer can arrive
      * after the reader has switched the line off, or after a later refresh
@@ -591,12 +598,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     let forecastGeneration = 0;
     async function syncForecast(): Promise<boolean> {
       const token = ++forecastGeneration;
-      const origin = !ended() && forecastMode === "on"
-        ? forecastOrigin(track, meta.float_m ?? null) : null;
+      const origin = !ended() ? forecastOrigin(track, meta.float_m ?? null) : null;
       const next = origin ? await fetchForecast(origin) : null;
       if (token !== forecastGeneration) return false;
       const quiet = next === QUIET;
-      const drawn = quiet ? null : next;
+      const drawn = quiet || forecastMode !== "on" ? null : next;
       const changed = drawn !== forecast || quiet !== forecastQuiet;
       forecast = drawn;
       forecastQuiet = quiet;

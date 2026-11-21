@@ -232,8 +232,8 @@ chooses.
 
 ## Where it goes next
 
-A live flight's map carries a dotted line ahead of the balloon: a float
-prediction from the newest report, at the altitude of the newest fix,
+A live flight's map carries a dotted line ahead of the balloon, the
+**predicted path**: a float prediction from the newest report, at the altitude of the newest fix,
 three days out, with a dot each day. It is `src/lib/forecast.ts`, drawn by
 both renderers.
 
@@ -248,8 +248,13 @@ loop, and if SondeHub is down the line is simply absent.
 The prediction starts at the report itself when the predictor accepts it:
 the tracker is silent overnight, and running the wind forward from where it
 was last heard is the best guess of where it is now as well as where it is
-going. A report older than the model window is refused, and the line is
-then run from now at that position.
+going. A report older than the model window is refused, and there is no
+line until the balloon is heard again: the button reads **Predicted path
+paused** and cannot be pressed, whether the line is switched on or off, and
+its title says why. The page asks SondeHub with the line off too, so the
+pause shows from the start rather than only when someone presses the button.
+The site says "predicted path", not "forecast", so it is never confused with
+the weather layers.
 
 What the balloon is doing decides what is asked for, read off the altitude
 trend over the newest half hour of fixes:
@@ -272,7 +277,7 @@ never asks SondeHub twice for the same thing. A new fix is a new origin.
 The refresh waits two seconds for the answer and draws without it past
 that; a late answer redraws when it lands.
 
-The line is on by default. A **Forecast** button beside the weather switch
+The line is on by default. A **Predicted path** button beside the weather switch
 turns it off, remembered per browser; `?f=n` in a link hides it and `?f=y`
 shows it, on the same rule as `?w=`. Closed flights have no line and no
 button: the balloon is nowhere, so there is nothing to predict.

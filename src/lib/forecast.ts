@@ -141,7 +141,7 @@ const MAX_CLIMB_MPS = 3;
 const FLOAT_MARGIN_M = 300;
 
 export const FORECAST_ATTRIBUTION =
-  'Forecast &copy; <a href="https://sondehub.org/">SondeHub</a> Tawhiri (GFS)';
+  'Predicted path &copy; <a href="https://sondehub.org/">SondeHub</a> Tawhiri (GFS)';
 
 /** What the line is predicted from: a full fix, and what the balloon is
  * doing at it. */
