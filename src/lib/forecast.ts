@@ -140,8 +140,10 @@ const MAX_CLIMB_MPS = 3;
  * to where the wind takes it. */
 const FLOAT_MARGIN_M = 300;
 
+// Short enough that a phone's credits fit one line; the line's own tooltip
+// names the predictor (Tawhiri) and the winds (GFS).
 export const FORECAST_ATTRIBUTION =
-  'Predicted path &copy; <a href="https://sondehub.org/">SondeHub</a> Tawhiri (GFS)';
+  'Predicted path &copy; <a href="https://sondehub.org/">SondeHub</a>';
 
 /** What the line is predicted from: a full fix, and what the balloon is
  * doing at it. */
