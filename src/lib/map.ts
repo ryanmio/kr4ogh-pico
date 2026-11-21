@@ -19,10 +19,7 @@ import {
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal, isInferred } from "./format";
-import {
-  lastKnownOf, tailGhosts, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints,
-  type LastKnown,
-} from "./ghosts";
+import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints } from "./ghosts";
 import { METRICS, rampColor, rampGradient, type MetricKey } from "./metrics";
 import { esc, INFERRED_LABEL, RECORD_PIN_SVG, WAKE_SUN_SVG } from "./render";
 import { speedText } from "./speed";
@@ -38,10 +35,6 @@ export interface MapOptions {
    * waypoints), worked out by the caller, which knows the spoofed fixes
    * the rule needs whether or not they are being drawn. */
   waypoints?: GhostPoint[];
-  /** The ghosts newer than the last fix that say the balloon has moved on
-   * from it (lib/ghosts.ts, tailGhosts): the dashed tail, the beacon on
-   * the last. Worked out by the caller, for the same reason. */
-  tail?: GhostPoint[];
   /** Fixes whose GPS was spoofed, drawn where the GPS said they were, off
    * the track. Only passed when the reader asked for them; see
    * lib/spoof.ts. */
@@ -124,9 +117,8 @@ export function renderMap(
   const ghosts = opts.ghosts ?? [];
   const spoofed = opts.spoofed ?? [];
 
-  const geo = geometry(track, ghosts, opts.waypoints ?? [], opts.tail ?? tailGhosts(track, ghosts));
+  const geo = geometry(track, ghosts, opts.waypoints ?? []);
   const { latlngs, line, ghostLatlngs, tailLatlngs, here, hereLatlng, lons: allLons } = geo;
-  const { squareLatlng } = geo;
   // Placed beside the track the way ghosts are, so a spoof past the
   // antimeridian lands next to the line rather than a world away.
   const spoofLons = unwrapGhostLons(track, latlngs.map((ll) => ll.lng), spoofed);
@@ -134,11 +126,7 @@ export function renderMap(
   // Overlaid flights are fitted too, with this flight's balloon still last
   // (fitRegion's contract), so a comparison opens with both in view.
   const overlays = (opts.overlays ?? [])
-    .map((o) => ({
-      ...o,
-      geo: geometry(o.track, o.ghosts, waypoints(o.track, o.ghosts, o.spoofed),
-        tailGhosts(o.track, o.ghosts, o.spoofed)),
-    }))
+    .map((o) => ({ ...o, geo: geometry(o.track, o.ghosts, waypoints(o.track, o.ghosts, o.spoofed)) }))
     .filter((o) => o.geo.hereLatlng);
   // The forecast runs on from the last full fix, which is where it was
   // predicted from (a newer ghost is only a grid square), unwrapped point
@@ -248,16 +236,13 @@ export function renderMap(
       color: "#e2e8f0", weight: 2, opacity: 0.8, dashArray: "4 7",
     }));
   }
-  // The square the balloon was last heard in, when a ghost is the newest
-  // report: a ring alone would claim a precision the report lacks. Drawn
-  // whether or not the beacon is in it: the beacon stays on the last fix
-  // until a ghost says the balloon has moved on (lib/ghosts.ts,
-  // tailGhosts), and the square is where the tracker was heard since.
-  if (squareLatlng) {
+  // The square the balloon is somewhere in, when a ghost is the newest
+  // report: the beacon alone would claim a precision the report lacks.
+  if (here.coarse) {
     worlds.add(map, (at) => L.rectangle(
       L.latLngBounds(
-        at(L.latLng(squareLatlng.lat - 0.5, squareLatlng.lng - 1)),
-        at(L.latLng(squareLatlng.lat + 0.5, squareLatlng.lng + 1)),
+        at(L.latLng(hereLatlng.lat - 0.5, hereLatlng.lng - 1)),
+        at(L.latLng(hereLatlng.lat + 0.5, hereLatlng.lng + 1)),
       ),
       { color: "#e2e8f0", weight: 1, opacity: 0.5, dashArray: "3 5", fill: false,
         interactive: false },
@@ -317,9 +302,7 @@ export function renderMap(
       // the beacon sits on keeps a spot's full size, the way the two ends
       // of the track do.
       ghosts.forEach((g, i) => {
-        // The newest report, when it is a ghost, and the one under the
-        // beacon, when that is one.
-        const isHere = ghostLatlngs[i] === squareLatlng || (here.coarse && g.utc === here.utc);
+        const isHere = here.coarse && i === ghosts.length - 1;
         L.circleMarker(at(ghostLatlngs[i]!), {
           radius: isHere ? SPOT_RADIUS : Math.max(GHOST_MIN_RADIUS, radius - 1.5),
           color: GHOST_STROKE, weight: 1.2, opacity: 0.8,
@@ -454,20 +437,15 @@ interface Geometry {
   ghostLatlngs: L.LatLng[];
   /** The ghosts newer than the last fix, in order. */
   tailLatlngs: L.LatLng[];
-  here: LastKnown | null;
+  here: ReturnType<typeof lastKnown>;
   hereLatlng: L.LatLng | undefined;
-  /** The newest ghost, when it is newer than the last fix: the centre of
-   * the square the tracker was last heard in. */
-  squareLatlng: L.LatLng | undefined;
   /** Every unwrapped longitude, for the copies of the world. */
   lons: number[];
   /** Every position with the balloon last: fitRegion's contract. */
   fitPts: L.LatLng[];
 }
 
-function geometry(
-  track: TrackPoint[], ghosts: GhostPoint[], way: GhostPoint[], tail: GhostPoint[],
-): Geometry {
+function geometry(track: TrackPoint[], ghosts: GhostPoint[], way: GhostPoint[]): Geometry {
   const lons = unwrapLons(track);
   const latlngs = track.map((p, i) => L.latLng(p.lat, lons[i]!));
   const ghostLons = unwrapGhostLons(track, lons, ghosts);
@@ -475,20 +453,19 @@ function geometry(
   const via = way.map((g, i) => ({ utc: g.utc, lat: g.lat, lon: wayLons[i]! }));
   const line = flightLine(track, lons, via).map(([lng, lat]) => L.latLng(lat!, lng!));
   const ghostLatlngs = ghosts.map((g, i) => L.latLng(g.lat, ghostLons[i]!));
-  // The ghosts that say the balloon has moved on from the last fix: the
-  // end of the story, drawn as a dashed tail with the beacon on the last
-  // of them. Without any the beacon is on the last fix.
-  const tailLons = unwrapGhostLons(track, lons, tail);
-  const tailLatlngs = tail.map((g, i) => L.latLng(g.lat, tailLons[i]!));
-  const here = lastKnownOf(track, tail);
+  // Ghosts newer than the last fix: the balloon has been heard along them
+  // since it last sent telemetry, so they are the end of the story, drawn
+  // as a dashed tail with the beacon on the last of them.
+  const tail = trailingGhosts(track, ghosts);
+  const tailLatlngs = ghostLatlngs.slice(ghosts.length - tail.length);
+  const here = lastKnown(track, ghosts);
   const hereLatlng = tail.length ? tailLatlngs.at(-1)! : latlngs.at(-1);
-  const squareLatlng = trailingGhosts(track, ghosts).length ? ghostLatlngs.at(-1) : undefined;
   // A ghost off the side of the track must not sit off screen either.
   const fitPts = hereLatlng
     ? [...latlngs, ...ghostLatlngs].filter((ll) => ll !== hereLatlng).concat(hereLatlng)
     : [];
   return {
-    latlngs, line, ghostLatlngs, tailLatlngs, here, hereLatlng, squareLatlng,
+    latlngs, line, ghostLatlngs, tailLatlngs, here, hereLatlng,
     lons: [...lons, ...ghostLons], fitPts,
   };
 }

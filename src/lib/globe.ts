@@ -31,9 +31,7 @@ import {
 } from "./basemap";
 import { dayMarks, FORECAST_ATTRIBUTION, type Forecast } from "./forecast";
 import { fmtLocal } from "./format";
-import {
-  lastKnownOf, tailGhosts, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints,
-} from "./ghosts";
+import { lastKnown, trailingGhosts, unwrapGhostLons, unwrapNear, waypoints } from "./ghosts";
 import { esc, RECORD_PIN_SVG, WAKE_SUN_SVG } from "./render";
 import { spoofRuns } from "./spoof";
 import {
@@ -125,44 +123,29 @@ interface Positions {
   /** The ghosts the track is routed through (lib/ghosts.ts, waypoints),
    * placed for flightLine. */
   via: Via[];
-  /** The dashed tail (lib/ghosts.ts, tailGhosts) as [lon, lat], the last
-   * fix first: empty with no ghost to draw it to. */
-  tail: number[][];
   /** Where the balloon was last heard, or null with nothing to show. */
   here: { lon: number; lat: number; coarse: boolean } | null;
-  /** The centre of the square the tracker was last heard in, when the
-   * newest report is a ghost, whether or not the beacon is there. */
-  square: { lon: number; lat: number } | null;
   /** All latitudes and longitudes, balloon last: fitRegion's contract. */
   fitLats: number[];
   fitLons: number[];
 }
 
-function positions(
-  track: TrackPoint[], ghosts: GhostPoint[], way: GhostPoint[], tailGhostList: GhostPoint[],
-): Positions {
+function positions(track: TrackPoint[], ghosts: GhostPoint[], way: GhostPoint[]): Positions {
   const lons = unwrapLons(track);
   const ghostLons = unwrapGhostLons(track, lons, ghosts);
   const wayLons = unwrapGhostLons(track, lons, way);
   const via = way.map((g, i) => ({ utc: g.utc, lat: g.lat, lon: wayLons[i]! }));
-  const known = lastKnownOf(track, tailGhostList);
-  const tailLons = unwrapGhostLons(track, lons, tailGhostList);
+  const known = lastKnown(track, ghosts);
+  const tail = trailingGhosts(track, ghosts);
   const here = !known ? null : known.coarse
-    ? { lon: tailLons[tailLons.length - 1]!, lat: known.lat, coarse: true }
+    ? { lon: ghostLons[ghostLons.length - 1]!, lat: known.lat, coarse: true }
     : { lon: lons[lons.length - 1]!, lat: known.lat, coarse: false };
-  const tail = tailGhostList.length ? [
-    ...(track.length ? [[lons[lons.length - 1]!, track[track.length - 1]!.lat]] : []),
-    ...tailGhostList.map((g, i) => [tailLons[i]!, g.lat]),
-  ] : [];
-  // Everything drawn, then where the balloon is, which has to come last.
-  const pts = [
-    ...track.map((p, i) => [p.lat, lons[i]!]), ...ghosts.map((g, i) => [g.lat, ghostLons[i]!]),
-    ...(here ? [[here.lat, here.lon]] : []),
-  ];
-  const square = trailingGhosts(track, ghosts).length
-    ? { lon: ghostLons[ghostLons.length - 1]!, lat: ghosts[ghosts.length - 1]!.lat } : null;
+  // Whichever kind of report is newest goes last; the other list first.
+  const pts = tail.length
+    ? [...track.map((p, i) => [p.lat, lons[i]!]), ...ghosts.map((g, i) => [g.lat, ghostLons[i]!])]
+    : [...ghosts.map((g, i) => [g.lat, ghostLons[i]!]), ...track.map((p, i) => [p.lat, lons[i]!])];
   return {
-    lons, ghostLons, via, tail, here, square,
+    lons, ghostLons, via, here,
     fitLats: pts.map((p) => p[0]!), fitLons: pts.map((p) => p[1]!),
   };
 }
@@ -282,15 +265,20 @@ function addTrack(
         paint: { "line-color": "#e2e8f0", "line-width": 2.6, "line-opacity": 0.9 } },
     );
   }
-  // The dashed tail from the last fix out along the ghosts that say the
-  // balloon has moved on, for the reason the flat map gives: a square is
-  // not a fix.
-  if (pos.tail.length) {
+  // The dashed tail from the last fix out along the ghosts heard since,
+  // for the reason the flat map gives: a square is not a fix.
+  const tail = trailingGhosts(track, ghosts);
+  if (tail.length) {
+    const from = ghosts.length - tail.length;
+    const coords = [
+      ...(track.length ? [[lons[lons.length - 1]!, track[track.length - 1]!.lat]] : []),
+      ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
+    ];
     style.sources.tail = {
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "LineString", coordinates: greatCircleLine(pos.tail) },
+        geometry: { type: "LineString", coordinates: greatCircleLine(coords) },
       },
     };
     style.layers.push(
@@ -303,9 +291,8 @@ function addTrack(
         } },
     );
   }
-  const sq = pos.square;
-  if (sq) {
-    // The square the tracker was last heard in, as on the flat map.
+  if (here.coarse) {
+    // The square the balloon is somewhere in.
     style.sources.square = {
       type: "geojson",
       data: {
@@ -313,9 +300,9 @@ function addTrack(
         geometry: {
           type: "LineString",
           coordinates: [
-            [sq.lon - 1, sq.lat - 0.5], [sq.lon + 1, sq.lat - 0.5],
-            [sq.lon + 1, sq.lat + 0.5], [sq.lon - 1, sq.lat + 0.5],
-            [sq.lon - 1, sq.lat - 0.5],
+            [here.lon - 1, here.lat - 0.5], [here.lon + 1, here.lat - 0.5],
+            [here.lon + 1, here.lat + 0.5], [here.lon - 1, here.lat + 0.5],
+            [here.lon - 1, here.lat - 0.5],
           ],
         },
       },
@@ -361,7 +348,7 @@ function addTrack(
 function addOverlay(
   style: StyleSpecification, o: OverlayTrack, pos: Positions, n: number,
 ): void {
-  const { lons, here } = pos;
+  const { lons, ghostLons, here } = pos;
   if (!here) return;
   if (o.track.length) {
     style.sources[`overlay-${n}`] = {
@@ -381,12 +368,20 @@ function addOverlay(
         paint: { "line-color": OVERLAY_COLOR, "line-width": 2, "line-opacity": 0.75 } },
     );
   }
-  if (pos.tail.length) {
+  const tail = trailingGhosts(o.track, o.ghosts);
+  if (tail.length) {
+    const from = o.ghosts.length - tail.length;
     style.sources[`overlay-${n}-tail`] = {
       type: "geojson",
       data: {
         type: "Feature", properties: {},
-        geometry: { type: "LineString", coordinates: greatCircleLine(pos.tail) },
+        geometry: {
+          type: "LineString",
+          coordinates: greatCircleLine([
+            ...(o.track.length ? [[lons[lons.length - 1]!, o.track[o.track.length - 1]!.lat]] : []),
+            ...tail.map((g, i) => [ghostLons[from + i]!, g.lat]),
+          ]),
+        },
       },
     };
     style.layers.push({
@@ -523,9 +518,6 @@ export interface GlobeOpts {
   ghosts?: GhostPoint[];
   /** The few of those the track is routed through, as on the flat map. */
   waypoints?: GhostPoint[];
-  /** The ones that say the balloon has moved on from the last fix: the
-   * dashed tail and the beacon, as on the flat map. */
-  tail?: GhostPoint[];
   /** Fixes whose GPS was spoofed, drawn where the GPS said, as on the flat
    * map. */
   spoofed?: TrackPoint[];
@@ -626,14 +618,10 @@ export function renderGlobe(
 ): GlobeHandle {
   el.classList.add("fv-map-fill", "fv-globe");
   const ghosts = opts.ghosts ?? [];
-  const pos = positions(track, ghosts, opts.waypoints ?? [], opts.tail ?? tailGhosts(track, ghosts));
+  const pos = positions(track, ghosts, opts.waypoints ?? []);
   const style = baseStyle();
   const overlays = (opts.overlays ?? [])
-    .map((o) => ({
-      o,
-      pos: positions(o.track, o.ghosts, waypoints(o.track, o.ghosts, o.spoofed),
-        tailGhosts(o.track, o.ghosts, o.spoofed)),
-    }))
+    .map((o) => ({ o, pos: positions(o.track, o.ghosts, waypoints(o.track, o.ghosts, o.spoofed)) }))
     .filter((x) => x.pos.here);
   overlays.forEach((x, n) => addOverlay(style, x.o, x.pos, n));
   addTrack(style, meta, track, ghosts, pos);

@@ -243,8 +243,9 @@ A ghost moves the track only on all of these terms:
   (`BEND_GAP_MS`). Of the 85 ghosts on the first eight flights, 74 were
   under an hour from a fix: a telemetry message lost beside fixes that say
   where the balloon was far better than a square does. Those stay rings
-  beside the line and move nothing. A ghost newer than the last fix never
-  moves the track either; see the beacon, below.
+  beside the line and move nothing. A ghost newer than the last fix moves
+  nothing either: it is the tail and the beacon, as ever, until a fix
+  comes back to judge it by.
 - **Its square at least 150 km**, one square, from the position before it
   on the line and from the fix after. A square's centre is up to 95 km
   from the balloon, and a line bent to reach a centre one square away
@@ -269,35 +270,13 @@ The curve: a waypoint is a vertex like a fix. Its heading is the chord
 from the position before it to the one after; a fix still takes its
 heading from the fixes on its own side only.
 
-### The beacon stays on the fix
-
-Since September the beacon had stood on the newest report of either
-kind. On the night of 20 Nov PT-02's last fix was in CN66 at 21:54, four
-ghosts followed in CN66 itself, and the beacon left a position good to a
-few kilometres for the centre of the same square, 54 km away. A fix is
-where the balloon was; a ghost that close to it is the tracker being
-heard and no more.
-
-The beacon now leaves the last fix only for a ghost heard at least two
-hours after it, in a square at least 150 km from it (`tailGhosts`,
-`lastKnown`): the same two measures as a waypoint, with no fix after to
-supply a corridor. None does with a spoofed fix from six hours before the
-last fix onwards, or if two of them cannot both be true. The dashed tail
-runs to those ghosts alone, so it is drawn only when the beacon has
-moved. With no fix decoded at all, the ghosts are everything and the
-beacon is on the newest.
-
-What still follows the newest ghost, because it is about being heard and
-not about where: "Heard ... ago", time aloft, "position only" in the
-Signal panel, and the outlined square, which is drawn round the newest
-ghost whenever it is the newest report, with the beacon in it or not.
-The line under the cards names the position the beacon is on.
-
 **Distance** covered, and the distance record, go through the waypoints,
 as Traquito's does; because a waypoint needs a fix after it, the figure
 never runs ahead of the last fix. Where and when a crossing was made
 (`src/lib/records.ts`) is read off the same line. Altitude, speed, the
-charts, the forecast and every record read off one fix are untouched. Nothing stored changed: the rule is applied where the line is
+charts, the forecast and every record read off one fix are untouched. So
+is everything about the newest report: the beacon, the dashed tail, the
+outlined square and the line under the cards are as they were. Nothing stored changed: the rule is applied where the line is
 drawn.
 
 `npm run waypoint-check` tests the rule at its edges; that on every
