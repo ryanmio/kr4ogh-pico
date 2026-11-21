@@ -452,6 +452,17 @@ Everything in it is the flight's data, in `src/lib/reel/`:
   towns lit, dawn. The tracker is solar, so its silences are the dark
   stretches, and the line is dashed across them.
 - **Each thin post** under the line is a report that was heard.
+- **The name beside the balloon** is what it is over (`places.ts`): the sea
+  or ocean, or the country, and on land any great feature it is crossing,
+  the Sahara or the Kazakh Steppe, with its country under it. A reel
+  covers ground fast, so the line is settled over the whole film first:
+  at each instant it shows the most particular name that stays true for
+  two thirds of a second, falling back from a mountain range to its
+  country to the continent, so over Europe it mostly says Europe. The
+  closing card says where the flight is now, or was last heard, exactly.
+  The names and outlines are `src/data/places.json`, cut from Natural
+  Earth (public domain) by `npm run gen:places` and committed, so nothing
+  is fetched for them.
 - **Height is drawn far taller than life**, by however much makes the climb
   and the float readable at the speed the film plays; to scale, 12 km over
   a path of thousands is flat on the ground. The drop line's ticks are

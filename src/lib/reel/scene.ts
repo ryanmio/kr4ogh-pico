@@ -7,7 +7,8 @@
  * on screen is the flight's own data: the line is the one the map draws
  * (flightpath.ts), the light is where the sun was (sky.ts), and each thin
  * post under the line is a report that was heard, so a night the tracker
- * slept through is a stretch with none.
+ * slept through is a stretch with none. Beside the balloon is the name of
+ * what it is over (places.ts).
  *
  * Height is drawn far taller than it is. A balloon at 12 km over a path
  * thousands of kilometres long is, to scale, on the ground; the reel draws
@@ -32,6 +33,8 @@ import {
   add, buildPath, cross, dot, EARTH_KM, len, lonLat, norm, rotate, scale, slerp, sub,
   sunVector, type FlightPath, type Vec3,
 } from "./flightpath";
+import placesUrl from "../../data/places.json?url";
+import { overLine, placeFinder, type PlaceData } from "./places";
 import { skyLayer, toGlobe, type Camera } from "./sky";
 import { CREDIT, LIGHTS_URL, MARBLE_URL } from "./sources";
 
@@ -211,9 +214,21 @@ const CSS = `
 .reel-end span { display: block; margin-top: 0.9em; font-family: var(--mono); font-size: 2.7em;
   letter-spacing: 0.14em; color: #cfd9f2; text-transform: uppercase;
   text-shadow: 0 0.04em 0.6em rgba(3,6,13,0.9); }
+.reel-end span:empty, .reel-end em:empty { display: none; }
+.reel-end span + span { margin-top: 0.55em; color: var(--accent); }
 .reel-end em { display: block; margin-top: 1.1em; font-style: normal; font-family: var(--mono);
   font-size: 2.5em; letter-spacing: 0.08em; color: var(--accent);
   text-shadow: 0 0.04em 0.6em rgba(3,6,13,0.9); }
+.reel-over { position: absolute; top: 67.2%; width: 37em; padding: 0.3em 1.5em;
+  text-shadow: 0 0 0.5em rgba(3,6,13,0.95), 0 0.05em 0.25em rgba(3,6,13,0.9); }
+.reel-over.left { right: 55.5%; text-align: right; border-right: 0.22em solid var(--accent); }
+.reel-over.right { left: 55.5%; text-align: left; border-left: 0.22em solid var(--accent); }
+.reel-over label { display: block; font-family: var(--mono); font-size: 1.9em; letter-spacing: 0.2em;
+  color: var(--accent); }
+.reel-over b { display: block; margin-top: 0.08em; font-size: 4.3em; font-weight: 650;
+  line-height: 1.08; letter-spacing: -0.01em; text-wrap: balance; }
+.reel-over span { display: block; margin-top: 0.3em; font-family: var(--mono); font-size: 2.1em;
+  letter-spacing: 0.12em; color: #cfd9f2; text-transform: uppercase; }
 .reel-credit { position: absolute; left: 0; right: 0; bottom: 1.6em; text-align: center;
   font-size: 1.45em; color: rgba(207,217,242,0.5); letter-spacing: 0.04em; }
 `;
@@ -263,7 +278,8 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
           <div class="reel-stat" data-k="distance"><label>DISTANCE</label><b></b></div>
         </div>
       </div>
-      <div class="reel-end"><b></b><span></span><em></em></div>
+      <div class="reel-over"><label>OVER</label><b></b><span></span></div>
+      <div class="reel-end"><b></b><span></span><span></span><em></em></div>
       <div class="reel-credit"></div>
     </div>`;
   const q = <T extends HTMLElement>(sel: string) => container.querySelector<T>(sel)!;
@@ -346,6 +362,7 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
     setTimeout(() => resolve(null), 90000);
     img.src = lightsUrl;
   });
+  const places = fetch(placesUrl).then((r) => r.json() as Promise<PlaceData>).then(placeFinder);
   await new Promise<void>((resolve) => { map.once("load", () => resolve()); });
 
   const nightPicture = await lights;
@@ -410,6 +427,9 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
     }
     return lean < 0 ? -1 : 1;
   })();
+
+  // The name of what it is over goes on the side the trail is not.
+  container.querySelector(".reel-over")!.classList.add(side > 0 ? "right" : "left");
 
   function chasePose(t: number): Pose {
     const ms = flightMs(t);
@@ -520,6 +540,22 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
   const endEl = q<HTMLDivElement>(".reel-end");
   const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 
+  // ---- where it is ----
+  /** What the balloon is over, frame by frame through the chase, settled
+   * so that no name is up for less than about two thirds of a second. */
+  const OVER_HZ = 30;
+  const find = await places;
+  const overFrames = (() => {
+    const frames = Math.round(chaseS * OVER_HZ) + 1;
+    const named = [];
+    for (let f = 0; f < frames; f++) {
+      const [lon, lat] = lonLat(path.at(flightMs(f / OVER_HZ)).pos);
+      named.push(find(lon, lat));
+    }
+    return overLine(named, Math.round(0.65 * OVER_HZ));
+  })();
+  const overEl = q<HTMLDivElement>(".reel-over");
+
   /** A number on screen is read at a held instant, a few times a second,
    * so it steps at a pace an eye can follow instead of blurring. */
   const held = (t: number, hz: number) => path.at(flightMs(Math.floor(t * hz) / hz));
@@ -557,6 +593,17 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
     if (span.textContent !== label) span.textContent = label;
     statusEl.classList.toggle("asleep", over || !a.heard);
 
+    const at = overFrames[Math.min(overFrames.length - 1, Math.floor(t * OVER_HZ))];
+    const nameEl = overEl.querySelector("b")!;
+    const withinEl = overEl.querySelector("span")!;
+    if (at && nameEl.textContent !== at.name) nameEl.textContent = at.name;
+    if (withinEl.textContent !== (at?.within ?? "")) withinEl.textContent = at?.within ?? "";
+    // Each name comes up over a fifth of a second; the line leaves as the
+    // camera does, when the planet itself says where the balloon is.
+    const arrive = at ? smooth(0, 0.2, at.since / OVER_HZ) : 0;
+    overEl.style.opacity = String(arrive * (1 - smooth(chaseS - COAST_S, chaseS, t)));
+    overEl.style.transform = `translateY(${(1 - arrive) * 0.8}em)`;
+
     const show = smooth(chaseS + 0.5, chaseS + 1.5, t);
     endEl.style.opacity = String(show);
     endEl.style.transform = `translateY(${(1 - show) * 1.5}em)`;
@@ -565,8 +612,16 @@ export async function createReel(opts: ReelOptions): Promise<Reel> {
     const live = meta.status === "live" && !opts.hours;
     const long = days >= 2 ? `${days.toFixed(days < 10 ? 1 : 0)} days` : `${Math.round(spanMs / 3600000)} hours`;
     endEl.querySelector("b")!.innerHTML = `${fmt(total.value)}<small>${total.unit === "mi" ? "miles" : "km"}</small>`;
-    endEl.querySelector("span")!.textContent = (opts.hours ? `in its first ${long}` : `in ${long}`)
+    const lines = endEl.querySelectorAll("span");
+    lines[0]!.textContent = (opts.hours ? `in its first ${long}` : `in ${long}`)
       + (live ? " · still flying" : "");
+    // And where that leaves it, for the whole of a flight: exactly, since
+    // this line is held and has no need of settling.
+    const [lon, lat] = lonLat(path.pos(path.count - 1));
+    const end = find(lon, lat);
+    const where = [end.feature, end.country].filter(Boolean).join(", ") || end.wide;
+    lines[1]!.textContent = opts.hours || !where ? ""
+      : `${live ? "now over" : "last heard over"} ${where}`;
     endEl.querySelector("em")!.textContent = opts.cta ?? "";
   }
 
