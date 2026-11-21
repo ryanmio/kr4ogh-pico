@@ -205,7 +205,19 @@ main { padding: 2.2rem 0 3.5rem; }
   border: 0;
   cursor: pointer;
 }
-.weather-toggle button:hover:not(:disabled) { color: var(--text); }
+/* Hover brightens a choice that is not taken, and only where there is a
+   real pointer: a phone keeps :hover on whatever was last tapped, and a
+   pressed button must stay the accent, never turn white over it. */
+@media (hover: hover) {
+  .weather-toggle button:hover:not(:disabled):not([aria-pressed="true"]) {
+    color: var(--text);
+  }
+  /* A one-button switch has no neighbour to compare with, so its off state
+     must not light up under the pointer that just switched it off. */
+  .forecast-toggle button:hover:not(:disabled):not([aria-pressed="true"]) {
+    color: var(--text-dim);
+  }
+}
 .weather-toggle button[aria-pressed="true"] {
   background: var(--bg-raised);
   color: var(--accent);
@@ -213,6 +225,9 @@ main { padding: 2.2rem 0 3.5rem; }
 /* Nowhere on earth for it to draw: shown, so the reason is visible in the
    title, but not offered. */
 .weather-toggle button:disabled { opacity: 0.4; cursor: default; }
+/* Paused is the predicted path's whole message while it lasts, so it is
+   dimmed as unavailable but kept readable. */
+.forecast-toggle button:disabled { opacity: 0.75; }
 
 /* The newest position sits on top of its own altitude-coloured dot, so it
    must not paint over it: a hollow ring, not a filled disc. Neutral white,
