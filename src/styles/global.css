@@ -689,7 +689,30 @@ a.fv-chip { text-decoration: none; }
   .fv-panel-head .range-toggle { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
 }
 
-.fv-minis { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; margin-bottom: 0.6rem; }
+.fv-minis {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.4rem 1.6rem;
+  margin-bottom: 0.6rem;
+}
+/* "More details": a second row of stats under the first, for a panel with
+   more to say than the three numbers every panel leads with. */
+.fv-more {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font: inherit; font-size: 0.78rem; color: var(--text-dim); cursor: pointer;
+  background: none; border: 1px solid var(--border); border-radius: 99px;
+  padding: 0.22rem 0.6rem;
+  margin-left: auto; align-self: center;
+}
+.fv-more:hover, .fv-more[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+.fv-more svg { transition: transform 120ms ease; }
+.fv-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+.fv-more-body[hidden] { display: none; }
+/* Open, the desktop panel grows upward from its foot to hold the row. */
+.fv-panel.details-open { max-height: min(72%, 520px); }
+.fv-narrow-only { display: none; }
+@container (max-width: 420px) {
+  .fv-wide-only { display: none; }
+  .fv-narrow-only { display: block; }
+}
 .fv-mini span {
   display: block;
   font-size: 0.64rem; font-weight: 600;

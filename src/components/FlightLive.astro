@@ -886,6 +886,24 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     function mini(label: string, value: string): string {
       return `<div class="fv-mini"><span>${label}</span><b>${value}</b></div>`;
     }
+    /** The end of a stats row: a button that opens a second row of stats
+     * under it. Closed, a panel with more to say is no taller than one with
+     * less; open, the panel grows to hold it. Its state outlives a
+     * re-render (the data refreshes under it), not a change of panel. */
+    let detailsOpen = false;
+    function moreButton(): string {
+      return `<button type="button" class="fv-more" data-more
+          aria-expanded="${detailsOpen}" aria-controls="panel-more">${
+          detailsOpen ? "Fewer details" : "More details"}
+          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+    }
+    function showDetails(open: boolean) {
+      detailsOpen = open;
+      panelEl.classList.toggle("details-open", open);
+      renderPanel();
+    }
 
     /** The chart drawn in a metric's panel, in the reader's units. Journey
      * charts distance covered, which is the story of the flight in one
@@ -1011,49 +1029,66 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           parseUtc(track[i - 1]!.utc).getTime());
       }
       const sinceMs = Date.now() - parseUtc(heard.lastUtc).getTime();
+      // The row holds three short numbers, like every metric panel, so the
+      // Signal panel is the same size as the rest; the long forms and the
+      // rarer counts sit behind "More details".
+      const lastSpoofed = spoofedSince(track, ghosts, spoofed);
       // The card only says "Flight ended"; this is where the date goes. A
       // newest report that was a ghost is named too, because every number
       // on the cards is from an older report than the one heard last.
-      const lastSpoofed = spoofedSince(track, ghosts, spoofed);
-      const lastHeard = (ended()
-        ? `${heard.lastUtc.slice(5, 16)} UTC`
-        : `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`) +
+      const heardAt = `${ended()
+        ? heard.lastUtc.slice(0, 16).replace("T", " ")
+        : heard.lastUtc.slice(11, 16)} UTC` +
         (lastSpoofed
           ? (lastSpoofed.spoof_note != null ? " · probable GPS spoofing" : " · GPS spoofed")
           : lastKnown(track, ghosts)?.coarse ? " · position only" : "");
-      // A ghost is the tracker heard with only half its report: the
-      // Regular message with the grid square, never the telemetry. The
-      // map draws them hollow; this is where the count is explained.
-      // A sleeping balloon's expected return, off the forecast line.
+      const lastHeard = ended()
+        ? parseUtc(heard.lastUtc).toLocaleDateString("en-US",
+          { month: "short", day: "numeric", timeZone: "UTC" })
+        : `${fmtDuration(sinceMs)} ago`;
+      // A sleeping balloon's expected return, off the forecast line. It
+      // takes the longest silence's place in the row while there is one.
       const wake = currentWake();
-      const back = wake
-        ? mini("Expected wake", `~${wake.point.utc.slice(11, 16)} UTC · in ${
+      const third = wake
+        ? mini("Expected wake", `in ${
           fmtDuration(parseUtc(wake.point.utc).getTime() - Date.now())}`)
-        : "";
-      const partial = ghosts.length
-        ? mini("Without telemetry", `${fmtInt(ghosts.length)} heard, grid square only`)
-        : "";
-      // A fix whose GPS was spoofed: heard, telemetry and all, but its
-      // position was a spoofer's, so it is on neither the map nor the cards.
-      // `?spoofing=show` puts them on the map anyway; this is where the
-      // reader finds that out.
-      const lied = spoofed.length
-        ? mini(spoofed.every((p) => p.spoof_note != null) ? "Probable GPS spoofing" : "GPS spoofed",
+        : mini("Longest silence", fmtDuration(longest));
+      const row = [
+        mini("Last heard", lastHeard),
+        mini("Reports", fmtInt(s.points)),
+        // A phone's row has room for two numbers and the button, so the
+        // third moves down into the details there.
+        third.replace('class="fv-mini"', 'class="fv-mini fv-wide-only"'),
+      ];
+      const more = [
+        third.replace('class="fv-mini"', 'class="fv-mini fv-narrow-only"'),
+        mini("Last report", heardAt),
+        wake ? mini("Wake time", `~${wake.point.utc.slice(11, 16)} UTC`) : "",
+        // A ghost is the tracker heard with only half its report: the
+        // Regular message with the grid square, never the telemetry. The
+        // map draws them hollow; this is where the count is explained.
+        ghosts.length
+          ? mini("Without telemetry", `${fmtInt(ghosts.length)} heard, grid square only`)
+          : "",
+        // A fix whose GPS was spoofed: heard, telemetry and all, but its
+        // position was a spoofer's, so it is on neither the map nor the
+        // cards. `?spoofing=show` puts them on the map anyway; this is
+        // where the reader finds that out.
+        spoofed.length
+          ? mini(spoofed.every((p) => p.spoof_note != null)
+            ? "Probable GPS spoofing" : "GPS spoofed",
           `${fmtInt(spoofed.length)} position${
-          spoofed.length === 1 ? "" : "s"} faked · <button type="button"
-          class="linklike" data-spoof-toggle>${
-            spoofMode === "show" ? "hide" : "show on map"}</button>`)
-        : "";
+            spoofed.length === 1 ? "" : "s"} faked · <button type="button"
+            class="linklike" data-spoof-toggle>${
+              spoofMode === "show" ? "hide" : "show on map"}</button>`)
+          : "",
+        mini("Cadence", "every 10 min in sunlight"),
+        wake ? mini("Longest silence", `${fmtDuration(longest)} (overnight)`) : "",
+      ];
       panelBody.innerHTML =
-        `<div class="fv-minis">${[
-          mini("Last heard", lastHeard),
-          back,
-          mini("Reports", `${fmtInt(s.points)} since launch`),
-          partial,
-          lied,
-          mini("Cadence", "every 10 min in sunlight"),
-          mini("Longest silence", `${fmtDuration(longest)} (overnight)`),
-        ].join("")}</div>` +
+        `<div class="fv-minis">${row.join("")}${moreButton()}</div>` +
+        `<div class="fv-minis fv-more-body" id="panel-more" ${
+          detailsOpen ? "" : "hidden"}>${more.join("")}</div>` +
         '<div class="fv-panel-chart"></div>';
       if (gaps.length >= 2) {
         const wide = window.matchMedia("(min-width: 900px)").matches;
@@ -1190,7 +1225,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
      * they have seen it, nor rewrite the URL that just asked for it. */
     function showPanel(kind: PanelKind) {
       const wasRecords = panel === "records";
-      if (kind !== panel) showPanelInfo(false);
+      if (kind !== panel) {
+        showPanelInfo(false);
+        detailsOpen = false;
+        panelEl.classList.remove("details-open");
+      }
       panel = kind;
       renderPanel();
       paintCards();
@@ -1269,6 +1308,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     // The Signal panel re-renders, so listen on its body.
     panelBody.addEventListener("click", (ev) => {
+      if ((ev.target as HTMLElement).closest("[data-more]")) {
+        showDetails(!detailsOpen);
+        if (detailsOpen) act("Panel details", { panel: panel ?? "", flight: meta.flight_id });
+        return;
+      }
       if (!(ev.target as HTMLElement).closest("[data-spoof-toggle]")) return;
       spoofMode = spoofMode === "show" ? "hide" : "show";
       act("Spoofing", { mode: spoofMode, flight: meta.flight_id });
