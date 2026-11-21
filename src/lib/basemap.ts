@@ -88,11 +88,19 @@ export interface TimedPoint { lat: number; utc: string }
 /** A ghost the line is routed through (lib/ghosts.ts, waypoints): when it
  * was heard and the centre of its grid square, the longitude unwrapped
  * onto the track's world the way the fixes' are. */
-export interface Via extends TimedPoint { lon: number }
+export interface Via extends TimedPoint {
+  lon: number;
+  /** When the tracker was last heard in this square (lib/ghosts.ts,
+   * heardUntil), if later than `utc`: the stretch leaving it is timed
+   * from then. */
+  untilUtc?: string;
+}
 
 /** One stretch of the line, from one position to the next in time. */
 export interface Leg {
-  /** When each end was heard, as the reports' own `utc`. */
+  /** When the balloon is taken to have left one end and reached the other,
+   * in the reports' own `utc` format: each report's time, except leaving
+   * a ghost the tracker went on being heard at (Via.untilUtc). */
   fromUtc: string;
   toUtc: string;
   /** [lon, lat] along the stretch, both ends included. */
@@ -101,24 +109,34 @@ export interface Leg {
 
 /** A position the line goes through: a fix, or a ghost standing in for
  * one inside a silence. */
-interface Anchor { v: Vec3; lon: number; lat: number; utc: string; ms: number; coarse: boolean }
+interface Anchor {
+  v: Vec3; lon: number; lat: number; utc: string; leftUtc: string; ms: number; coarse: boolean;
+}
+
+/** A report's time in milliseconds. Read as UTC, which it is: left to
+ * Date.parse a time with no zone is local, and a silence across a clock
+ * change would be an hour longer or shorter depending on who is looking. */
+function utcMs(utc: string): number {
+  return Date.parse(utc.replace(" ", "T") + "Z");
+}
 
 /** The fixes and the ghosts the line is routed through, as one list in
  * time order. A ghost shares no slot with a fix (lib/ghosts.ts,
  * pruneGhosts), so the order is never in doubt. */
 function anchorsOf(track: TimedPoint[], lons: number[], via: Via[]): Anchor[] {
-  const mk = (p: TimedPoint, lon: number, coarse: boolean): Anchor => ({
-    v: unitVector(lon, p.lat), lon, lat: p.lat, utc: p.utc, ms: Date.parse(p.utc), coarse,
+  const mk = (p: TimedPoint, lon: number, leftUtc: string, coarse: boolean): Anchor => ({
+    v: unitVector(lon, p.lat), lon, lat: p.lat, utc: p.utc, leftUtc, ms: utcMs(p.utc), coarse,
   });
-  const fixes = track.map((p, i) => mk(p, lons[i]!, false));
+  const fixes = track.map((p, i) => mk(p, lons[i]!, p.utc, false));
   if (!via.length) return fixes;
+  const ghost = (w: Via) => mk(w, w.lon, w.untilUtc ?? w.utc, true);
   const out: Anchor[] = [];
   let k = 0;
   for (const f of fixes) {
-    while (k < via.length && via[k]!.utc < f.utc) out.push(mk(via[k]!, via[k++]!.lon, true));
+    while (k < via.length && via[k]!.utc < f.utc) out.push(ghost(via[k++]!));
     out.push(f);
   }
-  while (k < via.length) out.push(mk(via[k]!, via[k++]!.lon, true));
+  while (k < via.length) out.push(ghost(via[k++]!));
   return out;
 }
 
@@ -180,7 +198,7 @@ export function flightLegs(track: TimedPoint[], lons: number[], via: Via[] = [])
     const pts = [[a.lon, a.lat]];
     between(pts, anchors, i);
     pts.push([b.lon, b.lat]);
-    legs.push({ fromUtc: a.utc, toUtc: b.utc, pts });
+    legs.push({ fromUtc: a.leftUtc, toUtc: b.utc, pts });
   }
   return legs;
 }

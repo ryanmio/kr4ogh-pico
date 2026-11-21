@@ -86,7 +86,7 @@ const records = summaries.length > 1
 // Build-time render is metric; the script re-renders in the reader's
 // remembered choice on load, which cannot be known here.
 const sidebar = sidebarHtml(flight, track, "metric", null, { ghosts, spoofed, records });
-const last = lastKnown(track, ghosts);
+const last = lastKnown(track, ghosts, spoofed);
 const spoofing = spoofHeadline(track, ghosts, spoofed);
 // What the About panel needs to say about this instance: whose site, where
 // its source lives, and where the project it is an instance of lives.
@@ -175,7 +175,8 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   import { renderMapInto } from "../lib/flightview";
   import { unwrapLons } from "../lib/basemap";
   import {
-    heardBounds, lastKnown, settledGhosts, unwrapNear, waypoints,
+    heardBounds, lastKnown, settledGhosts, tailGhosts, trailingGhosts, unwrapNear,
+    waypoints,
   } from "../lib/ghosts";
   import { addCornerControl } from "../lib/map";
   import type { GlobeHandle } from "../lib/globe";
@@ -646,6 +647,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
             ghosts, waypoints: waypoints(track, ghosts, spoofed),
+            tail: tailGhosts(track, ghosts, spoofed),
             spoofed: drawnSpoofed(), overlays: mapOverlays(),
             marks: recordMarks(), forecast: drawnForecast(), onOverlayClick: openFlight,
             overlaid: wide && mapSlot.clientWidth >= 900,
@@ -667,6 +669,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
       }
       const held = renderMapInto(mapSlot, meta, track, {
         units, metric, ghosts, waypoints: waypoints(track, ghosts, spoofed),
+        tail: tailGhosts(track, ghosts, spoofed),
         spoofed: drawnSpoofed(), overlays: mapOverlays(),
         marks: recordMarks(),
         forecast: drawnForecast(), sizing: "fill", onOverlayClick: openFlight,
@@ -841,7 +844,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
 
     /** The line under the cards: the newest report, and what kind. */
     function newestText(prefix: string): string {
-      const known = lastKnown(track, ghosts);
+      const known = lastKnown(track, ghosts, spoofed);
       if (!known) return "No positions yet";
       // Heard since, but not where: the position above is the last true
       // one, and the reader should know why it is not newer.
@@ -1005,7 +1008,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         : `${heard.lastUtc.slice(11, 16)} UTC · ${fmtDuration(sinceMs)} ago`) +
         (lastSpoofed
           ? (lastSpoofed.spoof_note != null ? " · probable GPS spoofing" : " · GPS spoofed")
-          : lastKnown(track, ghosts)?.coarse ? " · position only" : "");
+          : trailingGhosts(track, ghosts).length ? " · position only" : "");
       // A ghost is the tracker heard with only half its report: the
       // Regular message with the grid square, never the telemetry. The
       // map draws them hollow; this is where the count is explained.
@@ -1361,7 +1364,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         } else if (overlayAdded > 0) {
           drawMapAgain();
         }
-        updatedEl.textContent = lastKnown(track, ghosts)
+        updatedEl.textContent = lastKnown(track, ghosts, spoofed)
           ? newestText("Flight ended · last")
           : "No positions recorded";
         return;
@@ -1375,9 +1378,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         // The bundled track is all there is; show it rather than a spinner
         // that will never resolve.
         void drawFirst();
-        const known = lastKnown(track, ghosts);
-        updatedEl.textContent = known
-          ? `Can't reach wspr.live — showing up to ${known.utc} UTC`
+        // How current the page is: the newest report of any kind, which
+        // may be newer than the position the beacon stands on.
+        const heard = heardBounds(track, ghosts, spoofed);
+        updatedEl.textContent = heard
+          ? `Can't reach wspr.live — showing up to ${heard.lastUtc} UTC`
           : "Can't reach wspr.live";
         return;
       }
@@ -1404,7 +1409,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         renderSidebar();
         renderPanel();
       }
-      updatedEl.textContent = lastKnown(track, ghosts)
+      updatedEl.textContent = lastKnown(track, ghosts, spoofed)
         ? newestText("Newest")
         : "No positions yet";
     }

@@ -14,9 +14,10 @@
  *    the invariants: outside a routed silence the line is point for point
  *    the line through the fixes alone, and no ghost newer than the last
  *    fix is ever a waypoint.
- * 3. PT-02's two days over the Gulf of Alaska, replayed: nothing moves
- *    while the ghosts are the newest reports, and the track runs through
- *    both squares once the fixes come back.
+ * 3. PT-02's two days over the Gulf of Alaska, replayed: the track does
+ *    not move while the ghosts are the newest reports, it runs through
+ *    both squares once the fixes come back, and the beacon leaves a fix
+ *    only for a ghost that says the balloon has moved on.
  * 4. The attack. A false square is put at every grid square on Earth, in
  *    every silence of every flight, and every one the rule accepts has to
  *    be inside the corridor the fixes allow. Then the same with a spoofed
@@ -27,11 +28,11 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { flightLine, unwrapLons } from "../src/lib/basemap";
+import { flightLegs, flightLine, unwrapLons } from "../src/lib/basemap";
 import { haversineKm, parseUtc, trackStats } from "../src/lib/format";
 import {
-  trailingGhosts, unwrapGhostLons, WAYPOINT_GAP_MS, WAYPOINT_MAX_DETOUR, WAYPOINT_MIN_KM,
-  waypoints,
+  heardUntil, lastKnown, tailGhosts, trailingGhosts, unwrapGhostLons, WAYPOINT_GAP_MS,
+  WAYPOINT_MAX_DETOUR, WAYPOINT_MIN_KM, waypoints,
 } from "../src/lib/ghosts";
 import { believe } from "../src/lib/spoof";
 import { maidenheadToLatLon } from "../src/lib/wspr/decode";
@@ -95,6 +96,13 @@ console.log("1. The rule\n");
   check(at(4, 40, 60) === 0, "nor one out of reach of the fix before it");
   check(waypoints(track, [ghost(20, 43, 14), ghost(20.3, 37, 22)]).length === 0,
     "two squares that cannot both be true: neither is used");
+  // The same, where the ghost contradicted is one the line would not have
+  // used anyway: a repeat of a square, one a square on, one beside a fix.
+  check(waypoints(track, [ghost(10, 42, 9), ghost(30, 42, 9), ghost(30.2, 43, 21)]).length === 0
+    && waypoints(track, [ghost(10, 42, 9), ghost(30, 42.5, 10), ghost(30.2, 43, 22)]).length === 0
+    && waypoints(track, [ghost(20, 40.5, 3), ghost(20.2, 42, 15)]).length === 0
+    && waypoints(track, [ghost(20, 42, 15), ghost(39.8, 40.5, 20)]).length === 0,
+    "nor when the one contradicted was a ghost the line had no use for");
 
   // No sign of spoofing near the silence.
   const one = [ghost(20, 42, 15)];
@@ -107,6 +115,60 @@ console.log("1. The rule\n");
     "one further off than that does not stop it");
   check(WAYPOINT_GAP_MS === 2 * 3_600_000 && WAYPOINT_MIN_KM === 150
     && WAYPOINT_MAX_DETOUR === 1.5, "2 h, 150 km, 1.5 times the straight way");
+
+  // The beacon: on the last fix (h 42, at 40 N 32 E) unless a ghost says
+  // the balloon has moved on from it.
+  const beacon = (ghosts: GhostPoint[], spoofed: { utc: string }[] = []) => {
+    const k = lastKnown(track, ghosts, spoofed)!;
+    return k.coarse ? `ghost ${(parseUtc(k.utc).getTime() - T0) / 3_600_000}` : "fix";
+  };
+  console.log();
+  check(beacon([ghost(42.2, 40.5, 33), ghost(42.5, 40.5, 35), ghost(43.9, 40.5, 37)]) === "fix",
+    "ghosts in the two hours after the last fix leave the beacon on the fix");
+  check(beacon([ghost(45, 40.5, 33), ghost(50, 40.5, 33)]) === "fix",
+    "so do ghosts hours later in the square the fix is in");
+  check(beacon([ghost(42.2, 40.5, 33), ghost(46, 42, 40)]) === "ghost 46",
+    "a ghost 4 h after it and 700 km on takes the beacon");
+  check(tailGhosts(track, [ghost(42.2, 40.5, 33), ghost(46, 42, 40)]).length === 1,
+    "and the dashed tail runs to it alone, not through the ring beside the fix");
+  check(beacon([ghost(46, 42, 40), ghost(46.2, 42, 40), ghost(47, 42.5, 41)]) === "ghost 46.2",
+    "a later ghost in the same square keeps it there, at the newer time");
+  check(beacon([ghost(46, 42, 40)], [{ utc: utc(44) }]) === "fix"
+    && beacon([ghost(46, 42, 40)], [{ utc: utc(37) }]) === "fix",
+    "with a spoofed fix since 6 h before the last fix, no ghost takes it");
+  check(beacon([ghost(46, 42, 40), ghost(46.5, 40, 80)]) === "fix",
+    "nor if two ghosts cannot both be true");
+  check(beacon([ghost(50, 40.5, 33), ghost(50.2, 42.5, 45)]) === "fix"
+    && beacon([ghost(46, 42.5, 41), ghost(60, 43.5, 42), ghost(60.2, 42.5, 55)]) === "fix",
+    "nor when the one contradicted was a ghost beside the fix or beside the tail");
+  check(lastKnown([], [ghost(1, 40, 0), ghost(2, 40, 0)])?.coarse === true
+    && tailGhosts([], [ghost(1, 40, 0), ghost(2, 40, 0)]).length === 2,
+    "with no fix at all the ghosts are all there is, and the beacon is on the newest");
+}
+
+{
+  // A square the tracker went on being heard in: the line leaves it when
+  // it was last heard there, not first.
+  console.log();
+  const track = [fix(0, 45, -75), fix(1, 45, -74), fix(50, 45, 0), fix(51, 45, 1)];
+  const ghosts = [ghost(20, 46.5, -21), ghost(46, 46.5, -21)];
+  const way = waypoints(track, ghosts);
+  const until = heardUntil(track, ghosts, way);
+  check(hours(way) === "20" && until[0] === utc(46),
+    "a square heard at h 20 and again at h 46 is one waypoint, left at h 46");
+  const lons = unwrapLons(track);
+  const legs = flightLegs(track, lons,
+    way.map((g, i) => ({ utc: g.utc, lat: g.lat, lon: g.lon, untilUtc: until[i]! })));
+  const out = legs.find((l) => l.toUtc === utc(50))!;
+  const into = legs.find((l) => l.toUtc === utc(20))!;
+  check(out.fromUtc === utc(46) && into.fromUtc === utc(1),
+    "so the stretch beyond it is timed from h 46, and the one into it ends at h 20");
+  // The line is the same whatever timezone it is drawn in.
+  const dst = [fix("2026-03-08 01:30:00", 40, 0), fix("2026-03-08 03:40:00", 40, 3),
+    fix("2026-03-08 03:50:00", 40, 3.2)];
+  // Bent, the stretch has a dozen points; straight, two.
+  check(flightLine(dst, unwrapLons(dst)).length > 10,
+    "a 2 h 10 min silence is bent across in every timezone, clock change or not");
 }
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "../src/data/tracks");
@@ -171,7 +233,12 @@ for (const id of ids) {
   check(!way.length || routed.length > 0, "and the line is one unbroken line");
   const tail = trailingGhosts(track, ghosts);
   check(tail.every((g) => !way.includes(g)), `none of ${tail.length} ghosts newer than the `
-    + "last fix is a waypoint: the tail is as it was");
+    + "last fix is a waypoint");
+  const beaconTail = tailGhosts(track, ghosts, spoofed);
+  const k = lastKnown(track, ghosts, spoofed);
+  check(beaconTail.every((g) => tail.includes(g)) && (!track.length || !k?.coarse
+    || beaconTail.length > 0), `the beacon is on ${k?.coarse ? "a ghost" : "the last fix"} `
+    + `(${k?.utc}), ${beaconTail.length} of those ${tail.length} ghosts in the tail`);
   const plainKm = trackStats(track)?.distanceKm ?? 0;
   const routedKm = trackStats(track, way)?.distanceKm ?? 0;
   check(routedKm >= plainKm - 1e-6 && (way.length > 0 || routedKm === plainKm),
@@ -222,6 +289,24 @@ if (!dusk) {
   check(waypoints([...track, fix("2026-11-19 19:34:00", 55.2, -130.4)], ghosts)
     .every((g) => g.grid4 !== "CO45"),
     "had a fix come half an hour after CO45, CO45 would not have been one");
+
+  console.log();
+  const k19 = lastKnown(track, ghosts)!;
+  check(tailGhosts(track, ghosts).map((g) => g.grid4).join(",") === "BO56,CO45"
+    && k19.coarse && k19.utc === "2026-11-19 19:04:00",
+    "evening of 19 Nov: the tail runs to BO56 and CO45, and the beacon is on CO45");
+  // The night of 20 Nov: fixes until 21:54 in CN66, then four ghosts in
+  // CN66 itself, whose centre is 54 km from that last fix.
+  const [lat, lon] = maidenheadToLatLon("CN66tr");
+  const night = [...after, fix("2026-11-20 21:54:00", lat, lon)];
+  const cn66 = ["22:04", "22:14", "22:24", "23:24"].map((hm) =>
+    ({ ...ghost(`2026-11-20 ${hm}:00`, 46.5, -127), grid4: "CN66" }));
+  const k20 = lastKnown(night, [...ghosts, ...cn66])!;
+  check(!k20.coarse && k20.utc === "2026-11-20 21:54:00"
+    && tailGhosts(night, [...ghosts, ...cn66]).length === 0,
+    "night of 20 Nov: four ghosts in the fix's own square, and the beacon stays on the fix");
+  check(trailingGhosts(night, [...ghosts, ...cn66]).length === 4,
+    "though the tracker was heard four times since, and the page still says so");
 }
 
 console.log("\n4. A false square, anywhere on Earth\n");
@@ -264,7 +349,8 @@ console.log("\n4. A false square, anywhere on Earth\n");
         for (let lon = -179; lon < 180; lon += 2) {
           const g = ghost(mid, lat, lon);
           tried++;
-          if (!waypoints(track, [g]).length) continue;
+          // The rule for a silence reads only the two fixes that bound it.
+          if (!waypoints([a, b], [g]).length) continue;
           taken++;
           const round = km(a, g) + km(g, b);
           if (round > WAYPOINT_MAX_DETOUR * direct + 1e-6) outside++;
@@ -274,7 +360,7 @@ console.log("\n4. A false square, anywhere on Earth\n");
             worst = `${id}, ${a.utc} to ${b.utc}, fixes ${direct.toFixed(0)} km apart`;
           }
           worstShare = Math.max(worstShare, off / direct);
-          if (waypoints(track, [g], [{ utc: mid }]).length) withSpoof++;
+          if (waypoints([a, b], [g], [{ utc: mid }]).length) withSpoof++;
         }
       }
     }

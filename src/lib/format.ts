@@ -150,9 +150,10 @@ export function isInferred(p: TrackPoint): boolean {
 /** Distance is over every fix, inferred ones included, and through `via`:
  * the ghosts the line is routed through (lib/ghosts.ts, waypoints), oldest
  * first, so a day heard without telemetry counts the squares the balloon
- * was heard in and the figure matches the line on the map. The peak and
- * the fastest are records, and come from confirmed fixes only, unless
- * there are none. */
+ * was heard in and the figure matches the line on the map. It ends at the
+ * last fix, as the track does: nothing in `via` newer than that is
+ * counted. The peak and the fastest are records, and come from confirmed
+ * fixes only, unless there are none. */
 export function trackStats(
   track: TrackPoint[], via: { utc: string; lat: number; lon: number }[] = [],
 ): TrackStats | null {
@@ -180,7 +181,6 @@ export function trackStats(
     while (k < via.length && via[k]!.utc < p.utc) reach(via[k++]!);
     reach(p);
   }
-  while (k < via.length) reach(via[k++]!);
   return {
     points: track.length,
     firstUtc: track[0]!.utc,

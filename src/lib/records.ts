@@ -26,7 +26,7 @@ import { flightLegs, unwrapLons, type Via } from "./basemap";
 import {
   fmtDuration, haversineKm, isInferred, parseUtc, trackStats,
 } from "./format";
-import { heardBounds, unwrapGhostLons, waypoints } from "./ghosts";
+import { heardBounds, heardUntil, unwrapGhostLons, waypoints } from "./ghosts";
 import { groundSpeedKt, isSpeedFloor } from "./speed";
 import type { FlightMeta, GhostPoint, TrackPoint } from "./types";
 import * as u from "./units";
@@ -182,11 +182,13 @@ const ATLANTIC_START_LON = -50;
  * fixes as less than half the globe apart, which a balloon never goes in
  * the longest night a tracker sleeps through. */
 function crossings(
-  track: TrackPoint[], way: GhostPoint[] = [],
+  track: TrackPoint[], ghosts: GhostPoint[] = [], way: GhostPoint[] = [],
 ): Partial<Record<CrossingKey, Spot>> {
   const lons = unwrapLons(track);
   const wayLons = unwrapGhostLons(track, lons, way);
-  const via = way.map((g, i) => ({ utc: g.utc, lat: g.lat, lon: wayLons[i]! }));
+  const until = heardUntil(track, ghosts, way);
+  const via = way.map((g, i) => (
+    { utc: g.utc, lat: g.lat, lon: wayLons[i]!, untilUtc: until[i]! }));
   const start = lons[0]!;
   // How far past each line a point is: past at zero or more.
   const lines: [CrossingKey, (lon: number, lat: number) => number][] = [
@@ -299,7 +301,7 @@ export function summarize(
   const heardBy = extreme(confirmed, (p) => p.rx_station_count, "max");
   const cold = extreme(confirmed, (p) => p.temperature_c, "min");
   const start = parseUtc(heard.firstUtc).getTime();
-  const crossed = crossings(track, way);
+  const crossed = crossings(track, ghosts, way);
   const values: FlightSummary["values"] = {
     longest: aloftMs,
     distance: s.distanceKm,

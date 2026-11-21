@@ -58,9 +58,10 @@ export function settledGhosts(
   });
 }
 
-/** The ghosts newer than the last full fix, oldest first: the coarse tail
- * the balloon has been heard along since it last sent telemetry. Empty
- * whenever a full fix is the newest thing known. */
+/** The ghosts newer than the last full fix, oldest first: every time the
+ * tracker has been heard since it last sent telemetry. Empty whenever a
+ * full fix is the newest thing known. Being heard is not being somewhere
+ * new: which of these say where the balloon is now is tailGhosts. */
 export function trailingGhosts(track: TrackPoint[], ghosts: GhostPoint[]): GhostPoint[] {
   const lastFix = track.at(-1)?.utc ?? "";
   return ghosts.filter((g) => g.utc > lastFix);
@@ -105,22 +106,23 @@ export const WAYPOINT_MAX_DETOUR = 1.5;
  * moves it only on these terms, all of them:
  *
  *  - A fix before it and a fix after it, each at least WAYPOINT_GAP_MS
- *    away. A ghost newer than the last fix moves nothing: it is the dashed
- *    tail and the beacon, as ever, until a fix comes back to judge it by.
+ *    away. A ghost newer than the last fix never moves the track: at most
+ *    it is the dashed tail (tailGhosts), until a fix comes back to judge
+ *    it by.
  *  - Its square WAYPOINT_MIN_KM clear of the position before it on the
  *    line and of the fix after.
  *  - Inside the corridor those two fixes allow: the way round by the ghost
  *    no more than WAYPOINT_MAX_DETOUR times the straight way between them.
- *  - Within reach, at the fastest a balloon is carried (lib/spoof.ts), of
- *    both fixes.
+ *  - Every ghost of the silence, used or not, within reach of both fixes
+ *    and of the ghost before it at the fastest a balloon is carried
+ *    (lib/spoof.ts). One that is not means the GPS was lied to somewhere
+ *    in that silence, there is no saying when it started, and the silence
+ *    is drawn fix to fix as it always was.
  *  - No sign of GPS spoofing near the silence: no fix set aside as spoofed
  *    (`spoofed`) from SPOOF_SQUARE_WINDOW_MS before the fix that starts it
  *    to as long after the fix that ends it. A Regular message carries
  *    whatever square the GPS was told, and with spoofing about a square
  *    proves nothing.
- *  - The ghosts of one silence agreeing with each other: if one cannot be
- *    reached from the one before it, something lied, there is no saying
- *    which, and that silence is drawn fix to fix as it always was.
  *
  * A ghost that fails any of these stays a ring beside the line. What a
  * false square can still do is bounded by the corridor: one that sits
@@ -150,20 +152,23 @@ export function waypoints(
     const direct = km(a, b);
     const taken: GhostPoint[] = [];
     let agree = true;
+    // The ghost before the one in hand, whether or not it was taken: every
+    // ghost of the silence is asked whether it can be true, not only the
+    // ones the line would use.
+    let seen: GhostPoint | undefined;
     for (let k = g; k < ghosts.length && ghosts[k]!.utc < b.utc; k++) {
       const w = ghosts[k]!;
-      const t = ms(w.utc);
-      if (t - ta < WAYPOINT_GAP_MS || tb - t < WAYPOINT_GAP_MS) continue;
-      if (km(a, w) + km(w, b) > WAYPOINT_MAX_DETOUR * direct) continue;
       if (unreachable(a, w.utc, w.lat, w.lon, GRID4_SLACK_KM)
-        || unreachable(b, w.utc, w.lat, w.lon, GRID4_SLACK_KM)) continue;
-      const prev = taken.at(-1);
-      // Two squares that pass on their own and cannot both be true.
-      if (prev && unreachable(prev, w.utc, w.lat, w.lon, 2 * GRID4_SLACK_KM)) {
+        || unreachable(b, w.utc, w.lat, w.lon, GRID4_SLACK_KM)
+        || (seen && unreachable(seen, w.utc, w.lat, w.lon, 2 * GRID4_SLACK_KM))) {
         agree = false;
         break;
       }
-      if (km(prev ?? a, w) < WAYPOINT_MIN_KM || km(w, b) < WAYPOINT_MIN_KM) continue;
+      seen = w;
+      const t = ms(w.utc);
+      if (t - ta < WAYPOINT_GAP_MS || tb - t < WAYPOINT_GAP_MS) continue;
+      if (km(a, w) + km(w, b) > WAYPOINT_MAX_DETOUR * direct) continue;
+      if (km(taken.at(-1) ?? a, w) < WAYPOINT_MIN_KM || km(w, b) < WAYPOINT_MIN_KM) continue;
       taken.push(w);
     }
     if (agree) out.push(...taken);
@@ -171,21 +176,106 @@ export function waypoints(
   return out;
 }
 
+/** The ghosts newer than the last fix that say the balloon has moved on
+ * from it, oldest first: the dashed tail, with the beacon on the last.
+ *
+ * A fix is where the balloon was, to a few kilometres. A ghost is a square
+ * a hundred across, and the beacon is the site's claim of where the
+ * balloon is, so a ghost takes it from a fix only when the fix has nothing
+ * left to say: heard at least WAYPOINT_GAP_MS after it, in a square
+ * WAYPOINT_MIN_KM clear of it. A ghost minutes after the last fix, or
+ * hours after it in the square the fix was already in, is the tracker
+ * being heard and no more; it stays a ring, and the beacon stays on the
+ * fix, which places the balloon in that square better than its centre
+ * does. A later ghost in a tail square stands for that square from then
+ * on, so the tail's last ghost is the newest time the balloon was heard
+ * where the beacon is.
+ *
+ * No fix follows to bear these out, so there is no corridor to hold them
+ * to (waypoints). What can be asked is asked: none with a spoofed fix
+ * from SPOOF_SQUARE_WINDOW_MS before the last fix onwards, and none at all
+ * if any ghost since the last fix, in the tail or not, cannot be reached
+ * from that fix or from the ghost before it.
+ *
+ * With no fix decoded yet the ghosts are all there is to go on, and all of
+ * them are the tail. */
+export function tailGhosts(
+  track: TrackPoint[], ghosts: GhostPoint[], spoofed: { utc: string }[] = [],
+): GhostPoint[] {
+  const trailing = trailingGhosts(track, ghosts);
+  const last = track.at(-1);
+  if (!last) return trailing;
+  const ms = (utc: string) => parseUtc(utc).getTime();
+  const t0 = ms(last.utc);
+  if (spoofed.some((p) => ms(p.utc) >= t0 - SPOOF_SQUARE_WINDOW_MS)) return [];
+  const out: GhostPoint[] = [];
+  // The ghost before the one in hand, in the tail or not.
+  let seen: GhostPoint | undefined;
+  for (const w of trailing) {
+    if (unreachable(last, w.utc, w.lat, w.lon, GRID4_SLACK_KM)
+      || (seen && unreachable(seen, w.utc, w.lat, w.lon, 2 * GRID4_SLACK_KM))) return [];
+    seen = w;
+    if (ms(w.utc) - t0 < WAYPOINT_GAP_MS) continue;
+    const prev = out.at(-1);
+    if (prev?.grid4 === w.grid4) {
+      out[out.length - 1] = w;
+      continue;
+    }
+    const from = prev ?? last;
+    if (haversineKm(from.lat, from.lon, w.lat, w.lon) < WAYPOINT_MIN_KM) continue;
+    out.push(w);
+  }
+  return out;
+}
+
+/** For each waypoint, when the tracker was last heard in its square before
+ * the next position on the line: the waypoint's own time, or that of a
+ * later ghost in the same square. A waypoint stands for its square from
+ * the first time the tracker was heard there, and a balloon in slack air
+ * can be heard in one square for hours; anything that puts a time on the
+ * line beyond it (lib/records.ts) has to start from when it was last
+ * known to be there, not first. `way` is waypoints() of the same lists. */
+export function heardUntil(
+  track: TrackPoint[], ghosts: GhostPoint[], way: GhostPoint[],
+): string[] {
+  return way.map((w, i) => {
+    const nextFix = track.find((p) => p.utc > w.utc)?.utc;
+    const nextWay = way[i + 1]?.utc;
+    const end = [nextFix, nextWay].filter((u): u is string => !!u).sort()[0];
+    let until = w.utc;
+    for (const g of ghosts) {
+      if (g.utc <= until || (end && g.utc >= end)) continue;
+      if (g.grid4 === w.grid4) until = g.utc;
+    }
+    return until;
+  });
+}
+
 export interface LastKnown {
   utc: string;
   lat: number;
   lon: number;
-  /** True when the newest report is a ghost: the position is a grid square,
-   * not a fix, and the beacon on the map says so. */
+  /** True when the position is a ghost's: a grid square, not a fix, and
+   * the beacon on the map says so. */
   coarse: boolean;
 }
 
-/** Where the balloon was last heard, whichever kind of report that was. */
-export function lastKnown(track: TrackPoint[], ghosts: GhostPoint[]): LastKnown | null {
-  const g = trailingGhosts(track, ghosts).at(-1);
+/** Where the balloon is taken to be, given the tail (tailGhosts): the last
+ * ghost of it, or with no tail the newest fix. */
+export function lastKnownOf(track: TrackPoint[], tail: GhostPoint[]): LastKnown | null {
+  const g = tail.at(-1);
   if (g) return { utc: g.utc, lat: g.lat, lon: g.lon, coarse: true };
   const p = track.at(-1);
   return p ? { utc: p.utc, lat: p.lat, lon: p.lon, coarse: false } : null;
+}
+
+/** Where the balloon is taken to be: the newest fix, unless ghosts since
+ * say it has moved on (tailGhosts). `spoofed` are the fixes set aside as
+ * GPS-spoofed (lib/spoof.ts). */
+export function lastKnown(
+  track: TrackPoint[], ghosts: GhostPoint[], spoofed: { utc: string }[] = [],
+): LastKnown | null {
+  return lastKnownOf(track, tailGhosts(track, ghosts, spoofed));
 }
 
 /** When the tracker was first and last heard at all. A flight often opens
