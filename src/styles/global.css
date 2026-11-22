@@ -419,6 +419,12 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
    a 0-tall strip on desktop. The extra .fv wins the fight by specificity,
    which no link order can take away. */
 .fv .fv-map-slot { position: absolute; inset: 0; background: #0c1524; }
+/* Leaflet focuses the map on every press, so its arrow keys work. A press
+   is not a keyboard, and must not ring the whole map: on a phone only the
+   ring's bottom edge shows, a blue line under the map. Safari counts the
+   focus after a tap as visible, so a touch screen drops it outright. */
+.fv .fv-map-slot:focus:not(:focus-visible) { outline: none; }
+@media (hover: none) { .fv .fv-map-slot:focus { outline: none; } }
 
 /* Shown until the first wspr.live check answers, so the first track drawn
    is the current one instead of yesterday's bundle jumping under the
@@ -868,8 +874,9 @@ a.fv-chip { text-decoration: none; }
 }
 .record-pin svg { display: block; width: 100%; height: 100%; }
 /* The expected-wake sun on the forecast line (lib/wake.ts). */
-.wake-sun-icon { background: none; border: none; }
-.wake-sun { display: block; width: 100%; height: 100%;
+.wake-sun-icon { background: none; border: none;
+  display: flex; align-items: center; justify-content: center; }
+.wake-sun { display: block; width: 14px; height: 14px;
   filter: drop-shadow(0 1px 2px rgba(5, 10, 20, 0.8)); }
 .wake-sun svg { display: block; width: 100%; height: 100%; }
 .record-label { color: #fde68a; border-color: rgba(251, 191, 36, 0.45); }

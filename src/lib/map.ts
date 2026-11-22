@@ -633,8 +633,10 @@ function drawForecast(
     const place = L.latLng(w.point.lat, unwrapNear(w.point.lon, line[w.index]!.lng));
     worlds.add(map, (at) => L.marker(at(place), {
       icon: L.divIcon({
+        // The sun is drawn at 14 px in a 32 px box: a fingertip has to be
+        // able to land on it, or a tap falls through to the map.
         className: "wake-sun-icon", html: `<span class="wake-sun">${WAKE_SUN_SVG}</span>`,
-        iconSize: [14, 14],
+        iconSize: [32, 32],
       }),
       keyboard: false,
     }).bindTooltip(wakeText(w)));
