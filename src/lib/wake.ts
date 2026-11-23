@@ -43,24 +43,11 @@ const MIN_NIGHTS = 2;
 
 type Heard = { utc: string; lat: number; lon: number };
 
-/** The sun's elevation the balloon wakes at, learned from every night it
- * has come back from: the elevation at its first report after each.
- * Null before there are enough nights to say. Every report counts, a ghost
- * too: being heard at all is the tracker awake. */
-export interface Cutoff {
-  /** The median: when it is usually first heard. */
-  typical: number;
-  /** The lowest it has been heard at (never below the horizon, where a
-   * solar tracker cannot be running and a report can only be a stray).
-   * A first report is only as early as the stations under the balloon
-   * allow, so it shows the tracker was awake by then, not that it woke
-   * then; the lowest is the nearest any of them comes to when it wakes.
-   * It decides the days a balloon can wake on: in a high-latitude winter
-   * the sun can peak short of the median and still clear this. */
-  lowest: number;
-}
-
-export function wakeCutoff(reports: Heard[]): Cutoff | null {
+/** The sun's elevation the balloon wakes at: the median, over every night
+ * it has come back from, of the elevation at its first report. Null before
+ * there are enough nights to say. Every report counts, a ghost too: being
+ * heard at all is the tracker awake. */
+export function wakeCutoff(reports: Heard[]): number | null {
   const heard = [...reports].sort((a, b) => a.utc.localeCompare(b.utc));
   const wakes: number[] = [];
   for (let i = 1; i < heard.length; i++) {
@@ -77,8 +64,7 @@ export function wakeCutoff(reports: Heard[]): Cutoff | null {
   if (wakes.length < MIN_NIGHTS) return null;
   wakes.sort((x, y) => x - y);
   const m = wakes.length >> 1;
-  const typical = wakes.length % 2 ? wakes[m]! : (wakes[m - 1]! + wakes[m]!) / 2;
-  return { typical, lowest: Math.min(typical, ...wakes.filter((e) => e >= 0)) };
+  return wakes.length % 2 ? wakes[m]! : (wakes[m - 1]! + wakes[m]!) / 2;
 }
 
 /** How long the balloon must have been unheard before a wake is shown:
@@ -92,66 +78,45 @@ export interface Wake {
   /** The forecast point the wake falls after, so a renderer can place it
    * beside the line it has already unwrapped. */
   index: number;
-  /** The sun elevation it was placed at, in degrees. */
+  /** The sun elevation it was found at, in degrees. */
   cutoff: number;
 }
 
-/** Where along the forecast the balloon wakes. Null unless it is asleep:
- * unheard for a while, and with the sun below its usual wake elevation
- * where the line has it now. A balloon unheard in full sun is over an empty
- * ocean, not asleep, and tomorrow's sunrise would be the wrong answer.
- *
- * Each stretch of the line with the sun at or above the lowest elevation
- * the balloon has woken at is a day it can wake on, and it wakes on the
- * first one still ahead: where the sun climbs through its usual elevation,
- * or, on a day the sun never gets that high, at that day's highest sun.
- * Without the second case a balloon drifting north in winter, under a
- * noon sun a few degrees short of the median, would be shown sleeping
- * through a day it can wake on, and its wake put a full day late. */
+/** The first place along the forecast where the sun climbs back through the
+ * cutoff. Null unless the balloon is asleep: unheard for a while, and with
+ * the sun below the cutoff where the line has it now. A balloon unheard in
+ * full sun is over an empty ocean, not asleep, and tomorrow's sunrise would
+ * be the wrong answer. */
 export function expectedWake(
-  f: Forecast, cutoff: Cutoff, lastHeardUtc: string, now: number = Date.now(),
+  f: Forecast, cutoff: number, lastHeardUtc: string, now: number = Date.now(),
 ): Wake | null {
   if (now - parseUtc(lastHeardUtc).getTime() < SILENT_MS) return null;
-  const { typical, lowest } = cutoff;
   const pts = f.points;
-  const n = pts.length;
   const t = pts.map((p) => parseUtc(p.utc).getTime());
   const el = pts.map((p, i) => sunElevation(t[i]!, p.lat, p.lon));
   // The line's point nearest now says where the sun is for the balloon.
   let at = t.findIndex((x) => x >= now);
   if (at < 0) return null;
   if (at > 0 && now - t[at - 1]! < t[at]! - now) at -= 1;
-  if (el[at]! >= typical) return null;
-  let i = at;
-  while (i < n) {
-    if (el[i]! < lowest) { i++; continue; }
-    const start = i;
-    let peak = i;
-    for (; i < n && el[i]! >= lowest; i++) if (el[i]! > el[peak]!) peak = i;
-    for (let j = Math.max(1, start); j < i; j++) {
-      if (el[j - 1]! < typical && el[j]! >= typical) {
-        const a = pts[j - 1]!;
-        const b = pts[j]!;
-        const k = (typical - el[j - 1]!) / (el[j]! - el[j - 1]!);
-        const ms = t[j - 1]! + k * (t[j]! - t[j - 1]!);
-        const lon = a.lon + k * (unwrapNear(b.lon, a.lon) - a.lon);
-        return {
-          point: {
-            utc: new Date(ms).toISOString().slice(0, 19).replace("T", " "),
-            lat: a.lat + k * (b.lat - a.lat),
-            lon: unwrapNear(lon, 0),
-            altitude_m: a.altitude_m + k * (b.altitude_m - a.altitude_m),
-          },
-          index: j - 1,
-          cutoff: typical,
-        };
-      }
+  if (el[at]! >= cutoff) return null;
+  for (let i = Math.max(1, at); i < pts.length; i++) {
+    if (el[i - 1]! < cutoff && el[i]! >= cutoff) {
+      const a = pts[i - 1]!;
+      const b = pts[i]!;
+      const k = (cutoff - el[i - 1]!) / (el[i]! - el[i - 1]!);
+      const ms = t[i - 1]! + k * (t[i]! - t[i - 1]!);
+      const lon = a.lon + k * (unwrapNear(b.lon, a.lon) - a.lon);
+      return {
+        point: {
+          utc: new Date(ms).toISOString().slice(0, 19).replace("T", " "),
+          lat: a.lat + k * (b.lat - a.lat),
+          lon: unwrapNear(lon, 0),
+          altitude_m: a.altitude_m + k * (b.altitude_m - a.altitude_m),
+        },
+        index: i - 1,
+        cutoff,
+      };
     }
-    // A day the sun stays under the usual elevation. One the line runs out
-    // in may yet climb past it; one already past its peak is today's
-    // afternoon, gone.
-    if (i === n) return null;
-    if (peak > at) return { point: pts[peak]!, index: peak, cutoff: el[peak]! };
   }
   return null;
 }
