@@ -28,7 +28,7 @@ await page.goto("http://localhost:4321/", { waitUntil: "networkidle" });
 // With more than one flight the column ends in a Records card.
 const flightCount = await page.evaluate(() =>
   JSON.parse(document.querySelector(".fv").dataset.flights).length);
-const expectedCards = 8 + (flightCount > 1 ? 1 : 0);
+const expectedCards = 9 + (flightCount > 1 ? 1 : 0);
 
 const probe = async (label) => {
   const r = await page.evaluate(() => {
@@ -309,7 +309,7 @@ const linkOk =
   !linkClosed.open && linkClosed.search === "";
 console.log(`\nJS errors: ${errors.length ? "\n  " + errors.join("\n  ") : "none"}`);
 const ok = after.hasLeafletPane && after.height > 200 && after.tiles > 0
-  // six metrics, the Tracker card and the Signal card, plus the Records
+  // seven metrics, the Tracker card and the Signal card, plus the Records
   // card with several flights, and a refresh keeps every card it started
   // with
   && twice.hasLeafletPane && twice.tiles > 0 && twice.cards === expectedCards

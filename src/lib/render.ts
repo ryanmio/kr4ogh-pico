@@ -12,10 +12,12 @@ import { RECORDS, type FlightSummary, type Holders, type RecordKey } from "./rec
 import {
   groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
 } from "./speed";
+import { fmtSun, sunReading } from "./sun";
 import type { FlightMeta, GhostPoint } from "./types";
 import * as u from "./units";
 import type { Units } from "./units";
 import type { TrackPoint } from "./types";
+import { wakeCutoff } from "./wake";
 
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
@@ -44,6 +46,11 @@ const ICONS: Record<MetricKey, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
     ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M13 2.5L5 13.5h5.5L11 21.5l8-11h-5.5z"/></svg>',
+  sun:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M3 18h18"/><path d="M7 18a5 5 0 0 1 10 0"/>' +
+    '<path d="M12 6v2.5M4.6 10.6l1.8 1.8M19.4 10.6l-1.8 1.8"/></svg>',
   temperature:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
     ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
@@ -201,6 +208,8 @@ export function sidebarHtml(
 
   // The newest fix, read by every card below but Journey, may be inferred.
   const lastInferred = isInferred(s.last);
+  const sunNow = sunReading(s.last, !ended);
+  const wakeAt = wakeCutoff([...track, ...ghosts]);
   const cards = [
     metricCard(
       "journey",
@@ -220,6 +229,17 @@ export function sidebarHtml(
       `${Math.min(...volts).toFixed(2)}\u2013${Math.max(...volts).toFixed(2)} V seen`,
       active,
       lastInferred,
+    ),
+    // The one card not read off the last fix: the sun is where it is now,
+    // heard from or not (lib/sun.ts). Under it, the angle this tracker has
+    // been coming back at, once it has woken from enough nights to say.
+    metricCard(
+      "sun",
+      fmtSun(sunNow),
+      wakeAt !== null
+        ? `${ended ? "woke" : "wakes"} near ${fmtSun(wakeAt)}`
+        : `${sunNow < 0 ? "below" : "above"} the horizon`,
+      active,
     ),
     metricCard(
       "temperature",

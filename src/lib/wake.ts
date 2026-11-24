@@ -11,26 +11,7 @@
 import { parseUtc } from "./format";
 import type { Forecast, ForecastPoint } from "./forecast";
 import { unwrapNear } from "./ghosts";
-
-const RAD = Math.PI / 180;
-
-/** The sun's elevation in degrees above the horizon, at a place and time:
- * the low-precision almanac formula, good to a few hundredths of a degree,
- * which is far finer than a ten-minute slot can tell. */
-export function sunElevation(ms: number, lat: number, lon: number): number {
-  const d = ms / 86_400_000 + 2440587.5 - 2451545.0;
-  const g = (357.529 + 0.98560028 * d) * RAD;
-  const q = 280.459 + 0.98564736 * d;
-  const l = (q + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * RAD;
-  const e = (23.439 - 0.00000036 * d) * RAD;
-  const dec = Math.asin(Math.sin(e) * Math.sin(l));
-  const ra = Math.atan2(Math.cos(e) * Math.sin(l), Math.cos(l));
-  const gmst = (18.697374558 + 24.06570982441908 * d) % 24;
-  const ha = (gmst * 15 + lon) * RAD - ra;
-  return Math.asin(
-    Math.sin(lat * RAD) * Math.sin(dec) + Math.cos(lat * RAD) * Math.cos(dec) * Math.cos(ha),
-  ) / RAD;
-}
+import { sunElevation } from "./sun";
 
 /** A silence counts as a night when it is this long, no longer than this,
  * and the sun was down at its middle. A long silence in daylight is an

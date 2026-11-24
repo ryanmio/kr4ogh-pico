@@ -972,6 +972,9 @@ a.fv-chip { text-decoration: none; }
     padding: 0.7rem 0.8rem 0;
   }
   .fv-status, .fv-hint, .fv-card-wide { grid-column: 1 / -1; }
+  /* Seven metric cards in two columns would leave a hole; Journey, whose
+     numbers are the longest, takes a row to itself and the other six pair. */
+  .fv-card[data-metric="journey"] { grid-column: 1 / -1; }
   .fv-hint { display: block; margin-top: -0.15rem; }
   .fv-card, div.fv-status, .fv-side-links {
     background: var(--bg-raised); border-color: var(--border);

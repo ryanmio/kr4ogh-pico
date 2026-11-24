@@ -206,6 +206,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
   } from "../lib/format";
   import { refreshTrack } from "../lib/livetrack";
   import { expectedWake, wakeCutoff, type Wake } from "../lib/wake";
+  import { fmtSun, sunAt, sunReading } from "../lib/sun";
   import { mergeTrack } from "../lib/wspr/track";
   import { METRICS, isMetricKey, type MetricKey } from "../lib/metrics";
   import {
@@ -866,9 +867,20 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function renderSidebar() {
+      // The cards are redrawn whole, on a timer too (see `update`), so a
+      // card with the keyboard's focus is given it back.
+      const held = document.activeElement instanceof HTMLElement
+        && cardsSlot.contains(document.activeElement)
+        ? document.activeElement.closest<HTMLElement>(".fv-card") : null;
+      const again = held?.dataset.metric
+        ? `[data-metric="${held.dataset.metric}"]`
+        : held?.dataset.panel ? `[data-panel="${held.dataset.panel}"]` : null;
       cardsSlot.innerHTML = sidebarHtml(meta, track, units, activeCard(), {
         ghosts, spoofed, records: recordsInfo(),
       });
+      if (again) {
+        cardsSlot.querySelector<HTMLElement>(again)?.focus({ preventScroll: true });
+      }
     }
 
     /** The line under the cards: the newest report, and what kind. */
@@ -948,17 +960,21 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         altitude: (p) => convert.altitude(p.altitude_m, units),
         speed: (p) => convert.speed(groundSpeedKt(p), units),
         voltage: (p) => p.voltage_v,
+        sun: (p) => sunAt(p),
         temperature: (p) => convert.temperature(p.temperature_c, units),
         receivers: (p) => p.rx_station_count,
       };
       const unit: Record<string, string> = {
         altitude: labels.altitude, speed: labels.speed,
-        voltage: "V", temperature: labels.temperature, receivers: "stations",
+        voltage: "V", sun: "\u00b0", temperature: labels.temperature,
+        receivers: "stations",
       };
       return {
         label: m.label, unit: unit[key]!, color: m.color,
         values: pts.map((p, i) => ({ t: t[i]!, v: get[key]!(p) })),
         domain, decimals: key === "voltage" ? 2 : 0, foldGaps: true,
+        ...(key === "sun"
+          ? { label: "Sun above the horizon", unitName: "degrees" } : {}),
       };
     }
 
@@ -1001,6 +1017,22 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           mini("Now", `${s.last.voltage_v.toFixed(2)} V`),
           mini("Lowest", `${Math.min(...volts).toFixed(2)} V`),
           mini("Highest", `${Math.max(...volts).toFixed(2)} V`),
+        ].join("");
+      }
+      if (key === "sun") {
+        // "Now" is the sun this minute over where the balloon was last
+        // heard; a flight that is over is read at its last report. The
+        // third number is the angle the tracker has been waking at, or,
+        // before it has woken from enough nights to say, the lowest sun
+        // it has been heard under.
+        const angles = track.map(sunAt);
+        const wakeAt = wakeCutoff([...track, ...ghosts]);
+        return [
+          mini(ended() ? "Last report" : "Now", fmtSun(sunReading(s.last, !ended()))),
+          mini("Highest", fmtSun(Math.max(...angles))),
+          wakeAt !== null
+            ? mini(ended() ? "Woke near" : "Wakes near", fmtSun(wakeAt))
+            : mini("Lowest", fmtSun(Math.min(...angles))),
         ].join("");
       }
       if (key === "receivers") {
@@ -1136,6 +1168,18 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
             than ${u.speed(SPEED_CEILING_KT, units).text}. Above that, speed
             is measured from the distance flown either side of each
             report.`);
+        }
+        if (key === "sun") {
+          setPanelInfo([
+            `How high the sun was above the horizon, seen from the balloon,
+            at each report. The tracker does not measure this: it is worked
+            out from where the balloon was and when.`,
+            `The tracker runs on sunlight alone, so the sun's angle decides
+            whether it has the power to report at all. A negative angle is
+            a sun below the horizon.`,
+            ...(ended() ? [] : [`"Now" is the sun at this moment over the
+            place the balloon was last heard.`]),
+          ]);
         }
         panelBody.innerHTML =
           `<div class="fv-minis">${metricMinis(key)}</div>` +
@@ -1509,6 +1553,12 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         drawMapAgain();
         renderSidebar();
         renderPanel();
+      } else if (!ended()) {
+        // Nothing new was heard, but two cards are read off the clock:
+        // "Heard 3 h ago", and the sun's angle, which moves a degree every
+        // four minutes whether the tracker is awake to see it or not.
+        renderSidebar();
+        if (panel === "sun") renderPanel();
       }
       updatedEl.textContent = lastKnown(track, ghosts)
         ? newestText("Newest")

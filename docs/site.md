@@ -25,10 +25,17 @@ callsign.
    The reading is shown in the Data table, whose three sensor columns
    exist only on a flight that has sent one, and in the JSON download. It
    has no card: a pressure chart was built and judged not to add enough
-   beside altitude, so the sidebar is the same six metrics on every flight.
+   beside altitude, so the sidebar is the same seven metrics on every flight.
+   Six are telemetry. The seventh, Sun angle, is not sent at all: it is
+   worked out from each report's position and time (`src/lib/sun.ts`), and
+   for a flight still up its card reads the sun as of now, over the place
+   the balloon was last heard, since the sun moves on while the tracker
+   sleeps.
 
 The page refreshes every two minutes, on the Refresh button, and whenever a
-backgrounded tab becomes visible again.
+backgrounded tab becomes visible again. A refresh that finds nothing new
+still redraws the cards of a flight that is up, because "Heard 3 h ago" and
+the sun's angle are read off the clock.
 
 Consequences worth knowing:
 
@@ -109,7 +116,7 @@ alike.
 
 What is on screen travels in the link. `?u=i` pins imperial, `?w=c` the
 cloud layer, and `?p=speed` the open panel — a card's own name (`journey`,
-`altitude`, `speed`, `voltage`, `temperature`, `receivers`), or `status`
+`altitude`, `speed`, `voltage`, `sun`, `temperature`, `receivers`), or `status`
 (also `signal`), `tracker`, `records`, `data`, `about`. Opening a metric's panel colors
 the map by it, so the link reproduces both. A link with no `p` opens
 nothing, which is what closing a panel leaves behind: an open panel is where

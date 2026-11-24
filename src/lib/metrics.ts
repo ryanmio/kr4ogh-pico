@@ -9,12 +9,14 @@
 
 import { fmtLocalShort, parseUtc } from "./format";
 import { groundSpeedKt } from "./speed";
+import { fmtSun, sunAt } from "./sun";
 import * as u from "./units";
 import type { Units } from "./units";
 import type { TrackPoint } from "./types";
 
 export type MetricKey =
-  | "journey" | "altitude" | "speed" | "voltage" | "temperature" | "receivers";
+  | "journey" | "altitude" | "speed" | "voltage" | "sun" | "temperature"
+  | "receivers";
 
 export interface Metric {
   key: MetricKey;
@@ -62,6 +64,16 @@ export const METRICS: Record<MetricKey, Metric> = {
     color: "#34d399",
     raw: (p) => p.voltage_v,
     fmt: (raw) => `${raw.toFixed(2)} V`,
+  },
+  // Not telemetry: worked out from each report's place and time (lib/sun.ts).
+  // It sits beside the voltage because it is what the voltage answers to.
+  sun: {
+    key: "sun",
+    label: "Sun angle",
+    ramp: ["#c2410c", "#fb923c", "#fef08a"],
+    color: "#fb923c",
+    raw: (p) => sunAt(p),
+    fmt: (raw) => fmtSun(raw),
   },
   temperature: {
     key: "temperature",

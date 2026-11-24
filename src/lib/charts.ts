@@ -12,6 +12,9 @@ import { fmtDuration, fmtInt, fmtLocal, fmtLocalDay, fmtLocalTime } from "./form
 export interface ChartSpec {
   label: string;
   unit: string;
+  /** The unit spelled out for the heading, where a symbol alone ("°")
+   * would be a speck in the corner. */
+  unitName?: string;
   color: string;
   values: { t: number; v: number }[];
   /** Shared time domain (ms epoch) so all charts on a page align. */
@@ -214,7 +217,7 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   container.innerHTML = `
     <div class="chart-head">
       <span class="chart-title">${spec.label}</span>
-      <span class="chart-unit">${spec.unit}</span>
+      <span class="chart-unit">${spec.unitName ?? spec.unit}</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${spec.label} over time">
       ${grid}${xAxis}${breaks}${paths}${dots}
@@ -242,8 +245,10 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
     cursor.setAttribute("cy", String(y(best.v)));
     cursor.setAttribute("opacity", "1");
     tooltip.hidden = false;
+    // A bare degree sign sits against its number; every other unit is a
+    // word after it.
     tooltip.textContent = `${fmtLocal(new Date(best.t))} · ` +
-      `${fmtValue(best.v, decimals)} ${spec.unit}`;
+      `${fmtValue(best.v, decimals)}${spec.unit === "\u00b0" ? "" : " "}${spec.unit}`;
     const px = (x(best.t) / W) * rect.width;
     tooltip.style.left = `${Math.min(Math.max(px, 60), rect.width - 60)}px`;
   });
