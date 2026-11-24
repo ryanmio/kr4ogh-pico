@@ -146,6 +146,9 @@ main { padding: 2.2rem 0 3.5rem; }
   box-shadow: none;
 }
 .leaflet-tooltip-top::before { border-top-color: var(--border); }
+.leaflet-tooltip-bottom::before { border-bottom-color: var(--border); }
+.leaflet-tooltip-left::before { border-left-color: var(--border); }
+.leaflet-tooltip-right::before { border-right-color: var(--border); }
 .leaflet-bar a {
   background: var(--bg-panel); color: var(--text);
   border-bottom-color: var(--border);

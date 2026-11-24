@@ -169,6 +169,7 @@ export function renderMap(
     maxBoundsViscosity: 1,
   });
   smoothWheelZoom(map);
+  keepTooltipsInSight(map);
   if (fill) L.control.zoom({ position: "topright" }).addTo(map);
   // No "Leaflet" credit: the library asks for none, and it is the one that
   // pushed the phone's credits onto a second line.
@@ -263,7 +264,7 @@ export function renderMap(
 
   if (spoofed.length) drawSpoofed(map, worlds, track, latlngs, spoofed, spoofLatlngs, units);
 
-  if (fc.length) drawForecast(map, worlds, opts.forecast!, fc, units);
+  if (fc.length) drawForecast(map, worlds, opts.forecast!, fc);
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
@@ -609,25 +610,27 @@ function forecastLatlngs(f: Forecast, fromLon: number): L.LatLng[] {
  * full fix (the predictor's first point), on the same dark casing as the track, with a mark each day so
  * the line has a scale. Under the spots, over the weather. */
 function drawForecast(
-  map: L.Map, worlds: Worlds, f: Forecast, line: L.LatLng[], units: Units,
+  map: L.Map, worlds: Worlds, f: Forecast, line: L.LatLng[],
 ): void {
   worlds.add(map, (at) => L.polyline(line.map(at), {
     color: SPOT_OUTLINE, weight: 5, opacity: 0.35, interactive: false,
   }));
-  worlds.add(map, (at) => L.polyline(line.map(at), {
-    color: FORECAST_COLOR, weight: 2.2, opacity: 0.9,
-    dashArray: "1 7", lineCap: "round",
-    attribution: FORECAST_ATTRIBUTION,
-  }).bindTooltip(
-    `Predicted path from the report of ${fmtLocal(f.from.utc)} ` +
-    `to ${fmtLocal(f.points.at(-1)!.utc)}<br>` +
-    (f.from.climb_mps !== null
-      ? `climbing at ${f.from.climb_mps.toFixed(1)} m/s to float at ` +
-        `${fmtAltitude(f.from.float_m, units).text}`
-      : `floating at ${fmtAltitude(f.from.float_m, units).text}`) +
-    "<br>SondeHub Tawhiri on GFS winds · a guess, not a report",
-    { sticky: true },
-  ));
+  worlds.add(map, (at) => {
+    const path = L.polyline(line.map(at), {
+      color: FORECAST_COLOR, weight: 2.2, opacity: 0.9,
+      dashArray: "1 7", lineCap: "round",
+      attribution: FORECAST_ATTRIBUTION,
+    });
+    // The tooltip says when the balloon is predicted where the pointer is.
+    // Registered before bindTooltip, so the text is set before Leaflet
+    // opens or moves the tooltip on the same event.
+    path.on("mouseover mousemove click", (e) => {
+      const at = (e as L.LeafletMouseEvent).latlng;
+      const i = nearestVertex(map, path.getLatLngs() as L.LatLng[], at);
+      path.setTooltipContent(pathText(f.points[i]!.utc));
+    });
+    return path.bindTooltip(pathText(f.from.utc), { sticky: true });
+  });
   if (f.wake && line[f.wake.index]) {
     const w = f.wake;
     const place = L.latLng(w.point.lat, unwrapNear(w.point.lon, line[w.index]!.lng));
@@ -653,9 +656,75 @@ function drawForecast(
   }
 }
 
+/** The predicted path's tooltip, at one point along it: just when. */
+function pathText(utc: string): string {
+  return `<b>Predicted path</b> ~${fmtLocal(utc)}`;
+}
+
+/** The index of the vertex of `line` nearest `to`, measured on screen. */
+function nearestVertex(map: L.Map, line: L.LatLng[], to: L.LatLng): number {
+  const at = map.latLngToLayerPoint(to);
+  let best = 0;
+  let bestD = Infinity;
+  line.forEach((ll, i) => {
+    const d = map.latLngToLayerPoint(ll).distanceTo(at);
+    if (d < bestD) { best = i; bestD = d; }
+  });
+  return best;
+}
+
 /** The wake mark's tooltip: just when. */
 function wakeText(w: NonNullable<Forecast["wake"]>): string {
   return `<b>Expected wake</b> ~${fmtLocal(w.point.utc)}`;
+}
+
+/** Put each tooltip, as it opens, on a side of its mark where it can be
+ * read. Leaflet picks left or right by which half of the map the mark is
+ * in, and draws tooltips under the map's controls (they sit in the map
+ * pane, which the controls float above). On a phone the controls cover
+ * much of the map's bottom-left, so a tap on a mark there opened its
+ * tooltip out of sight. Each side is tried in turn, Leaflet's own choice
+ * first, and the first wholly in view is kept, else the most visible.
+ * Labels that are always shown keep the side they were placed on. */
+function keepTooltipsInSight(map: L.Map): void {
+  const bound = new WeakMap<L.Tooltip, L.Direction | undefined>();
+  map.on("tooltipopen", (e) => {
+    const tip = (e as L.TooltipEvent).tooltip;
+    const el = tip.getElement();
+    if (!bound.has(tip)) bound.set(tip, tip.options.direction);
+    const own = bound.get(tip);
+    if (!el || tip.options.permanent || (own && own !== "auto")) return;
+    let best: { side: L.Direction; hidden: number } = { side: "auto", hidden: Infinity };
+    for (const side of ["auto", "right", "left", "top", "bottom"] as const) {
+      tip.options.direction = side;
+      tip.update();
+      const hidden = hiddenShare(el);
+      if (hidden === 0) return;
+      if (hidden < best.hidden) best = { side, hidden };
+    }
+    tip.options.direction = best.side;
+    tip.update();
+  });
+}
+
+/** How much of `el` is out of sight, 0 to 1: sampled points of its box
+ * that are off screen or covered by something else. A tooltip ignores the
+ * pointer, so it is made to answer hit tests while it is measured. */
+function hiddenShare(el: HTMLElement): number {
+  const r = el.getBoundingClientRect();
+  const was = el.style.pointerEvents;
+  el.style.pointerEvents = "auto";
+  let hidden = 0;
+  let n = 0;
+  for (const fx of [0.03, 0.25, 0.5, 0.75, 0.97]) {
+    for (const fy of [0.2, 0.8]) {
+      n++;
+      const hit = document.elementFromPoint(r.left + fx * r.width, r.top + fy * r.height);
+      if (!hit || !el.contains(hit)) hidden++;
+    }
+  }
+  el.style.pointerEvents = was;
+  return hidden / n;
 }
 
 /** How far the view can reach from the home copy of the world, in degrees
