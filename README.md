@@ -184,12 +184,7 @@ npm run build      # static output in dist/
 npm run check      # types
 npm run verify     # the TypeScript decoder against the Python decoder's vector
 npm run waypoint-check  # the rule that routes the track through ghosts
-npm run reel       # a flight as a short vertical video, in reels/
 ```
-
-`npm run reel` renders the featured flight from behind the balloon, launch
-to its position now, for sharing: `npm run reel -- PT02 --hours 24` for a
-named flight's first day. [docs/site.md](docs/site.md), "The reel".
 
 The tool, from the repository root:
 

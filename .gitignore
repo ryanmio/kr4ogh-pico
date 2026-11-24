@@ -12,7 +12,6 @@ dist/
 .astro/
 .vercel/
 dev/browser-check*.png
-reels/
 
 .mcp.json
 
