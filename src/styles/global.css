@@ -981,6 +981,10 @@ a.fv-chip { text-decoration: none; }
      long wording (.fv-card-lead) gives way to its short one. */
   .fv-card-lead { display: none; }
   .fv-card-short { display: inline; }
+  /* The narrowest phones: the chevron's width is the difference between
+     "GROUND SPEED" and "GROUND SP…". The hint above the cards already
+     says they can be tapped. */
+  @media (max-width: 380px) { .fv-card-chevron { display: none; } }
   .fv-hint { display: block; margin-top: -0.15rem; }
   .fv-card, div.fv-status, .fv-side-links {
     background: var(--bg-raised); border-color: var(--border);
