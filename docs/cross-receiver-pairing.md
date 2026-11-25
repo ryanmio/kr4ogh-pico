@@ -57,7 +57,7 @@ database's decoded tables either. They survive only as raw spots.
 |---|---|---|
 | Flight path | `src/lib/map.ts`, `src/lib/globe.ts` | Hollow grey rings that never join the line. A dashed tail runs from the last fix to the newest ghost. |
 | Stats (distance, peak, fastest) | `src/lib/format.ts` `trackStats` | Reads the track (fixes) only. |
-| Latest-state tiles | `src/lib/render.ts` `sidebarHtml` | Altitude, speed, voltage, temperature and receivers all come from the last *fix*. Ghosts only feed "Heard … ago" and "flying for". |
+| Latest-state tiles | `src/lib/render.ts` `sidebarHtml` | Altitude, speed, voltage, temperature and receivers all come from the last *fix*. Ghosts only feed "Heard … ago" and "flying 13d 21h". |
 | Forecast start | `src/lib/forecast.ts` `forecastOrigin` | "Always the newest full fix, never a newer ghost." |
 | Records | `src/lib/records.ts` `summarize` | Fixes only. |
 | Sensor readings | `tool/picolog/pipeline.py` line 81, `track.ts` `decodeWindow` | A sensor reading rides on its cycle's fix. A sensor reading in a cycle with no fix is dropped, even when it was paired by fingerprint. |

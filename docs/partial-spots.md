@@ -165,8 +165,8 @@ second list beside the track, not nullable rows inside it.
   line. When ghosts are newer than the last fix, a dashed tail runs from
   the last fix through them, the beacon moves to the newest, and the grid
   square it stands for is outlined: the beacon alone would claim 4 km.
-- `src/lib/render.ts`, `FlightLive.astro` -- "last heard" and "flying
-  for" count ghosts as the tracker being heard, and the status card says
+- `src/lib/render.ts`, `FlightLive.astro` -- "last heard" and how long it
+  has been flying count ghosts as the tracker being heard, and the status card says
   "position only" when the newest report is one. Every metric card, chart,
   the table and the speed derivation read the track alone, which is the
   "statsHtml question" above answered by construction: there is no null to

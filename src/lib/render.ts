@@ -118,7 +118,7 @@ function metricCard(
  * the reader asks. The map's coloring is named by its own legend.
  *
  * `ghosts` are the slots heard without telemetry. They count as the
- * tracker being heard -- "last heard" and "flying for" take them in -- and
+ * tracker being heard -- "last heard" and "flying 13d" take them in -- and
  * as nothing else: every number on the metric cards is from the last full
  * fix, because a ghost carries none of them. That fix may be an inferred
  * one (docs/cross-receiver-pairing.md), and then its cards say so; the
@@ -190,10 +190,8 @@ export function sidebarHtml(
   // Shaped like every other card: a label, one line that never wraps, a
   // sub line. A closed flight says only that it ended; the date it was
   // last heard, and whether that newest report was position-only, are in
-  // the Signal panel. The dot stops pulsing when the flight is over.
-  const partial = ghosts.length
-    ? ` · ${fmtInt(ghosts.length)} without telemetry`
-    : "";
+  // the Signal panel, with the count of reports heard without telemetry.
+  // The dot stops pulsing when the flight is over.
   const status = `<button type="button" class="fv-card fv-status" data-panel="status"
     aria-pressed="${active === "status"}">
     <span class="fv-card-icon" style="color:${ended ? "#94a3b8" : "#34d399"}"><span
@@ -203,8 +201,8 @@ export function sidebarHtml(
       <span class="fv-card-value">${ended
         ? "Flight ended"
         : `Heard ${esc(fmtRelative(heard.lastUtc))}`}</span>
-      <span class="fv-card-sub">${ended ? "flew" : "flying"} for ${esc(fmtDuration(aloftMs))}
-        · ${fmtInt(s.points)} reports${partial}</span>
+      <span class="fv-card-sub">${ended ? "flew" : "flying"} ${esc(fmtDuration(aloftMs))}
+        · ${fmtInt(s.points)} reports</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
   </button>
