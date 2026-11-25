@@ -14,6 +14,10 @@
  * This applies to the charts only. The map always shows the whole flight
  * with the current position on it, and the stats always describe now --
  * "last heard" and "altitude" would be lies otherwise.
+ *
+ * Picking particular days is a different thing, and does take the map
+ * along: see lib/days.ts. While days are picked they stand in for the
+ * range, and choosing a range again lets them go.
  */
 import type { TrackPoint } from "./types";
 

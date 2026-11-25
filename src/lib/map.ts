@@ -60,6 +60,15 @@ export interface MapOptions {
   /** Render the legend into this element instead of a map corner. The
    * desktop live view lines it up in the top bar with the other controls. */
   legendInto?: HTMLElement;
+  /** The days being read (lib/days.ts), as the first and last index of
+   * their fixes in the track. The view is fitted to that stretch, only its
+   * spots are drawn, and the colours and the legend run over its values
+   * alone, as the chart's own axis does. The line still shows the whole
+   * flight, so the stretch has its place in it. */
+  focus?: [number, number] | null;
+  /** Height in pixels of whatever floats over the bottom of the map (the
+   * open panel), so a focused stretch is not fitted in underneath it. */
+  focusRoomBelow?: number;
 }
 
 /** The view: the whole track, plus room around where the balloon is now.
@@ -137,7 +146,11 @@ export function renderMap(
   // it off towards somewhere the balloon has not been. Panning reaches it.
   const fc = opts.forecast && latlngs.length
     ? forecastLatlngs(opts.forecast, latlngs.at(-1)!.lng) : [];
-  const fitPts = [...overlays.flatMap((o) => o.geo.fitPts), ...geo.fitPts];
+  const focus = opts.focus && track.length ? opts.focus : null;
+  const inFocus = (i: number) => !focus || (i >= focus[0] && i <= focus[1]);
+  const fitPts = focus
+    ? latlngs.slice(focus[0], focus[1] + 1)
+    : [...overlays.flatMap((o) => o.geo.fitPts), ...geo.fitPts];
   // Worked out before the map exists, because on "fit" pages the box has to
   // be the right height before Leaflet measures it. Brought home to the
   // copy of the world around longitude zero, where a drag keeps the view:
@@ -268,7 +281,7 @@ export function renderMap(
 
   // The polylines above carry the full track; the per-point spots are drawn
   // separately, and redrawn at each zoom -- see drawSpots.
-  const raws = track.map((p) => metric.raw(p));
+  const raws = track.filter((_, i) => inFocus(i)).map((p) => metric.raw(p));
   const lo = raws.length ? Math.min(...raws) : 0;
   const hi = raws.length ? Math.max(...raws) : 0;
   const spots = L.layerGroup().addTo(map);
@@ -302,8 +315,10 @@ export function renderMap(
     const radius = spotRadiusFor(map.getZoom());
     // By index, so each spot is drawn at the line's unwrapped longitude:
     // past the antimeridian the raw one is a world away from the line.
+    const first = focus ? focus[0] : 0;
+    const last = focus ? focus[1] : track.length - 1;
     const shown = track.flatMap((p, i) =>
-      i === 0 || i === track.length - 1 || i % step === 0
+      inFocus(i) && (i === first || i === last || i % step === 0)
         ? [{ p, latlng: latlngs[i]! }] : []);
     const sizeOf = (p: TrackPoint) =>
       p === shown[0]!.p || p === shown[shown.length - 1]!.p ? SPOT_RADIUS : radius;
@@ -381,9 +396,15 @@ export function renderMap(
   // launch end of the track starts life hidden under the cards. On a narrow
   // screen the cards are below the map, not over it, so no room is needed.
   const overlaid = fill && el.clientWidth >= 900;
-  map.fitBounds(fitted!, overlaid
-    ? { paddingTopLeft: [330, 64], paddingBottomRight: [24, 24] }
-    : undefined);
+  // A day's stretch can be a few kilometres; it is not zoomed in on past
+  // the point where the map still shows what part of the world it is.
+  const roomBelow = focus ? opts.focusRoomBelow ?? 0 : 0;
+  map.fitBounds(fitted!, {
+    ...(overlaid
+      ? { paddingTopLeft: [330, 64], paddingBottomRight: [24, 24 + roomBelow] }
+      : {}),
+    ...(focus ? { maxZoom: 7 } : {}),
+  });
   if (!fill) coverBoxWithWorld(map, el, fitted!);
 
   // Keep the world covering the box at every zoom and pan: no zooming out

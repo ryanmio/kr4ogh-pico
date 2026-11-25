@@ -32,6 +32,13 @@ export interface ChartSpec {
    * labels come out at their real size instead of scaled down with a box
    * made for a desktop, and everything that costs width is trimmed. */
   compact?: boolean;
+  /** Makes the chart pickable: a click or a tap picks the report nearest
+   * it, a mouse drag the reports at its two ends. Called with their times,
+   * earlier first (the same time twice for a click). The caller decides
+   * what a pick means; here it is a day to zoom to. */
+  onPick?: (from: number, to: number) => void;
+  /** A few words in the heading saying what a pick does. */
+  pickHint?: string;
 }
 
 const DEFAULT_W = 640;
@@ -245,10 +252,14 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   container.innerHTML = `
     <div class="chart-head">
       <span class="chart-title">${spec.label}</span>
+      ${spec.onPick && spec.pickHint
+        ? `<span class="chart-hint">${spec.pickHint}</span>` : ""}
       <span class="chart-unit">${spec.unitName ?? spec.unit}</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${spec.label} over time">
       ${grid}${xAxis}${breaks}${paths}${dots}
+      <rect class="chart-select" y="${M.top}" height="${H - M.top - M.bottom}"
+        width="0" opacity="0"/>
       <circle class="chart-cursor" r="3.5" fill="${spec.color}" opacity="0"/>
       <rect class="chart-hover" x="${M.left}" y="${M.top}"
         width="${W - M.left - M.right}" height="${H - M.top - M.bottom}"
@@ -261,14 +272,95 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   const hover = svg.querySelector<SVGRectElement>(".chart-hover")!;
   const tooltip = container.querySelector<HTMLDivElement>(".chart-tooltip")!;
 
-  hover.addEventListener("mousemove", (ev) => {
+  /** A pointer's place along the viewBox. */
+  const unitsAt = (clientX: number) => {
     const rect = svg.getBoundingClientRect();
-    // Nearest on screen, not in time: on a folded axis those differ.
-    const xAt = (ev.clientX - rect.left) / rect.width * W;
+    return (clientX - rect.left) / rect.width * W;
+  };
+  /** The report nearest a pointer: on screen, not in time, since on a
+   * folded axis those differ. */
+  const nearest = (clientX: number) => {
+    const xAt = unitsAt(clientX);
     let best = values[0]!;
     for (const p of values) {
       if (Math.abs(x(p.t) - xAt) < Math.abs(x(best.t) - xAt)) best = p;
     }
+    return best;
+  };
+
+  const onPick = spec.onPick;
+  container.classList.toggle("chart-pick", !!onPick);
+  if (onPick) {
+    const select = svg.querySelector<SVGRectElement>(".chart-select")!;
+    // A mouse can drag out a span; a finger's drag is the page scrolling,
+    // so a touch only ever taps.
+    let downX: number | null = null;
+    let dragged = false;
+    const DRAG_PX = 6;
+    // A finger's tap is read off the pointer itself. Its click cannot be
+    // relied on: a phone browser that sees the tooltip appear on the first
+    // touch takes that touch for a hover and sends no click at all.
+    let touch: { x: number; y: number } | null = null;
+    let tapped = false;
+    hover.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType !== "mouse") {
+        touch = { x: ev.clientX, y: ev.clientY };
+        return;
+      }
+      if (ev.button !== 0) return;
+      downX = ev.clientX;
+      dragged = false;
+      hover.setPointerCapture(ev.pointerId);
+    });
+    hover.addEventListener("pointermove", (ev) => {
+      if (downX === null) return;
+      if (Math.abs(ev.clientX - downX) > DRAG_PX) dragged = true;
+      if (!dragged) return;
+      const clamp = (u: number) => Math.min(Math.max(u, M.left), W - M.right);
+      const a = clamp(unitsAt(downX));
+      const b = clamp(unitsAt(ev.clientX));
+      select.setAttribute("x", String(Math.min(a, b)));
+      select.setAttribute("width", String(Math.abs(b - a)));
+      select.setAttribute("opacity", "1");
+    });
+    const endDrag = (ev: PointerEvent, cancelled: boolean) => {
+      if (downX === null) return;
+      const from = downX;
+      downX = null;
+      select.setAttribute("opacity", "0");
+      if (!dragged || cancelled) return;
+      const a = nearest(from).t;
+      const b = nearest(ev.clientX).t;
+      // After the click this release also raises, so that click finds
+      // this chart and not whatever the pick draws in its place.
+      setTimeout(() => onPick(Math.min(a, b), Math.max(a, b)), 0);
+    };
+    hover.addEventListener("pointerup", (ev) => {
+      if (ev.pointerType === "mouse") return endDrag(ev, false);
+      const from = touch;
+      touch = null;
+      // A touch that travelled was a scroll, not a tap.
+      if (!from || Math.hypot(ev.clientX - from.x, ev.clientY - from.y) > 10) return;
+      tapped = true;
+      const t = nearest(ev.clientX).t;
+      setTimeout(() => onPick(t, t), 0);
+    });
+    hover.addEventListener("pointercancel", (ev) => {
+      touch = null;
+      endDrag(ev, true);
+    });
+    hover.addEventListener("click", (ev) => {
+      // The click that ends a drag or follows a tap is theirs, already
+      // answered.
+      if (dragged || tapped) { dragged = false; tapped = false; return; }
+      const t = nearest(ev.clientX).t;
+      onPick(t, t);
+    });
+  }
+
+  hover.addEventListener("mousemove", (ev) => {
+    const rect = svg.getBoundingClientRect();
+    const best = nearest(ev.clientX);
     cursor.setAttribute("cx", String(x(best.t)));
     cursor.setAttribute("cy", String(y(best.v)));
     cursor.setAttribute("opacity", "1");

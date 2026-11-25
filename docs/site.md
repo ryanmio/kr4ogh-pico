@@ -122,6 +122,22 @@ URL as an explicit emptiness. `?p=none` is accepted anyway, for a link typed
 by hand. All three compose: `?u=i&w=c&p=speed`, and `?overlay=` composes
 with all of them.
 
+A long flight can be read a day at a time (`src/lib/days.ts`). A click or
+tap on a day in any panel chart zooms the chart to that day, at that day's
+own scale; a mouse drag across several days picks those. On a chart where a
+day is too narrow for a thumb, the first tap opens the week around it. The
+map follows: it is fitted to that stretch, draws only its spots, and its
+colours and legend run over those values alone. The panel's range toggle
+gains a fourth segment naming the days, with a step to the days either
+side, and the map gains a control with the same name beside "Whole flight",
+which is the way back when the panel that picked the days is closed. The
+days travel in the link as `?d=11` or `?d=10-12`: flight days, counted from
+1 at launch. A flight day is one stretch of the balloon's own daylight (the
+day turns over at solar midnight at the balloon's longitude), so the number
+means the same fixes to every reader and does not move as the flight goes
+on; the dates on screen are the reader's own. A `d` the flight does not
+have is ignored. The stats above a chart still describe the whole flight.
+
 ## Weather on the map
 
 A switch on the live map draws weather under the track. Two layers, because
@@ -465,6 +481,7 @@ the page and leaves, or a script calling `.click()`, sends none of them.
 | `Panel info` | `panel`, `flight` | a panel title's info button is opened |
 | `Panel details` | `panel`, `flight` | a panel's More details is opened |
 | `Range` | `range`, `panel` | a chart range is picked |
+| `Days` | `via` (`tap`, `tap week`, `drag`, `step`, `map`, `range`), `days`, `flight` | days are picked on a chart, stepped, or cleared (`days` is `all`) |
 | `Record` | `record`, `flight` | a record tile is pressed; the map flies to it |
 | `Map moved` | `view`, `flight` | the first pan or zoom of a load |
 | `Map spot` | `view`, `flight` | the first spot tooltip of a load |

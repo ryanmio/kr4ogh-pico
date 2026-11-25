@@ -172,6 +172,13 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         <button type="button" data-range="all" aria-pressed="true">Whole flight</button>
         <button type="button" data-range="ascent" aria-pressed="false">Ascent</button>
         <button type="button" data-range="recent" aria-pressed="false">Last 24 h</button>
+        {/* The days picked on a chart (lib/days.ts): the fourth choice,
+          * there only while there is one, with a step either way. */}
+        <span class="day-step" hidden>
+          <button type="button" data-day-step="-1" aria-label="Earlier days">&lsaquo;</button>
+          <span class="day-step-label" aria-live="polite"></span>
+          <button type="button" data-day-step="1" aria-label="Later days">&rsaquo;</button>
+        </span>
       </div>
       <button type="button" class="fv-panel-action" id="download" hidden
         aria-label="Download JSON" title="Download the full track as JSON">
@@ -234,6 +241,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     panelFromSearch, urlWithPanel, type PanelKind,
   } from "../lib/panel";
   import { filterRange, RANGE_MIN_SPAN_MS, spanMs, type Range } from "../lib/range";
+  import {
+    daysFromSearch, daysWithData, flightDays, spanIndexes, spanLabel, stepSpan,
+    urlWithDays, type DaySpan,
+  } from "../lib/days";
   import * as u from "../lib/units";
   import {
     convert, resolveUnits, saveUnits, unitLabels, urlWithUnits, type Units,
@@ -282,6 +293,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     // Charts only. The map keeps the whole flight so the current position is
     // always on it, and the stats always describe now.
     let range: Range = "all";
+    // The days being read (lib/days.ts): from a link, or picked on a chart.
+    // They narrow the charts and the map both, which the ranges above
+    // never did, so they are in the address and have a button on the map.
+    let days: DaySpan | null = daysFromSearch(location.search);
     // The map is torn down and rebuilt on every refresh, so the weather
     // choice is held out here and handed back to each new control. A `?w=c`
     // link outranks the browser's memory, like `?u=` does, so a link sent
@@ -322,6 +337,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     const downloadBtn = root.querySelector<HTMLButtonElement>("#download")!;
     const panelBody = root.querySelector<HTMLElement>("#panel-body")!;
     const rangeToggle = panelEl.querySelector<HTMLElement>(".range-toggle")!;
+    const dayStep = rangeToggle.querySelector<HTMLElement>(".day-step")!;
     const updatedEl = root.querySelector<HTMLElement>("#updated")!;
     const sideEl = root.querySelector<HTMLElement>(".fv-side")!;
     const sideMore = root.querySelector<HTMLElement>("#side-more")!;
@@ -490,9 +506,11 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     /** The address of another flight with the reader's toggles along,
      * the overlays included, so switching keeps the comparison up. */
     function flightHref(flightId: string): string {
+      // Not the picked days: day 11 of this flight is nothing of the next.
+      const here = urlWithDays(location.href, null);
       return mode === "home"
-        ? urlWithFeature(location.href, flightId)
-        : withBase(`/live/${encodeURIComponent(flightId)}/`) + location.search + location.hash;
+        ? urlWithFeature(here, flightId)
+        : withBase(`/live/${encodeURIComponent(flightId)}/`) + new URL(here).search + location.hash;
     }
 
     /** An overlaid flight was clicked on the map: make it the subject. */
@@ -551,6 +569,66 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         b.addEventListener("click", () => void selectView(o.id));
         div.appendChild(b);
       }
+      return div;
+    }
+
+    /** What the track makes of the picked days: every fix's flight day,
+     * and the stretch of fixes the picked ones cover. That is null with
+     * none picked, and also when the track has too little of them to show
+     * -- a link to a day the flight has not reached, or the bundled track
+     * before the live one has caught up -- in which case the page is the
+     * whole flight until it does. */
+    function dayView() {
+      const of = flightDays(track);
+      return { of, at: days ? spanIndexes(of, days) : null };
+    }
+
+    /** The fixes the charts draw: the picked days, or else the range. */
+    function shownPts(): TrackPoint[] {
+      const { at } = dayView();
+      return at ? track.slice(at[0], at[1] + 1) : filterRange(track, range);
+    }
+
+    /** Pick days, or with null go back to the whole flight. The map turns
+     * to them wherever the reader had left it: picking a day is asking to
+     * be shown it. */
+    function selectDays(next: DaySpan | null, via: string) {
+      days = next;
+      act("Days", {
+        via, flight: meta.flight_id,
+        days: next ? (next.from === next.to ? `${next.from}` : `${next.from}-${next.to}`) : "all",
+      });
+      pinInUrl(urlWithDays(location.href, next));
+      userMoved = false;
+      drawMapAgain(false);
+      renderPanel();
+    }
+
+    /** The map's own word on the picked days: what is in view, and the way
+     * back. There only while days are picked, because the panel that
+     * picked them may be closed and the map would otherwise be showing a
+     * slice of the flight with nothing to say so. */
+    function buildDaysToggle(): HTMLElement | null {
+      const { of, at } = dayView();
+      if (!days || !at) return null;
+      const div = document.createElement("div");
+      div.className = "weather-toggle days-toggle";
+      div.setAttribute("role", "group");
+      div.setAttribute("aria-label", "Days shown");
+      const shown = document.createElement("button");
+      shown.type = "button";
+      shown.textContent = spanLabel(track, of, days);
+      shown.title = days.from === days.to
+        ? `Day ${days.from} of the flight: the map and the charts show it alone`
+        : `Days ${days.from} to ${days.to} of the flight: the map and the charts show them alone`;
+      shown.setAttribute("aria-pressed", "true");
+      const all = document.createElement("button");
+      all.type = "button";
+      all.textContent = "Whole flight";
+      all.title = "Back to the whole flight";
+      all.setAttribute("aria-pressed", "false");
+      all.addEventListener("click", () => selectDays(null, "map"));
+      div.append(shown, all);
       return div;
     }
 
@@ -675,13 +753,20 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         userMoved = true;
         actOnce("Map moved", { view, flight: meta.flight_id });
       };
+      // The picked days, for the map to turn to; the desktop panel floats
+      // over its bottom edge, and they are fitted in above it.
+      const focus = {
+        focus: dayView().at,
+        focusRoomBelow: wide && !panelEl.hidden ? panelEl.offsetHeight : 0,
+      };
+      const daysToggle = buildDaysToggle();
       if (view === "globe" && globeMod) {
         try {
           globe = globeMod.renderGlobe(mapSlot, meta, track, {
             ghosts, waypoints: waypoints(track, ghosts, spoofed),
             spoofed: drawnSpoofed(), overlays: mapOverlays(),
             marks: recordMarks(), forecast: drawnForecast(), onOverlayClick: openFlight,
-            overlaid: wide && mapSlot.clientWidth >= 900,
+            overlaid: wide && mapSlot.clientWidth >= 900, ...focus,
             weather: { ...weatherOpts, ...(wide ? { into: ctlSlot } : {}) },
           });
           globe.onInteract(onInteract);
@@ -691,6 +776,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
             const t = buildForecastToggle();
             if (wide) ctlSlot.appendChild(t);
             else globe.addCorner(t);
+          }
+          if (daysToggle) {
+            if (wide) ctlSlot.appendChild(daysToggle);
+            else globe.addCorner(daysToggle);
           }
           return;
         } catch {
@@ -703,7 +792,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         spoofed: drawnSpoofed(), overlays: mapOverlays(),
         marks: recordMarks(),
         forecast: drawnForecast(), sizing: "fill", onOverlayClick: openFlight,
-        ...(wide ? { legendInto: ctlSlot } : {}),
+        ...(wide ? { legendInto: ctlSlot } : {}), ...focus,
       });
       if (!held) return;
       map = held;
@@ -723,6 +812,10 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         const t = buildForecastToggle();
         if (wide) ctlSlot.appendChild(t);
         else addCornerControl(held, t, "bottomleft");
+      }
+      if (daysToggle) {
+        if (wide) ctlSlot.appendChild(daysToggle);
+        else addCornerControl(held, daysToggle, "bottomleft");
       }
     }
 
@@ -894,9 +987,60 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     }
 
     function paintRangeToggle() {
+      const { of, at } = dayView();
+      const picked = days && at ? days : null;
+      rangeToggle.classList.toggle("has-days", !!picked);
       for (const b of rangeToggle.querySelectorAll<HTMLButtonElement>("[data-range]")) {
-        b.setAttribute("aria-pressed", String(b.dataset.range === range));
+        b.setAttribute("aria-pressed", String(!picked && b.dataset.range === range));
       }
+      dayStep.hidden = !picked;
+      if (!picked) return;
+      dayStep.querySelector(".day-step-label")!.textContent = spanLabel(track, of, picked);
+      const avail = daysWithData(of);
+      for (const b of dayStep.querySelectorAll<HTMLButtonElement>("[data-day-step]")) {
+        b.disabled = !stepSpan(picked, b.dataset.dayStep === "1" ? 1 : -1, avail);
+      }
+    }
+
+    /** A day narrower than this on the chart is no target for a thumb: the
+     * first tap opens the week around it, and the day is picked there. */
+    const WEEK_FIRST_PX = 32;
+
+    /** What a pick on a chart does, for charts of the fixes `shown`: a tap
+     * on a day zooms to it, a drag across several to those. Undefined once
+     * a single day is all there is in view, when there is nothing further
+     * in to go and the chart is not offered as pickable. */
+    function dayPicker(shown: TrackPoint[], chart: HTMLElement) {
+      const { of } = dayView();
+      const dayAt = new Map(track.map((p, i) => [parseUtc(p.utc).getTime(), of[i]!]));
+      const inView = new Set(shown.map((p) => dayAt.get(parseUtc(p.utc).getTime())));
+      const avail = daysWithData(of).filter((d) => inView.has(d));
+      if (avail.length < 2) return undefined;
+      // A report alone in its day (heard once in a long silence) has no
+      // day of its own to show; the nearest day that has one stands in.
+      const near = (t: number) => {
+        const d = dayAt.get(t) ?? avail[0]!;
+        return avail.reduce((best, x) => Math.abs(x - d) < Math.abs(best - d) ? x : best);
+      };
+      return (ta: number, tb: number) => {
+        const a = near(ta);
+        const b = near(tb);
+        if (a !== b) return selectDays({ from: a, to: b }, "drag");
+        if (chart.clientWidth / avail.length >= WEEK_FIRST_PX || avail.length <= 7) {
+          return selectDays({ from: a, to: a }, "tap");
+        }
+        const lo = avail[0]!;
+        const hi = avail[avail.length - 1]!;
+        const from = Math.max(lo, Math.min(a - 3, hi - 6));
+        selectDays({ from, to: Math.min(hi, from + 6) }, "tap week");
+      };
+    }
+
+    /** The words in a pickable chart's heading. */
+    function pickHint(): string {
+      return window.matchMedia("(pointer: coarse)").matches
+        ? "tap a day to zoom in"
+        : "click a day to zoom in, or drag across several";
     }
 
     // ---------- panel content ----------
@@ -963,7 +1107,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         values: pts.map((p, i) => ({ t: t[i]!, v: get[key]!(p) })),
         domain, decimals: key === "voltage" ? 2 : 0, foldGaps: true,
         ...(key === "sun"
-          ? { label: "Sun above the horizon", unitName: "degrees" } : {}),
+          ? { unitName: "degrees" } : {}),
       };
     }
 
@@ -1044,7 +1188,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
      * been too quiet?". */
     function statusPanelBody() {
       const gaps: { t: number; v: number }[] = [];
-      const pts = filterRange(track, range);
+      const pts = shownPts();
       for (let i = 1; i < pts.length; i++) {
         const t = parseUtc(pts[i]!.utc).getTime();
         gaps.push({ t, v: (t - parseUtc(pts[i - 1]!.utc).getTime()) / 60_000 });
@@ -1123,7 +1267,7 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         renderChart(panelBody.querySelector<HTMLElement>(".fv-panel-chart")!, {
           label: "Minutes between reports", unit: "min", color: "#5eead4",
           values: gaps, domain: [gaps[0]!.t, gaps[gaps.length - 1]!.t],
-          decimals: 0, ...chartBox(),
+          decimals: 0, ...chartBox(), onPick: dayPicker(pts, panelBody),
         });
       }
     }
@@ -1180,11 +1324,14 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
         panelBody.innerHTML =
           `<div class="fv-minis">${metricMinis(key)}</div>` +
           '<div class="fv-panel-chart"></div>';
-        const pts = filterRange(track, range);
+        const pts = shownPts();
         if (pts.length >= 2) {
           renderChart(
             panelBody.querySelector<HTMLElement>(".fv-panel-chart")!,
-            { ...chartSpec(key, pts), ...chartBox() },
+            {
+              ...chartSpec(key, pts), ...chartBox(),
+              onPick: dayPicker(pts, panelBody), pickHint: pickHint(),
+            },
           );
         }
       } else if (panel === "status") {
@@ -1438,10 +1585,20 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
     for (const b of rangeToggle.querySelectorAll<HTMLButtonElement>("[data-range]")) {
       b.addEventListener("click", () => {
         const next = b.dataset.range as Range;
-        if (next === range) return;
+        if (next === range && !days) return;
         act("Range", { range: next, panel });
         range = next;
-        renderPanel();
+        // A range is the way out of picked days, the map's too.
+        if (days) selectDays(null, "range");
+        else renderPanel();
+      });
+    }
+    for (const b of dayStep.querySelectorAll<HTMLButtonElement>("[data-day-step]")) {
+      b.addEventListener("click", () => {
+        const { of, at } = dayView();
+        if (!days || !at) return;
+        const next = stepSpan(days, b.dataset.dayStep === "1" ? 1 : -1, daysWithData(of));
+        if (next) selectDays(next, "step");
       });
     }
 

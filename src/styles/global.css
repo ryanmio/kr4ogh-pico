@@ -294,6 +294,17 @@ main { padding: 2.2rem 0 3.5rem; }
   color: var(--text-dim);
 }
 .chart-unit { font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint); }
+/* What a click on the chart does, said once, quietly, beside the unit. */
+.chart-hint {
+  margin-left: auto; margin-right: 0.8rem;
+  font-size: 0.68rem; color: var(--text-faint); white-space: nowrap;
+}
+.chart-pick svg { cursor: pointer; user-select: none; -webkit-user-select: none; }
+/* The span a mouse is dragging out. */
+.chart-select {
+  fill: rgba(125, 211, 252, 0.14); stroke: rgba(125, 211, 252, 0.5);
+  stroke-width: 1; pointer-events: none;
+}
 .chart svg { display: block; width: 100%; height: auto; }
 .chart-grid { stroke: var(--border); stroke-width: 1; }
 .chart-tick { fill: var(--text-faint); font-family: var(--mono); font-size: 9.5px; }
@@ -388,6 +399,20 @@ main { padding: 2.2rem 0 3.5rem; }
   background: var(--bg-raised);
   color: var(--accent);
 }
+/* The days picked on a chart: the toggle's fourth segment, always the
+   pressed one while it is there, with a step to the days either side. */
+.day-step {
+  display: inline-flex; align-items: center;
+  background: var(--bg-raised); color: var(--accent);
+  font-size: 0.78rem;
+}
+.day-step[hidden] { display: none; }
+.day-step-label { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.range-toggle .day-step button {
+  padding: 0.3rem 0.6rem; color: var(--accent);
+  font-size: 0.95rem; line-height: 1.15;
+}
+.range-toggle .day-step button:disabled { opacity: 0.3; cursor: default; }
 
 /* A button that reads as a link: these are secondary actions next to prose,
    and a real button would shout louder than the sentence around it. */
@@ -483,6 +508,15 @@ main.bare { padding: 0; flex: 1; display: flex; flex-direction: column; }
 .fv-ctl-slot .weather-toggle { order: -1; }
 /* The flat/globe switch reads first: it names what the row controls. */
 .fv-ctl-slot .view-toggle { order: -2; }
+/* The picked days lead the row while there are any: they are the scope of
+   everything after them. */
+.fv-ctl-slot .days-toggle { order: -3; }
+.days-toggle button { white-space: nowrap; }
+/* A narrower desktop has no room in the row for a sixth control: the
+   picked days drop to a row of their own, beside the zoom buttons. */
+@media (min-width: 900px) and (max-width: 1279px) {
+  .fv-ctl-slot .days-toggle { position: absolute; top: 100%; right: 3.9rem; margin-top: 0.75rem; }
+}
 .fv-ctl-slot .map-legend { white-space: nowrap; }
 
 /* The top strip is the map's control panel, a fifth larger than the
@@ -731,6 +765,10 @@ a.fv-chip { text-decoration: none; }
 .fv-panel-close:hover { color: var(--text); }
 @container (max-width: 560px) {
   .fv-panel-head .range-toggle { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
+  /* A phone's row holds two choices beside the day stepper, not four:
+     while days are picked it is them or the whole flight. */
+  .range-toggle.has-days [data-range="ascent"],
+  .range-toggle.has-days [data-range="recent"] { display: none; }
 }
 
 .fv-minis {

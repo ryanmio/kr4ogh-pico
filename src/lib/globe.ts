@@ -475,6 +475,7 @@ function addForecast(
  * fit (fitRegion, shared numbers). */
 function aimCamera(
   map: MapGL, meta: FlightMeta, pos: Positions, overlaid: boolean,
+  focused = false, roomBelow = 0,
 ): void {
   if (!pos.here) {
     if (meta.launch_lat != null && meta.launch_lon != null) {
@@ -490,12 +491,13 @@ function aimCamera(
     {
       duration: 0,
       // A young flight is a dot; fitting it exactly would mean opening on a
-      // wall of imagery with no planet in sight.
-      maxZoom: 9,
+      // wall of imagery with no planet in sight. A picked day is held
+      // further out still, as on the flat map.
+      maxZoom: focused ? 6 : 9,
       // In the full-page view the card column floats over the left edge and
       // the header over the top, so the fit leaves them room.
       padding: overlaid
-        ? { top: 64, left: 330, bottom: 24, right: 24 }
+        ? { top: 64, left: 330, bottom: 24 + roomBelow, right: 24 }
         : { top: 24, left: 24, bottom: 24, right: 24 },
     },
   );
@@ -531,6 +533,13 @@ export interface GlobeOpts {
   forecast?: Forecast | null;
   /** Where records were set, a star and a label each, as on the flat map. */
   marks?: MapMark[];
+  /** The days being read, as on the flat map: first and last index of
+   * their fixes. The globe has no spots to pick out, so it only turns to
+   * face that stretch. */
+  focus?: [number, number] | null;
+  /** Height of whatever floats over the bottom of the globe, as on the
+   * flat map. */
+  focusRoomBelow?: number;
 }
 
 export interface GlobeHandle {
@@ -638,12 +647,19 @@ export function renderGlobe(
     ? [unwrapNear(w.point.lon, fc[w.index]![0]), w.point.lat] : null;
   // The fit covers the overlays too, this flight's balloon still last. Not
   // the forecast: the opening view is the flight, as on the flat map.
-  const fit: Positions = {
-    ...pos,
-    fitLats: [...overlays.flatMap((x) => x.pos.fitLats), ...pos.fitLats],
-    fitLons: [...overlays.flatMap((x) => x.pos.fitLons), ...pos.fitLons],
-    here: pos.here ?? overlays.at(-1)?.pos.here ?? null,
-  };
+  const focus = opts.focus && track.length ? opts.focus : null;
+  const fit: Positions = focus
+    ? {
+      ...pos,
+      fitLats: track.slice(focus[0], focus[1] + 1).map((p) => p.lat),
+      fitLons: pos.lons.slice(focus[0], focus[1] + 1),
+    }
+    : {
+      ...pos,
+      fitLats: [...overlays.flatMap((x) => x.pos.fitLats), ...pos.fitLats],
+      fitLons: [...overlays.flatMap((x) => x.pos.fitLons), ...pos.fitLons],
+      here: pos.here ?? overlays.at(-1)?.pos.here ?? null,
+    };
 
   const map = new MapGL({
     container: el,
@@ -658,7 +674,8 @@ export function renderGlobe(
   const credits = foldCredits(el.querySelector<HTMLElement>(".maplibregl-ctrl-attrib"));
   if (credits) map.on("click", credits.close);
 
-  aimCamera(map, meta, fit, !!opts.overlaid);
+  aimCamera(map, meta, fit, !!opts.overlaid, !!focus,
+    focus ? opts.focusRoomBelow ?? 0 : 0);
 
   const onOverlayClick = opts.onOverlayClick;
   overlays.forEach((x, n) => {
