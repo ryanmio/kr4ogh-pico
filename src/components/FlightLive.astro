@@ -1120,13 +1120,24 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           detailsOpen ? "" : "hidden"}>${more.join("")}</div>` +
         '<div class="fv-panel-chart"></div>';
       if (gaps.length >= 2) {
-        const wide = window.matchMedia("(min-width: 900px)").matches;
         renderChart(panelBody.querySelector<HTMLElement>(".fv-panel-chart")!, {
           label: "Minutes between reports", unit: "min", color: "#5eead4",
           values: gaps, domain: [gaps[0]!.t, gaps[gaps.length - 1]!.t],
-          decimals: 0, ...(wide ? { width: 1000 } : {}),
+          decimals: 0, ...chartBox(),
         });
       }
+    }
+
+    /** The box a panel's chart is drawn in. The desktop panel is much wider
+     * than it is tall: the default 640x170 scaled to that width would be a
+     * wall of chart, so a wider box keeps the height sane and spans the
+     * panel edge to edge. A phone gets the opposite: a box as wide as the
+     * panel really is and taller than the default, so nothing is scaled
+     * down and the labels are the size they were written at. */
+    function chartBox() {
+      if (window.matchMedia("(min-width: 900px)").matches) return { width: 1000 };
+      const slot = panelBody.querySelector<HTMLElement>(".fv-panel-chart");
+      return { width: Math.round(slot?.clientWidth || 340), height: 210, compact: true };
     }
 
     function renderPanel() {
@@ -1171,14 +1182,9 @@ const site = { ...siteConfig, upstream: UPSTREAM_REPO };
           '<div class="fv-panel-chart"></div>';
         const pts = filterRange(track, range);
         if (pts.length >= 2) {
-          // The desktop panel is much wider than it is tall; the default
-          // 640x170 box scaled to that width would be a wall of chart. A
-          // wider box keeps the height sane and spans the panel edge to
-          // edge. The phone panel is narrow, where the default is right.
-          const wide = window.matchMedia("(min-width: 900px)").matches;
           renderChart(
             panelBody.querySelector<HTMLElement>(".fv-panel-chart")!,
-            { ...chartSpec(key, pts), ...(wide ? { width: 1000 } : {}) },
+            { ...chartSpec(key, pts), ...chartBox() },
           );
         }
       } else if (panel === "status") {

@@ -302,6 +302,10 @@ main { padding: 2.2rem 0 3.5rem; }
 /* A folded silence: a night, mostly. Quiet, so the data reads first. */
 .chart-break { stroke: rgba(226, 232, 240, 0.35); stroke-width: 1; stroke-dasharray: 2 3; }
 .chart-break-label { fill: var(--text-faint); font-family: var(--mono); font-size: 9px; }
+/* A phone's chart is drawn at the size it is shown (charts.ts), so these
+   are real pixels there. */
+.chart-compact .chart-tick { font-size: 10.5px; }
+.chart-compact .chart-break-label { font-size: 10px; }
 .chart-tooltip {
   position: absolute; top: 2.2rem; transform: translateX(-50%);
   background: var(--bg-panel); border: 1px solid var(--border);

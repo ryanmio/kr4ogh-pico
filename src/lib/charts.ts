@@ -28,11 +28,15 @@ export interface ChartSpec {
    * by a dotted line, so the days carry the width. Off for a chart whose
    * subject is the silences themselves. */
   foldGaps?: boolean;
+  /** Drawn for a phone: `width` is the width it will be shown at, so the
+   * labels come out at their real size instead of scaled down with a box
+   * made for a desktop, and everything that costs width is trimmed. */
+  compact?: boolean;
 }
 
 const DEFAULT_W = 640;
 const DEFAULT_H = 170;
-const M = { top: 14, right: 12, bottom: 22, left: 52 };
+const MARGIN = { top: 14, right: 12, bottom: 22, left: 52 };
 const GAP_MS = 60 * 60 * 1000;
 /** A silence this long folds. Three hours clears the daytime misses (a
  * report or three not heard) and catches every night, which runs ten
@@ -79,7 +83,7 @@ function yTicks(min: number, max: number): number[] {
 }
 
 const TIME_STEPS_MS = [
-  10, 30, 60, 180, 360, 720, 1440, 2880, 10080, 20160, 43200,
+  10, 30, 60, 120, 180, 360, 720, 1440, 2880, 5760, 10080, 20160, 43200,
 ].map((min) => min * 60_000);
 
 const DAY_MS = 86_400_000;
@@ -87,10 +91,10 @@ const DAY_MS = 86_400_000;
 /** Ticks fall on round local times: midnight, noon, the top of an hour.
  * Counted from UTC midnight they would land at 20:00 and 02:00 for a reader
  * on the US east coast, which is where the labels now say they are. */
-function xTicks(t0: number, t1: number, shown = t1 - t0): number[] {
+function xTicks(t0: number, t1: number, shown = t1 - t0, most = 7): number[] {
   // Spaced by the time actually on screen, which a folded axis shortens.
   const span = shown;
-  const step = TIME_STEPS_MS.find((s) => span / s <= 7) ??
+  const step = TIME_STEPS_MS.find((s) => span / s <= most) ??
     TIME_STEPS_MS[TIME_STEPS_MS.length - 1]!;
   const ticks = [];
   const base = new Date(t0);
@@ -129,7 +133,15 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   const yLo = Math.min(vMin, yt[0]!);
   const yHi = Math.max(vMax, yt[yt.length - 1]!);
 
+  // A phone's chart gives the value labels only the room they need, and
+  // the rest to the plot.
+  const M = spec.compact
+    ? { ...MARGIN, right: 6, left: 10 + 6.4 *
+      Math.max(...yt.map((v) => fmtValue(v, decimals).length)) }
+    : MARGIN;
   const plotW = W - M.left - M.right;
+  // As many time labels as fit side by side, seven at the most.
+  const mostTicks = Math.min(7, Math.max(3, Math.floor(plotW / 46)));
   const folds: Fold[] = [];
   if (spec.foldGaps) {
     for (let i = 1; i < values.length; i++) {
@@ -137,7 +149,7 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
       if (b - a >= FOLD_MS) folds.push({ from: a, to: b });
     }
   }
-  const band = Math.max(8, plotW * 0.012);
+  const band = Math.max(spec.compact ? 4 : 8, plotW * 0.012);
   const x = folds.length
     ? foldedScale(t0, t1, folds, M.left, plotW, band)
     : (t: number) => M.left + ((t - t0) / Math.max(1, t1 - t0)) * plotW;
@@ -159,7 +171,7 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
   if (!folds.length || t1 - t0 <= 36 * 3_600_000) {
     // Clock ticks; on a folded day-or-so axis, none from inside a fold.
     const shown = (t1 - t0) - folds.reduce((a, f) => a + f.to - f.from, 0);
-    xAxis = xTicks(t0, t1, shown)
+    xAxis = xTicks(t0, t1, shown, mostTicks)
       .filter((t) => !folds.some((f) => t > f.from && t < f.to))
       .map((t) => tick(t, fmtTick(t, t1 - t0))).join("");
   } else {
@@ -172,10 +184,13 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
     // Widest runs first, so a full day keeps its name over a lone report
     // heard in the middle of a long silence next to it.
     const placed: { at: number; label: string; t: number }[] = [];
+    // Room for one date and a gap. A phone's labels are drawn at their
+    // real size, which is narrower than the desktop's scaled-up ones.
+    const apart = spec.compact ? 46 : 58;
     for (const [a, b] of [...runs].sort((p, q) => (x(q[1]) - x(q[0])) - (x(p[1]) - x(p[0])))) {
       const mid = (a + b) / 2;
       const label = fmtLocalDay(new Date(mid));
-      if (placed.some((l) => Math.abs(l.at - x(mid)) < 58 || l.label === label)) continue;
+      if (placed.some((l) => Math.abs(l.at - x(mid)) < apart || l.label === label)) continue;
       placed.push({ at: x(mid), label, t: mid });
     }
     xAxis = placed.map((l) => tick(l.t, l.label, false)).join("");
@@ -194,26 +209,39 @@ export function renderChart(container: HTMLElement, spec: ChartSpec): void {
 
   // One <path> per contiguous run of records; runs split at silence gaps.
   const segments: string[] = [];
+  // A run of one report has no line to draw; it is kept to be dotted.
+  const alone: { t: number; v: number }[] = [];
   let d = "";
+  let runLen = 0;
+  const closeRun = (last: { t: number; v: number }) => {
+    if (runLen === 1) alone.push(last); else segments.push(d);
+  };
   for (let i = 0; i < values.length; i++) {
     const p = values[i]!;
     const newRun = i === 0 || p.t - values[i - 1]!.t > GAP_MS;
     if (newRun && d) {
-      segments.push(d);
+      closeRun(values[i - 1]!);
       d = "";
+      runLen = 0;
     }
     d += `${newRun ? "M" : "L"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+    runLen++;
   }
-  if (d) segments.push(d);
+  if (d) closeRun(values[values.length - 1]!);
   const paths = segments.map((seg) =>
     `<path class="chart-line" stroke="${spec.color}" d="${seg}"/>`).join("");
   // Per-point dots read well on a day's data and turn to mud (and thousands
   // of SVG nodes) on a two-month flight; the line carries dense series.
-  const dots = values.length > 400 ? "" : values.map((p) =>
+  // Dense is for the width in hand: 400 points across the desktop panel,
+  // 120 or so across a phone. A report on its own is dotted either way,
+  // since it has no line.
+  const dense = values.length > Math.max(60, plotW * 0.43);
+  const dots = (dense ? alone : values).map((p) =>
     `<circle class="chart-dot" fill="${spec.color}"` +
     ` cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="1.6"/>`).join("");
 
   container.classList.add("chart");
+  container.classList.toggle("chart-compact", !!spec.compact);
   container.innerHTML = `
     <div class="chart-head">
       <span class="chart-title">${spec.label}</span>
