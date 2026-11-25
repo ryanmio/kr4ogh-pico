@@ -586,6 +586,7 @@ div.fv-status {
   font-family: var(--mono); font-size: 0.68rem; color: var(--text-faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.fv-card-short { display: none; }
 .fv-card-chevron {
   margin-left: auto; color: var(--text-faint); font-size: 1.1rem;
   transition: transform 120ms ease;
@@ -972,9 +973,14 @@ a.fv-chip { text-decoration: none; }
     padding: 0.7rem 0.8rem 0;
   }
   .fv-status, .fv-hint, .fv-card-wide { grid-column: 1 / -1; }
-  /* Seven metric cards in two columns would leave a hole; Journey, whose
-     numbers are the longest, takes a row to itself and the other six pair. */
-  .fv-card[data-metric="journey"] { grid-column: 1 / -1; }
+  /* Seven metric cards and the Records card pair up into four rows. A
+     site with one flight has no Records card, and the seventh metric
+     takes the last row to itself rather than leave a hole. */
+  .fv-card[data-metric]:last-child { grid-column: 1 / -1; }
+  /* Half a phone's width holds "9 of 10", not "Holds 9 of 10": a card's
+     long wording (.fv-card-lead) gives way to its short one. */
+  .fv-card-lead { display: none; }
+  .fv-card-short { display: inline; }
   .fv-hint { display: block; margin-top: -0.15rem; }
   .fv-card, div.fv-status, .fv-side-links {
     background: var(--bg-raised); border-color: var(--border);

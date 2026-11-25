@@ -85,9 +85,11 @@ export const INFERRED_TITLE =
   + "flight; less certain than a fix one station heard whole.";
 
 /** `inferred` marks a value read off an inferred fix: the label says so,
- * and its tooltip says what that means. */
+ * and its tooltip says what that means. `subShort` is the sub line for a
+ * phone, where a card is half the width and the long form would be cut. */
 function metricCard(
   key: MetricKey, value: string, sub: string, active: ActiveCard, inferred = false,
+  subShort?: string,
 ): string {
   const m = METRICS[key];
   const tier = inferred
@@ -99,7 +101,9 @@ function metricCard(
     <span class="fv-card-text">
       <span class="fv-card-label">${esc(m.label)}${tier}</span>
       <span class="fv-card-value">${esc(value)}</span>
-      <span class="fv-card-sub">${esc(sub)}</span>
+      <span class="fv-card-sub">${subShort === undefined ? esc(sub)
+        : `<span class="fv-card-lead">${esc(sub)}</span><span
+          class="fv-card-short">${esc(subShort)}</span>`}</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
   </button>`;
@@ -222,6 +226,8 @@ export function sidebarHtml(
         ? "flown so far"
         : `${u.distance(fromLaunchKm, units).text} from launch`,
       active,
+      false,
+      track.length < 2 ? undefined : `${u.distance(fromLaunchKm, units).text} away`,
     ),
     metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active,
       lastInferred),
@@ -238,7 +244,7 @@ export function sidebarHtml(
     // once it has woken from enough nights to say.
     metricCard(
       "sun",
-      sunLo === sunHi ? sunHi : `${sunLo} to ${sunHi}`,
+      sunLo === sunHi ? sunHi : `${sunLo.slice(0, -1)}\u2013${sunHi}`,
       wakeAt !== null
         ? `${ended ? "woke" : "wakes"} near ${fmtSun(wakeAt)}`
         : "above the horizon",
@@ -404,16 +410,19 @@ const RECORD_COLOR = "#fbbf24";
 /** The card that opens the records panel. Wide, like the tracker card: it
  * is about every flight, not a reading from this one. */
 function recordsCard(info: RecordsCardInfo, ended: boolean, active: ActiveCard): string {
+  // On a phone the card is half the width: the verb is dropped there
+  // (.fv-card-lead), and "9 of 10" under "Records" still says it.
   const value = info.held
-    ? `Holds ${info.held} of ${info.total}`
+    ? `<span class="fv-card-lead">Holds </span>${info.held} of ${info.total}`
     : ended ? "Held none" : "None yet";
-  return `<button type="button" class="fv-card fv-card-wide" data-panel="records"
+  return `<button type="button" class="fv-card" data-panel="records"
     aria-pressed="${active === "records"}">
     <span class="fv-card-icon" style="color:${RECORD_COLOR}">${RECORDS_ICON}</span>
     <span class="fv-card-text">
       <span class="fv-card-label">Records</span>
-      <span class="fv-card-value">${esc(value)}</span>
-      <span class="fv-card-sub">across ${info.flights} flights</span>
+      <span class="fv-card-value">${value}</span>
+      <span class="fv-card-sub"><span class="fv-card-lead">across </span>${
+        info.flights} flights</span>
     </span>
     <span class="fv-card-chevron" aria-hidden="true">&rsaquo;</span>
   </button>`;
