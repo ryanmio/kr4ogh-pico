@@ -35,16 +35,6 @@ export function sunAt(p: Report): number {
   return sunElevation(parseUtc(p.utc).getTime(), p.lat, p.lon);
 }
 
-/** The reading a card leads with. A flight still up is asked where the sun
- * is this minute, over the place it was last heard: the sun keeps moving
- * while the tracker sleeps, and "8 degrees", true at dusk, would be wrong
- * all night. The balloon drifts on in that silence, an hour of sun at the
- * very most by morning, which matters to nobody reading "40 below". A
- * flight that is over has no now, and is read at its last report. */
-export function sunReading(last: Report, live: boolean, now: number = Date.now()): number {
-  return live ? sunElevation(now, last.lat, last.lon) : sunAt(last);
-}
-
 /** Whole degrees, with a real minus sign for a sun under the horizon. */
 export function fmtSun(deg: number): string {
   const r = Math.round(deg);

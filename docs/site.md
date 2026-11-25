@@ -27,15 +27,11 @@ callsign.
    has no card: a pressure chart was built and judged not to add enough
    beside altitude, so the sidebar is the same seven metrics on every flight.
    Six are telemetry. The seventh, Sun angle, is not sent at all: it is
-   worked out from each report's position and time (`src/lib/sun.ts`), and
-   for a flight still up its card reads the sun as of now, over the place
-   the balloon was last heard, since the sun moves on while the tracker
-   sleeps.
+   worked out from each report's position and time (`src/lib/sun.ts`). Its
+   card gives the range the tracker has been heard under.
 
 The page refreshes every two minutes, on the Refresh button, and whenever a
-backgrounded tab becomes visible again. A refresh that finds nothing new
-still redraws the cards of a flight that is up, because "Heard 3 h ago" and
-the sun's angle are read off the clock.
+backgrounded tab becomes visible again.
 
 Consequences worth knowing:
 

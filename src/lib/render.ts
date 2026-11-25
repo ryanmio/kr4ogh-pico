@@ -12,7 +12,7 @@ import { RECORDS, type FlightSummary, type Holders, type RecordKey } from "./rec
 import {
   groundSpeedKt, hasSaturatedSpeed, isSpeedFloor, speedText, SPEED_CEILING_KT,
 } from "./speed";
-import { fmtSun, sunReading } from "./sun";
+import { fmtSun, sunAt } from "./sun";
 import type { FlightMeta, GhostPoint } from "./types";
 import * as u from "./units";
 import type { Units } from "./units";
@@ -208,7 +208,11 @@ export function sidebarHtml(
 
   // The newest fix, read by every card below but Journey, may be inferred.
   const lastInferred = isInferred(s.last);
-  const sunNow = sunReading(s.last, !ended);
+  // The sun at every report: the card gives the span the tracker has been
+  // heard under, which is the span it can work in.
+  const suns = track.map(sunAt);
+  const sunLo = fmtSun(Math.min(...suns));
+  const sunHi = fmtSun(Math.max(...suns));
   const wakeAt = wakeCutoff([...track, ...ghosts]);
   const cards = [
     metricCard(
@@ -230,15 +234,14 @@ export function sidebarHtml(
       active,
       lastInferred,
     ),
-    // The one card not read off the last fix: the sun is where it is now,
-    // heard from or not (lib/sun.ts). Under it, the angle this tracker has
-    // been coming back at, once it has woken from enough nights to say.
+    // Under the range, the angle this tracker has been coming back at,
+    // once it has woken from enough nights to say.
     metricCard(
       "sun",
-      fmtSun(sunNow),
+      sunLo === sunHi ? sunHi : `${sunLo} to ${sunHi}`,
       wakeAt !== null
         ? `${ended ? "woke" : "wakes"} near ${fmtSun(wakeAt)}`
-        : `${sunNow < 0 ? "below" : "above"} the horizon`,
+        : "above the horizon",
       active,
     ),
     metricCard(
