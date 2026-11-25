@@ -227,18 +227,23 @@ export function sidebarHtml(
         : `${u.distance(fromLaunchKm, units).text} from launch`,
       active,
       false,
-      track.length < 2 ? undefined : `${u.distance(fromLaunchKm, units).text} away`,
+      // The distance from launch does not fit a phone's card, and half of
+      // it ("5,575 km away") reads as something else; the short line names
+      // the big number instead. From launch is in the Journey panel.
+      track.length < 2 ? undefined : "traveled",
     ),
+    // The short lines drop the unit: the value above them carries it.
     metricCard("altitude", alt(s.last.altitude_m), `peak ${alt(s.maxAltitudeM)}`, active,
-      lastInferred),
+      lastInferred, `peak ${fmtInt(u.altitude(s.maxAltitudeM, units).value)}`),
     metricCard("speed", speedText(s.last, units), `fastest ${spd(s.maxSpeedKt)}`, active,
-      lastInferred),
+      lastInferred, `fastest ${fmtInt(u.speed(s.maxSpeedKt, units).value)}`),
     metricCard(
       "voltage",
       `${s.last.voltage_v.toFixed(2)} V`,
       `${Math.min(...volts).toFixed(2)}\u2013${Math.max(...volts).toFixed(2)} V seen`,
       active,
       lastInferred,
+      `${Math.min(...volts).toFixed(2)}\u2013${Math.max(...volts).toFixed(2)} V`,
     ),
     // Under the range, the angle this tracker has been coming back at,
     // once it has woken from enough nights to say.
@@ -249,6 +254,10 @@ export function sidebarHtml(
         ? `${ended ? "woke" : "wakes"} near ${fmtSun(wakeAt)}`
         : "above the horizon",
       active,
+      false,
+      wakeAt !== null
+        ? `${ended ? "woke" : "wakes"} at ${fmtSun(wakeAt)}`
+        : "when heard",
     ),
     metricCard(
       "temperature",
@@ -263,6 +272,7 @@ export function sidebarHtml(
       "stations heard the last report",
       active,
       lastInferred,
+      "stations",
     ),
   ];
   return tracker + status + cards.join("") + records;
